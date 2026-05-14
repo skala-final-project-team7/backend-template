@@ -1,0 +1,40 @@
+# Backend - 인증/인가 규칙
+
+`backend/CLAUDE.md`와 함께 적용한다. 인증/인가(Confluence OAuth 2.0, JWT, 토큰 저장/갱신) 관련 작업 시 이 문서를 참조한다.
+
+> 이 문서에서 언급하는 `CLAUDE.md`, `docs/...` 경로는 모두 **프로젝트 루트** 기준이다.
+
+---
+
+## 1. Confluence OAuth 2.0 흐름
+
+```text
+사용자 → Frontend → BFF Server → Authorization Server → Confluence
+                                                       ↓
+                                          Access/Refresh Token 교환
+                                          사용자 스페이스 접근 권한 조회
+                                          JWT 발급
+                                                       ↓
+                                  BFF Server ← Authorization Server
+                                       ↓
+                                  Frontend ← JWT 세션 토큰
+```
+
+---
+
+## 2. 인증 관련 규칙
+
+- 별도의 회원가입 로직을 구현하지 않는다. 인증은 Confluence OAuth 2.0에 위임한다.
+- Access Token / Refresh Token 원본은 MySQL에 **암호화 저장**한다. 평문 저장 금지.
+- JWT에 포함할 Claim: `user_id`, `groups`(접근 가능 스페이스/페이지 권한 정보).
+- Refresh Token 기반 자동 갱신을 구현한다. 토큰 만료 전 사전 감지 및 재인증 유도.
+- BFF Server는 Authorization Server가 발급한 JWT의 서명, 만료, 권한 Claim만 검증한다.
+- BFF Server가 직접 Confluence 토큰을 교환하지 않는다. 반드시 Authorization Server를 통한다.
+
+---
+
+## 3. 인증/인가 금지 사항
+
+- 인증 흐름을 우회하는 코드를 작성하지 않는다.
+- 테스트 환경에서 인증을 비활성화할 때는 별도의 Test Security Config를 사용하고, production 코드에 조건 분기를 추가하지 않는다.
+- Token을 프론트엔드 응답 Body에 포함하지 않는다 (HttpOnly Cookie 또는 별도 전달 방식 사용).
