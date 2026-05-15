@@ -1,0 +1,13 @@
+server:
+  port: 8080
+
+logging:
+  level:
+    com.lina: DEBUG
+    org.springframework.web: DEBUG
+
+lina:
+  rag:
+    base-url: ${ML_PIPELINE_BASE_URL:http://localhost:8000}
+  auth-server:
+    base-url: ${AUTH_SERVER_BASE_URL:http://localhost:8081}

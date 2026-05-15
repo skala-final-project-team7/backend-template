@@ -1,0 +1,7 @@
+server:
+  port: 8081
+
+logging:
+  level:
+    com.lina: DEBUG
+    org.springframework.security: DEBUG

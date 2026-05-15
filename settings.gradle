@@ -1,0 +1,5 @@
+rootProject.name = 'lina-backend'
+
+include 'common'
+include 'bff-server'
+include 'auth-server'

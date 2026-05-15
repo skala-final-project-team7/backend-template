@@ -1,0 +1,61 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.3.5' apply false
+    id 'io.spring.dependency-management' version '1.1.6' apply false
+    id 'com.diffplug.spotless' version '6.25.0' apply false
+}
+
+ext {
+    set('springCloudVersion', '2023.0.3')
+}
+
+allprojects {
+    group = 'com.lina'
+    version = '0.0.1-SNAPSHOT'
+
+    repositories {
+        mavenCentral()
+    }
+}
+
+subprojects {
+    apply plugin: 'java'
+    apply plugin: 'checkstyle'
+    apply plugin: 'com.diffplug.spotless'
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(21)
+        }
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+        options.compilerArgs += ['-parameters']
+    }
+
+    tasks.withType(Test).configureEach {
+        useJUnitPlatform()
+    }
+
+    checkstyle {
+        toolVersion = '10.18.2'
+        configFile = rootProject.file('config/checkstyle/checkstyle.xml')
+        maxWarnings = 0
+        ignoreFailures = false
+    }
+
+    spotless {
+        java {
+            googleJavaFormat('1.22.0')
+            removeUnusedImports()
+            trimTrailingWhitespace()
+            endWithNewline()
+            target 'src/**/*.java'
+        }
+    }
+
+    tasks.named('check').configure {
+        dependsOn 'spotlessCheck'
+    }
+}
