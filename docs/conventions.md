@@ -544,7 +544,8 @@ RagAnswerResult
 
 ```json
 {
-  "success": true,
+  "isSuccess": true,
+  "code": 200,
   "data": {},
   "message": null
 }
@@ -554,11 +555,10 @@ RagAnswerResult
 
 ```json
 {
-  "success": false,
-  "error": {
-    "code": "CONVERSATION_NOT_FOUND",
-    "message": "대화를 찾을 수 없습니다."
-  }
+  "isSuccess": false,
+  "code": 404,
+  "errorCode": "CONVERSATION_NOT_FOUND",
+  "message": "대화를 찾을 수 없습니다."
 }
 ```
 

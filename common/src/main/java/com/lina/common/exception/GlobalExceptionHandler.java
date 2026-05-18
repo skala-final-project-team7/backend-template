@@ -40,7 +40,7 @@ public class GlobalExceptionHandler {
     ErrorCode errorCode = ex.getErrorCode();
     log.warn("BizException: code={}, message={}", errorCode.getCode(), ex.getMessage());
     return ResponseEntity.status(errorCode.getHttpStatus())
-        .body(ErrorResponse.of(errorCode.getCode(), ex.getMessage()));
+        .body(ErrorResponse.of(errorCode.getHttpStatus(), errorCode.getCode(), ex.getMessage()));
   }
 
   @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -53,14 +53,22 @@ public class GlobalExceptionHandler {
             .orElse(ErrorCode.INVALID_REQUEST.getDefaultMessage());
     log.warn("Validation failed: {}", message);
     return ResponseEntity.status(ErrorCode.INVALID_REQUEST.getHttpStatus())
-        .body(ErrorResponse.of(ErrorCode.INVALID_REQUEST.getCode(), message));
+        .body(
+            ErrorResponse.of(
+                ErrorCode.INVALID_REQUEST.getHttpStatus(),
+                ErrorCode.INVALID_REQUEST.getCode(),
+                message));
   }
 
   @ExceptionHandler(ConstraintViolationException.class)
   public ResponseEntity<ErrorResponse> handleConstraintViolation(ConstraintViolationException ex) {
     log.warn("ConstraintViolation: {}", ex.getMessage());
     return ResponseEntity.status(ErrorCode.INVALID_REQUEST.getHttpStatus())
-        .body(ErrorResponse.of(ErrorCode.INVALID_REQUEST.getCode(), ex.getMessage()));
+        .body(
+            ErrorResponse.of(
+                ErrorCode.INVALID_REQUEST.getHttpStatus(),
+                ErrorCode.INVALID_REQUEST.getCode(),
+                ex.getMessage()));
   }
 
   @ExceptionHandler(AccessDeniedException.class)
@@ -69,7 +77,9 @@ public class GlobalExceptionHandler {
     return ResponseEntity.status(ErrorCode.FORBIDDEN.getHttpStatus())
         .body(
             ErrorResponse.of(
-                ErrorCode.FORBIDDEN.getCode(), ErrorCode.FORBIDDEN.getDefaultMessage()));
+                ErrorCode.FORBIDDEN.getHttpStatus(),
+                ErrorCode.FORBIDDEN.getCode(),
+                ErrorCode.FORBIDDEN.getDefaultMessage()));
   }
 
   @ExceptionHandler(AuthenticationException.class)
@@ -78,7 +88,9 @@ public class GlobalExceptionHandler {
     return ResponseEntity.status(ErrorCode.UNAUTHORIZED.getHttpStatus())
         .body(
             ErrorResponse.of(
-                ErrorCode.UNAUTHORIZED.getCode(), ErrorCode.UNAUTHORIZED.getDefaultMessage()));
+                ErrorCode.UNAUTHORIZED.getHttpStatus(),
+                ErrorCode.UNAUTHORIZED.getCode(),
+                ErrorCode.UNAUTHORIZED.getDefaultMessage()));
   }
 
   @ExceptionHandler(Exception.class)
@@ -87,7 +99,9 @@ public class GlobalExceptionHandler {
     return ResponseEntity.status(ErrorCode.INTERNAL_ERROR.getHttpStatus())
         .body(
             ErrorResponse.of(
-                ErrorCode.INTERNAL_ERROR.getCode(), ErrorCode.INTERNAL_ERROR.getDefaultMessage()));
+                ErrorCode.INTERNAL_ERROR.getHttpStatus(),
+                ErrorCode.INTERNAL_ERROR.getCode(),
+                ErrorCode.INTERNAL_ERROR.getDefaultMessage()));
   }
 
   private static String formatFieldError(FieldError fieldError) {

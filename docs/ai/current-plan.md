@@ -2,6 +2,7 @@
 
 > 현재 진행 중인 Backend 작업 계획. 세션 간 인수인계용 (`docs/ai/workflow.md` §6.3).
 > 1단계 완료 후 2단계 계획을 이어 작성한다.
+> 2026-05-15: 중간발표 대비로 2단계(BFF Server) ↔ 3단계(Authorization Server) 순서 변경.
 
 ---
 
@@ -10,8 +11,8 @@
 | 단계 | 범위 | 상태 |
 |---|---|---|
 | 1단계 | 프로젝트 초기 셋업 (패키지 구조, 설정, 공통 예외/응답) | ✅ 완료 (2026-05-15) |
-| 2단계 | Authorization Server (Confluence OAuth 2.0, JWT 발급) | 미착수 |
-| 3단계 | BFF Server 핵심 API (대화, RAG 호출, SSE 중계) | 미착수 |
+| 2단계 | BFF Server 핵심 API (대화, RAG 호출, SSE 중계) | 미착수 |
+| 3단계 | Authorization Server (Confluence OAuth 2.0, JWT 발급) | 미착수 |
 | 4단계 | 부가 API (피드백, 관리자 대시보드) | 미착수 |
 
 ---
@@ -209,21 +210,60 @@
 
 ## 다음 단계 예고
 
-### 2단계 — Authorization Server
-- Confluence OAuth 2.0 Authorization Code Flow 구현
-- Access/Refresh Token MySQL 암호화 저장
-- JWT 발급 (`user_id`, `groups` Claim)
-- Refresh Token 기반 자동 갱신
-- `backend/rules/auth.md` 참조
+> **순서 변경 (2026-05-15):** 중간발표를 위해 데모 가능한 BFF Server를 먼저 구현한다.
+> 기존 2단계(Authorization Server) ↔ 3단계(BFF Server) 순서를 맞바꿨다.
+> 아래 **§순서 변경 시 주의사항**의 JWT 계약 선고정 작업을 2단계 착수 전에 먼저 수행한다.
 
-### 3단계 — BFF Server 핵심 API
-- JWT 검증 필터
+### 2단계 — BFF Server 핵심 API
+- JWT 검증 필터 (auth-server가 발급할 JWT의 서명/만료/Claim 검증)
 - 대화 생성/조회 API
 - RAG Pipeline Client (HTTP)
 - SSE 스트리밍 중계 (`SseEmitter`)
-- `backend/rules/domains.md`, `backend/rules/rag-pipeline.md` 참조
+- 인증은 Test Security Config / `@WithMockUser` / 테스트 키페어로 발급한 테스트 JWT로 검증
+- `backend/rules/domains.md`, `backend/rules/rag-pipeline.md`, `backend/rules/auth.md` 참조
+
+### 3단계 — Authorization Server
+- Confluence OAuth 2.0 Authorization Code Flow 구현
+- Access/Refresh Token MySQL 암호화 저장
+- JWT 발급 (`user_id`, `groups` Claim) — 2단계에서 고정한 JWT 계약 준수
+- Refresh Token 기반 자동 갱신
+- `backend/rules/auth.md` 참조
 
 ### 4단계 — 부가 API
 - 피드백 저장/집계 API
 - 관리자 대시보드 API (인원/데이터/사용 추이/피드백)
 - `backend/rules/domains.md` §2, §4 참조
+
+---
+
+## 순서 변경 시 주의사항 (2 ↔ 3 swap)
+
+### 결론
+BFF Server를 Authorization Server보다 먼저 구현해도 **기술적으로 문제없다.**
+BFF의 핵심 기능(대화 CRUD, RAG 호출, SSE 중계)은 auth-server 런타임에 의존하지 않고,
+인증 부분만 테스트용 JWT로 검증하면 독립적으로 개발·테스트가 가능하다.
+
+### 단, 선행 조건 1개 — "JWT 계약 선고정"
+BFF의 JWT 검증 필터와 auth-server의 JWT 발급기는 **동일한 JWT 계약**을 공유해야 한다.
+이를 2단계 착수 전에 먼저 확정하지 않으면, 3단계에서 auth-server가 다른 형식으로 발급해
+BFF 검증 로직을 재작성해야 하는 재작업 리스크가 생긴다.
+
+2단계 착수 전 다음을 먼저 고정한다 (산출물: `docs/api-spec.md` 인증 섹션 초안):
+
+- 서명 알고리즘 (예: RS256) 및 키 형식 (공개키/개인키 PEM)
+- 필수 Claim: `user_id`, `groups`, `iss`, `exp`, `iat` (`backend/rules/auth.md` §2)
+- 토큰 전달 방식: HttpOnly Cookie (`backend/rules/auth.md` §3 — Body 금지)
+- (선택) `common` 모듈에 JWT Claim DTO를 두어 2·3단계가 공유
+
+### 잔여 리스크와 완화책
+
+| 리스크 | 영향 | 완화책 |
+|---|---|---|
+| 실제 Confluence OAuth → JWT → BFF E2E 흐름 검증이 3단계로 지연 | 통합 버그 발견이 늦어짐 | JWT 계약을 코드(공유 DTO)로 고정 + 계약 기반 테스트를 2단계에 작성 |
+| BFF가 가정한 JWT 형식과 auth-server 구현 불일치 | 재작업 | 위 "JWT 계약 선고정" 산출물을 단일 기준으로 사용 |
+| 테스트용 인증 우회 코드가 production에 유입 | 보안 결함 | `backend/rules/auth.md` §3 — production 코드에 인증 분기 추가 금지. Test Security Config / `@WithMockUser`만 사용 |
+| 실제 ACL(`groups`) 데이터 부재로 RAG 호출 ACL 검증 미흡 | 데모 시 권한 필터 미검증 | 테스트 JWT에 대표 `groups` 값을 넣어 ACL 전달 경로까지 검증 |
+
+### 중간발표 관점 이점
+대화 생성 → RAG 호출 → SSE 스트리밍 답변은 시연 가치가 높다.
+auth-server(로그인 화면 없는 토큰 발급 서버)보다 데모 임팩트가 크므로 순서 변경이 합리적이다.

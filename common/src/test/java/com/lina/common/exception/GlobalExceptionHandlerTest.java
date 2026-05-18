@@ -23,9 +23,10 @@ class GlobalExceptionHandlerTest {
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     assertThat(response.getBody()).isNotNull();
-    assertThat(response.getBody().success()).isFalse();
-    assertThat(response.getBody().error().code()).isEqualTo("RESOURCE_NOT_FOUND");
-    assertThat(response.getBody().error().message()).isEqualTo("대화를 찾을 수 없습니다.");
+    assertThat(response.getBody().isSuccess()).isFalse();
+    assertThat(response.getBody().code()).isEqualTo(404);
+    assertThat(response.getBody().errorCode()).isEqualTo("RESOURCE_NOT_FOUND");
+    assertThat(response.getBody().message()).isEqualTo("대화를 찾을 수 없습니다.");
   }
 
   @Test
@@ -36,7 +37,8 @@ class GlobalExceptionHandlerTest {
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     assertThat(response.getBody()).isNotNull();
-    assertThat(response.getBody().error().code()).isEqualTo("INVALID_REQUEST");
+    assertThat(response.getBody().code()).isEqualTo(400);
+    assertThat(response.getBody().errorCode()).isEqualTo("INVALID_REQUEST");
   }
 
   @Test
@@ -47,8 +49,9 @@ class GlobalExceptionHandlerTest {
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     assertThat(response.getBody()).isNotNull();
-    assertThat(response.getBody().error().code()).isEqualTo("FORBIDDEN");
-    assertThat(response.getBody().error().message()).doesNotContain("internal detail");
+    assertThat(response.getBody().code()).isEqualTo(403);
+    assertThat(response.getBody().errorCode()).isEqualTo("FORBIDDEN");
+    assertThat(response.getBody().message()).doesNotContain("internal detail");
   }
 
   @Test
@@ -62,8 +65,9 @@ class GlobalExceptionHandlerTest {
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     assertThat(response.getBody()).isNotNull();
-    assertThat(response.getBody().error().code()).isEqualTo("UNAUTHORIZED");
-    assertThat(response.getBody().error().message()).doesNotContain("token signature");
+    assertThat(response.getBody().code()).isEqualTo(401);
+    assertThat(response.getBody().errorCode()).isEqualTo("UNAUTHORIZED");
+    assertThat(response.getBody().message()).doesNotContain("token signature");
   }
 
   @Test
@@ -74,7 +78,8 @@ class GlobalExceptionHandlerTest {
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
     assertThat(response.getBody()).isNotNull();
-    assertThat(response.getBody().error().code()).isEqualTo("INTERNAL_ERROR");
-    assertThat(response.getBody().error().message()).doesNotContain("DB connection refused");
+    assertThat(response.getBody().code()).isEqualTo(500);
+    assertThat(response.getBody().errorCode()).isEqualTo("INTERNAL_ERROR");
+    assertThat(response.getBody().message()).doesNotContain("DB connection refused");
   }
 }

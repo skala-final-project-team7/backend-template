@@ -43,5 +43,5 @@ ML Pipeline의 응답을 프론트엔드로 중계할 때 SSE(Server-Sent Events
 
 - 반환 타입은 `SseEmitter`를 사용한다.
 - SSE 연결 타임아웃을 설정한다 (기본 60초).
-- SSE 이벤트 타입을 구분한다: `answer`(답변 토큰), `citation`(인용 출처), `verification`(검증 결과), `done`(완료), `error`(오류).
+- SSE 이벤트 타입을 구분한다: `token`(답변 토큰), `sources`(인용 출처), `verification`(검증 결과), `done`(완료), `error`(ML 서버 오류).
 - 연결 실패, ML Pipeline 타임아웃 시 적절한 에러 이벤트를 전송하고 연결을 정리한다.
