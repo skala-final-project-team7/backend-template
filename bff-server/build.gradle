@@ -1,6 +1,13 @@
+// =====================================================================
+// bff-server — 실행 모듈 (API 단일 진입점 / Gateway)
+//   - 역할: 라우팅, JWT 검증, RAG Pipeline 호출, SSE 중계
+//   - Spring MVC + Virtual Threads (WebFlux/Mono/Flux 사용 금지)
+// =====================================================================
+
 apply plugin: 'org.springframework.boot'
 apply plugin: 'io.spring.dependency-management'
 
+// gateway-mvc 등 Spring Cloud 산출물 버전을 BOM 으로 정렬 (버전은 root 에서 고정)
 dependencyManagement {
     imports {
         mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
@@ -8,17 +15,35 @@ dependencyManagement {
 }
 
 dependencies {
+    // 공통 응답/예외 라이브러리 (api 로 노출된 spring-web 등 전이됨)
     implementation project(':common')
 
     implementation 'org.springframework.boot:spring-boot-starter-web'
-    implementation 'org.springframework.boot:spring-boot-starter-validation'
-    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    // Servlet 기반 Gateway (WebFlux 대신 MVC — Virtual Threads 조합 유지)
     implementation 'org.springframework.cloud:spring-cloud-starter-gateway-mvc'
 
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    // /actuator/prometheus 노출용 (런타임에만 필요)
+    runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+
+    // BFF/Gateway 단에서 JWT Resource Server 방식으로 토큰 검증할 경우 사용
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+
+    // 컴파일 시에만 필요, 산출물에는 미포함
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+}
+
+// 실행 모듈: 부팅 가능한 fat jar 생성, 일반 jar 는 불필요하므로 비활성
+tasks.named('bootJar') {
+    enabled = true
 }
 
 tasks.named('jar') {

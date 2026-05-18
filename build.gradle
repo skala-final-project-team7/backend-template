@@ -1,11 +1,20 @@
+// =====================================================================
+// Root 빌드 스크립트 (Gradle 멀티모듈)
+//   - 모듈: common(라이브러리), bff-server / auth-server(실행 모듈)
+//   - 공통 설정(toolchain, lint, format)은 subprojects 블록에서 일괄 적용
+// =====================================================================
+
 plugins {
     id 'java'
+    // 실행 모듈에서만 적용하므로 root 에서는 apply false (버전만 고정).
+    // common 은 라이브러리라 spring-boot/bootJar 가 필요 없음.
     id 'org.springframework.boot' version '3.3.5' apply false
     id 'io.spring.dependency-management' version '1.1.6' apply false
     id 'com.diffplug.spotless' version '6.25.0' apply false
 }
 
 ext {
+    // Spring Boot 3.3.x 와 호환되는 Spring Cloud BOM (bff-server 의 gateway-mvc 가 사용)
     set('springCloudVersion', '2023.0.3')
 }
 
@@ -18,6 +27,7 @@ allprojects {
     }
 }
 
+// 모든 하위 모듈 공통 설정 (모듈별 build.gradle 에서 중복 정의하지 않기 위함)
 subprojects {
     apply plugin: 'java'
     apply plugin: 'checkstyle'
@@ -38,6 +48,7 @@ subprojects {
         useJUnitPlatform()
     }
 
+    // 경고 1개라도 있으면 빌드 실패 — 품질 게이트를 느슨하게 두지 않기 위함
     checkstyle {
         toolVersion = '10.18.2'
         configFile = rootProject.file('config/checkstyle/checkstyle.xml')
@@ -55,6 +66,7 @@ subprojects {
         }
     }
 
+    // ./gradlew check 시 포맷 위반도 함께 검출되도록 spotlessCheck 연결
     tasks.named('check').configure {
         dependsOn 'spotlessCheck'
     }

@@ -1,24 +1,44 @@
+// =====================================================================
+// auth-server — 실행 모듈 (인증/인가 서버)
+//   - 역할: Confluence OAuth 2.0 로그인, 토큰 교환, JWT 발급
+//   - bff-server 와 동일 JWT 계약을 공유 (검증은 bff, 발급은 auth)
+// =====================================================================
+
 apply plugin: 'org.springframework.boot'
 apply plugin: 'io.spring.dependency-management'
 
 dependencies {
+    // 공통 응답/예외 라이브러리
     implementation project(':common')
 
     implementation 'org.springframework.boot:spring-boot-starter-web'
-    implementation 'org.springframework.boot:spring-boot-starter-security'
-    implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
-    implementation 'org.springframework.boot:spring-boot-starter-validation'
-    implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    // Confluence 와 OAuth 2.0 Authorization Code Flow 수행 (Client 역할)
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
+
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    // /actuator/prometheus 노출용 (런타임에만 필요)
+    runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+
+    // 자체 JWT 발급/서명 — api 만 컴파일 노출, impl/jackson 은 런타임 구현체
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
 
+    // 컴파일 시에만 필요, 산출물에는 미포함
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.security:spring-security-test'
+}
+
+// 실행 모듈: 부팅 가능한 fat jar 생성, 일반 jar 는 불필요하므로 비활성
+tasks.named('bootJar') {
+    enabled = true
 }
 
 tasks.named('jar') {
