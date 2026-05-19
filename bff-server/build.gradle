@@ -24,6 +24,10 @@ dependencies {
 
     implementation 'org.springframework.boot:spring-boot-starter-validation'
 
+    // 대화/메시지/피드백 영속 (MySQL). JDBC 드라이버는 런타임에만 필요
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    runtimeOnly 'com.mysql:mysql-connector-j'
+
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     // /actuator/prometheus 노출용 (런타임에만 필요)
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
@@ -39,6 +43,10 @@ dependencies {
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.security:spring-security-test'
+    // DataJpaTest 용 인메모리 DB
+    testRuntimeOnly 'com.h2database:h2'
+    // ML Pipeline SSE 응답 모킹 (Feature 5에서 사용, 의존성은 본 Feature에서 선반영)
+    testImplementation 'org.wiremock:wiremock-standalone:3.9.2'
 }
 
 // 실행 모듈: 부팅 가능한 fat jar 생성, 일반 jar 는 불필요하므로 비활성
