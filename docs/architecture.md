@@ -34,8 +34,8 @@
 | AI Agent | 질의 분석, 라우팅, 답변 생성, 답변 검증 등 Agent Workflow |
 | Ingestion Worker | Confluence 문서 수집 |
 | Sync Worker | 변경 문서 감지 및 델타 업데이트 |
-| MySQL | 사용자, 대화, 피드백 등 정형 데이터 저장 |
-| MongoDB | 원본 문서, 파싱 결과, Chunk 메타데이터 저장 |
+| MySQL | 사용자, OAuth 토큰, 권한(ACL), 관리자 등 인증/인가 정형 데이터 저장 (3단계에서 사용) |
+| MongoDB | 대화/메시지/피드백 등 BFF 도메인 데이터와 원본 문서·청크 등 RAG 파이프라인 데이터 저장 |
 | Vector DB | Embedding Vector 저장 및 유사도 검색 |
 | RabbitMQ | 비동기 작업 큐 |
 
@@ -141,33 +141,37 @@ sequenceDiagram
 
 ### 6.1 MySQL
 
-MySQL은 정형 데이터 저장에 사용한다.
+MySQL은 인증/인가 관련 정형 데이터 저장에 사용한다. 3단계(Authorization Server 도입) 이후 사용하며, 2단계에서는 사용하지 않는다.
 
 저장 대상:
 
-- 사용자 계정
-- OAuth 인증 정보
-- 조직/권한 관계
-- 대화방
-- 메시지
-- 피드백
+- 사용자 계정 (`users`)
+- OAuth Access/Refresh Token (암호화 저장, `user_tokens`)
+- 사용자 스페이스 접근 권한 (`user_space_acl`)
+- 관리자 (`admins`)
 - 서비스 설정
 
 ---
 
 ### 6.2 MongoDB
 
-MongoDB는 문서 중심 데이터를 저장한다.
+MongoDB는 BFF 도메인 데이터와 RAG 파이프라인 데이터를 함께 저장한다. BFF Server는 도메인 컬렉션은 CRUD 가능, RAG 파이프라인 컬렉션은 조회만 수행한다(쓰기는 Ingestion/Sync Worker 책임).
 
 저장 대상:
 
-- Confluence 원본 문서
-- 파싱 결과
-- Chunk 데이터
-- 문서 메타데이터
-- 수집 작업 상태
-- 동기화 로그
-- 실패 로그
+- **BFF 도메인 (BFF CRUD)**
+  - 대화방 (`conversations`)
+  - 메시지 (`messages`, 인용 출처 `sources`는 문서 내장 배열)
+  - 피드백 (`feedbacks`)
+- **RAG 파이프라인 데이터 (BFF 읽기 전용, Worker 쓰기)**
+  - Confluence 원본 문서 (`raw_pages`, `raw_attachments`, `attachment_texts`)
+  - Chunk 데이터 (`chunked_units`)
+  - 수집 작업 상태 (`import_jobs`)
+  - 동기화 로그 (`sync_logs`)
+- **RAG 파이프라인 전용 (BFF 접근 없음)**
+  - 추론 로그 (`inference_logs`)
+  - 감사 로그 (`audit_logs`)
+  - QCA 데이터셋 (`qca_dataset`)
 
 ---
 

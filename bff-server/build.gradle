@@ -12,6 +12,11 @@ dependencyManagement {
     imports {
         mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
     }
+    dependencies {
+        // 임베디드 MongoDB(flapdoodle 4.22)가 commons-compress 1.27+ API 를 요구하므로
+        // Spring Boot 3.3.5 BOM 의 기본값(1.26.x)을 override
+        dependency 'org.apache.commons:commons-compress:1.27.1'
+    }
 }
 
 dependencies {
@@ -24,9 +29,8 @@ dependencies {
 
     implementation 'org.springframework.boot:spring-boot-starter-validation'
 
-    // 대화/메시지/피드백 영속 (MySQL). JDBC 드라이버는 런타임에만 필요
-    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-    runtimeOnly 'com.mysql:mysql-connector-j'
+    // 대화/메시지/피드백 영속 (MongoDB). MySQL/JPA 는 3단계의 users/tokens/ACL 도입 시 추가
+    implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
 
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     // /actuator/prometheus 노출용 (런타임에만 필요)
@@ -43,8 +47,8 @@ dependencies {
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.security:spring-security-test'
-    // DataJpaTest 용 인메모리 DB
-    testRuntimeOnly 'com.h2database:h2'
+    // @DataMongoTest 용 임베디드 MongoDB (Spring Boot 3.x / Spring 6 호환 모듈)
+    testImplementation 'de.flapdoodle.embed:de.flapdoodle.embed.mongo.spring30x:4.22.0'
     // ML Pipeline SSE 응답 모킹 (Feature 5에서 사용, 의존성은 본 Feature에서 선반영)
     testImplementation 'org.wiremock:wiremock-standalone:3.9.2'
 }

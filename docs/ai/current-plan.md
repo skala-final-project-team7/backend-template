@@ -236,7 +236,7 @@
 | 챗봇 질의 (SSE 중계) | POST | `/api/conversations/{conversationId}/chat` |
 | 피드백 등록 | POST | `/api/messages/{messageId}/feedback` |
 
-제외 (명시적): JWT 검증/OAuth(3단계), 관리자 대시보드 API(4단계), `/api/admin/ingest`(4단계), MongoDB 접근, RabbitMQ 발행.
+제외 (명시적): JWT 검증/OAuth(3단계), 관리자 대시보드 API(4단계), `/api/admin/ingest`(4단계), MongoDB RAG 파이프라인 데이터(`raw_pages`/`chunked_units` 등) 쓰기, RabbitMQ 발행.
 
 ## 인증 부재 처리 방침 (중요)
 
@@ -268,15 +268,15 @@
 ### 신규 — 테스트 (`bff-server/src/test/java/com/lina/bff/` 하위)
 - `chat/service/ConversationServiceTest.java`, `chat/service/ChatServiceTest.java`
 - `chat/controller/ConversationControllerTest.java`, `chat/controller/ChatControllerTest.java` (MockMvc)
-- `chat/repository/ConversationRepositoryTest.java`, `chat/repository/MessageRepositoryTest.java` (DataJpaTest, H2)
+- `chat/repository/ConversationRepositoryTest.java`, `chat/repository/MessageRepositoryTest.java` (DataMongoTest, 임베디드 MongoDB)
 - `rag/client/RagClientTest.java` (WireMock — SSE 응답 모킹)
 - `feedback/service/FeedbackServiceTest.java`, `feedback/controller/FeedbackControllerTest.java`
 
 ### 변경 — 설정/빌드
-- `bff-server/build.gradle` — `spring-boot-starter-data-jpa`, `mysql-connector-j`(runtimeOnly) 추가, 테스트에 `com.h2database:h2`, WireMock 추가
-- `bff-server/src/main/resources/application.yml` — `spring.datasource`/`spring.jpa` 기본값(환경변수 참조), `lina.demo.*` 추가
-- `bff-server/src/main/resources/application-local.yml` — 로컬 MySQL 접속 기본값(평문 secret 금지, `${...}` 참조)
-- `bff-server/src/test/resources/application-test.yml` (신규) — H2, JPA `ddl-auto: create-drop`
+- `bff-server/build.gradle` — `spring-boot-starter-data-mongodb` 추가, 테스트에 `de.flapdoodle.embed.mongo.spring30x`(임베디드 MongoDB), WireMock 추가
+- `bff-server/src/main/resources/application.yml` — `spring.data.mongodb.uri`/`database`/`auto-index-creation`(환경변수 참조), `lina.demo.*` 추가
+- `bff-server/src/main/resources/application-local.yml` — 로컬 MongoDB 접속 기본값(평문 secret 금지, `${...}` 참조)
+- `bff-server/src/test/resources/application-test.yml` (신규) — 임베디드 MongoDB 7.x, `auto-index-creation: true`
 
 ### 문서
 - `docs/db-schema.md` — 신규 작성 (필수)
@@ -291,24 +291,24 @@
 - `auth-server` 모듈 전체
 - `bff-server`의 `user/`, `admin/`, `security/` 패키지 (3·4단계 담당 영역)
 
-## DB 스키마 설계 (MySQL)
+## DB 스키마 설계 (MongoDB)
 
-`docs/conventions.md` §11 (snake_case, 복수형 테이블, FK 문서화, 인덱스 목적 기록) 준수. `docs/db-schema.md`에 ERD/DDL/인덱스 목적을 작성한다.
+`docs/conventions.md` §11 (snake/camel 일관, 인덱스 목적 기록) 준수. `docs/db-schema.md`에 컬렉션 정의/샘플 문서/인덱스 목적을 작성한다.
 
-| 테이블 | 핵심 컬럼 | 비고 |
+| 컬렉션 | 핵심 필드 | 비고 |
 |---|---|---|
-| `conversations` | `conversation_id`(PK, UUID), `user_id`, `title`, `created_at`, `updated_at`, `last_message_at`, `deleted_at`(soft delete) | `user_id`는 2단계에서 고정 데모 사용자 |
-| `messages` | `message_id`(PK, UUID), `conversation_id`(FK), `role`(user/assistant), `content`, `confidence_score`(nullable), `verification_result`(nullable), `created_at` | 질문·답변 모두 저장 (`domains.md` §1) |
-| `message_sources` | `source_id`(PK), `message_id`(FK), `title`, `page_id`, `space_id`, `space_name`, `url`, `source_updated_at`, `relevance_score` | assistant 메시지의 인용 출처 (`domains.md` §1) |
-| `feedbacks` | `feedback_id`(PK, UUID), `message_id`(FK), `rating`(like/dislike), `comment`(nullable), `created_at` | 메시지 단위 피드백. QCA 연결은 `message_id`→assistant→직전 user 메시지로 추적 (`domains.md` §2) |
+| `conversations` | `_id`(=`conversationId` UUID), `userId`, `title`, `createdAt`, `updatedAt`, `lastMessageAt`, `deletedAt`(soft delete) | `userId`는 2단계에서 고정 데모 사용자 |
+| `messages` | `_id`(=`messageId` UUID), `conversationId`, `role`(USER/ASSISTANT), `content`, `sources[]`(내장 배열), `confidenceScore`(nullable), `verificationResult`(nullable), `createdAt`, `deletedAt` | 질문·답변 모두 저장. 인용 출처는 별도 컬렉션 없이 `sources` 내장 (`domains.md` §1) |
+| `feedbacks` | `_id`(=`feedbackId` UUID), `messageId`(UNIQUE), `rating`(LIKE/DISLIKE), `comment`(nullable), `createdAt` | 메시지 단위 피드백. QCA 연결은 `messageId`→assistant→직전 user 메시지로 추적 (`domains.md` §2) |
+
+> MySQL 기반 4테이블 설계(`message_sources` 별도 컬렉션 포함)는 2026-05-20 자로 폐기. MySQL 은 3단계의 `users`/`user_tokens`/`user_space_acl`/`admins` 도입 시 재도입한다.
 
 인덱스 (목적 함께 기록):
-- `idx_conversations_user_last_msg (user_id, last_message_at DESC, deleted_at)` — 대화 목록 페이징 조회
-- `idx_messages_conversation_created (conversation_id, created_at ASC)` — 메시지 이력 멀티턴 복원
-- `idx_message_sources_message (message_id)` — 메시지별 출처 fetch
-- `uniq_feedbacks_message (message_id)` — 메시지당 피드백 1건 (재등록 시 정책: **확정 필요** — 아래 위험 요소 참조)
+- `idx_conversations_user_active_recent { userId:1, deletedAt:1, lastMessageAt:-1 }` — 사용자별 활성 대화 최신순 페이징
+- `idx_messages_conversation_active_created { conversationId:1, deletedAt:1, createdAt:1 }` — 메시지 이력 멀티턴 복원
+- `uniq_feedbacks_message { messageId:1 } UNIQUE` — 메시지당 피드백 1건 강제 (재등록은 동일 문서 upsert)
 
-> 설계 결정 후보(문서에 명시): 대화/메시지 삭제는 soft delete(`deleted_at`)로 처리해 피드백·QCA 데이터를 보존한다. 하드 삭제가 요구되면 변경.
+> 설계 결정(확정): 대화/메시지 삭제는 soft delete(`deletedAt`)로 처리해 피드백·QCA 데이터를 보존한다.
 
 ## 구현 Feature 및 체크리스트
 
@@ -326,17 +326,17 @@
 - `chat/repository/{ConversationRepositoryTest,MessageRepositoryTest}.java`
 
 #### 체크리스트
-- [x] `docs/db-schema.md` 작성: `conversations`/`messages`/`message_sources`/`feedbacks` DDL, FK 관계, 인덱스 목적, soft delete·피드백 upsert 결정 명시
-- [x] `build.gradle`에 `spring-boot-starter-data-jpa`, `mysql-connector-j`(runtimeOnly), test `com.h2database:h2`·WireMock 추가
-- [x] `application.yml`에 `spring.datasource`/`spring.jpa` 환경변수 참조 + `lina.demo.*` 추가 (평문 secret 미포함)
-- [x] `application-test.yml`: H2, `ddl-auto: create-drop`
-- [x] Entity 4종 작성 — `deleted_at` soft delete, `content` `@Lob`(MySQL LONGTEXT), 표준 주석 블록
-- [x] Repository 작성 — 모든 조회에 `deleted_at IS NULL` 필터, 데이터 액세스 주석(`conventions.md` §5.6)
-- [x] `@DataJpaTest`(H2): 목록 페이징 정렬, 메시지 이력 정렬, soft delete 필터, 피드백 unique 검증
+- [x] `docs/db-schema.md` 작성: `conversations`/`messages`(`sources` 내장)/`feedbacks` 컬렉션 정의, 인덱스 목적, soft delete·피드백 upsert 결정, 저장소 역할 분리 명시
+- [x] `build.gradle`에 `spring-boot-starter-data-mongodb` 추가, 테스트에 임베디드 MongoDB(`de.flapdoodle.embed.mongo.spring30x`)·WireMock 추가
+- [x] `application.yml`에 `spring.data.mongodb.uri`/`database`/`auto-index-creation` 환경변수 참조 + `lina.demo.*` 추가 (평문 secret 미포함)
+- [x] `application-test.yml`: 임베디드 MongoDB 7.x, `auto-index-creation: true`
+- [x] Document 3종 + 내장 값 객체 1종 작성 — `deletedAt` soft delete, `messages.sources[]` 내장 배열, 표준 주석 블록
+- [x] Repository 작성 — 모든 조회에 `deletedAt == null` 필터, 데이터 액세스 주석(`conventions.md` §5.6)
+- [x] `@DataMongoTest`(임베디드 MongoDB): 목록 페이징 정렬, 메시지 이력 정렬, soft delete 필터, 피드백 unique 검증, `sources` 내장 라운드트립 검증
 
-> Feature 1 완료 (2026-05-19). `./scripts/verify.sh` 통과 (7 tests, 0 failures).
-> 부수 변경: JPA 도입으로 `BffApplicationTests` 프로파일을 `local`→`test`(H2)로 변경 (스모크 테스트가 실 MySQL에 의존하지 않도록, `backend/rules/testing.md` 준수).
-> 인덱스 컬럼 순서: 초안의 `(user_id, last_message_at, deleted_at)`→`(user_id, deleted_at, last_message_at)`로 필터 선택도 개선 (목적 동일, `docs/db-schema.md` §3.1에 근거 기록).
+> Feature 1 완료 (2026-05-19). 저장소 전환 재완료 (2026-05-20). `./scripts/verify.sh` 통과 — 직전 실행 결과를 본 항목 갱신 시 함께 기록.
+> 부수 변경 (2026-05-19): JPA 도입으로 `BffApplicationTests` 프로파일을 `local`→`test`로 변경 (스모크 테스트가 실 DB 에 의존하지 않도록).
+> 저장소 전환 (2026-05-20): 사용자 요청으로 MySQL/JPA → MongoDB/Spring Data MongoDB 로 재구현. `message_sources` 별도 컬렉션을 제거하고 `messages.sources` 내장 배열로 단순화. `backend/CLAUDE.md` §2.2/§6/§7 의 MongoDB 규칙을 BFF 영역에 한정해 CRUD 허용으로 갱신.
 
 ---
 
@@ -432,7 +432,7 @@
 - [ ] `./gradlew :bff-server:bootRun` 기동 확인
 - [ ] `docs/api-spec.md` §1 명세와 구현 정합성 확인 (불일치 시에만 수정)
 - [ ] `git diff` 기준 의도하지 않은 변경 / 담당 외 파일 변경 없음
-- [ ] `backend/CLAUDE.md` §7 체크리스트 점검 (`Mono`/`Flux` 미사용, MongoDB 쓰기 없음, ACL 누락 경로 없음, 평문 secret 없음)
+- [ ] `backend/CLAUDE.md` §7 체크리스트 점검 (`Mono`/`Flux` 미사용, MongoDB의 RAG 파이프라인 데이터 쓰기 없음, ACL 누락 경로 없음, 평문 secret 없음)
 
 ## 위험 요소
 
@@ -442,8 +442,9 @@
 | WebFlux/`Mono`/`Flux`로 SSE 구현 유혹 | `backend/CLAUDE.md` §2.1/§6 위반 | `SseEmitter` + 동기 `RestClient`/`HttpClient` InputStream 파싱만 사용, 리뷰 체크 |
 | ML 서버 미가동 상태의 데모 | 시연 실패 | RAG Client 타임아웃·`error` 이벤트 경로를 우선 견고화, WireMock 시나리오로 사전 검증 |
 | 피드백 갱신 시 응답 코드 혼동 (201 vs 200) | 프론트 처리 영향 | 확정: 메시지당 1건 unique + upsert. 신규 201 / 갱신 200으로 명확히 분기, `api-spec.md` 정합성 확인 |
-| soft delete 누락 필터로 삭제 데이터 노출 | 데이터 정합성 | 확정: soft delete. 모든 조회 쿼리에 `deleted_at IS NULL` 강제, Repository 테스트로 검증 |
-| `messages.content` 길이 (긴 답변) | 저장 실패 | `TEXT`/`LONGTEXT` 사용, `db-schema.md`에 명시 |
+| soft delete 누락 필터로 삭제 데이터 노출 | 데이터 정합성 | 확정: soft delete. 모든 조회 쿼리에 `deletedAt == null` 강제, Repository 테스트로 검증 |
+| `messages.content` 길이 (긴 답변) | 저장 실패 | MongoDB 문서당 16MB 한도 내 String 사용. 한도 초과 시 분할 저장 정책 필요 — `db-schema.md` §3.2 노트 참조 |
+| MongoDB 운영 인스턴스 미가동 상태에서 부팅 | 컨텍스트 실패 가능 | 드라이버는 lazy 연결 — 부팅은 성공, 첫 호출 시 오류 발생. 헬스체크와 readiness 분리 |
 
 ## 문서 수정 필요 여부
 
@@ -456,15 +457,16 @@
 
 - [ ] 위 7개 외부 API가 `docs/api-spec.md` §1 명세대로 동작
 - [ ] `docs/db-schema.md` 작성 완료, Entity와 일치
-- [ ] Service Unit / Controller MockMvc / Repository DataJpaTest / RagClient WireMock 테스트 통과
-- [ ] `Mono`/`Flux`/WebFlux 미사용, MongoDB 쓰기 없음, ACL 누락 호출 경로 없음 (`backend/CLAUDE.md` §7 체크리스트)
+- [ ] Service Unit / Controller MockMvc / Repository DataMongoTest / RagClient WireMock 테스트 통과
+- [ ] `Mono`/`Flux`/WebFlux 미사용, MongoDB RAG 파이프라인 데이터(`raw_pages`/`chunked_units` 등) 쓰기 없음, ACL 누락 호출 경로 없음 (`backend/CLAUDE.md` §7 체크리스트)
 - [ ] 인증 우회가 `DemoSecurityConfig`/`CurrentUserProvider`로 격리됨, production 분기 미추가
 - [ ] 평문 secret 미포함 (DB 비밀번호 등 `${...}` 환경변수 참조)
 - [ ] `./scripts/format.sh`/`lint.sh`/`test.sh`/`verify.sh` 통과
 - [ ] `git diff` 기준 의도하지 않은 변경 없음, 담당 외 파일 미수정
 
-## 확정된 결정 (2026-05-19, 사용자 확인 완료)
+## 확정된 결정 (사용자 확인 완료)
 
-1. **피드백 재등록**: 메시지당 1건 — `uniq_feedbacks_message (message_id)` 적용. 같은 메시지 재요청 시 기존 row 갱신(upsert). 응답 코드는 신규 201 / 갱신 200으로 구분.
-2. **삭제 방식**: soft delete 확정. `conversations.deleted_at`, `messages.deleted_at` 사용. 조회는 모두 `deleted_at IS NULL` 필터. 연결 피드백·QCA 데이터 보존.
-3. **데모 사용자/스페이스**: 설정값으로 분리하고 기본값은 임의 지정. `application.yml`에 `lina.demo.fixed-user-id: user-001`, `lina.demo.fixed-groups: Cloud-Control-Center`, `lina.demo.fixed-space-key: CPC` (모두 `${...}` 환경변수 오버라이드 가능). `db-schema.md`/구현에 위 결정 명시.
+1. **피드백 재등록** (2026-05-19): 메시지당 1건 — `uniq_feedbacks_message (messageId)` 유니크 인덱스. 같은 메시지 재요청 시 동일 문서 upsert. 응답 코드는 신규 201 / 갱신 200으로 구분.
+2. **삭제 방식** (2026-05-19): soft delete 확정. `conversations.deletedAt`, `messages.deletedAt` 사용. 조회는 모두 `deletedAt == null` 필터. 연결 피드백·QCA 데이터 보존.
+3. **데모 사용자/스페이스** (2026-05-19): 설정값으로 분리하고 기본값은 임의 지정. `application.yml`에 `lina.demo.fixed-user-id: user-001`, `lina.demo.fixed-groups: Cloud-Control-Center`, `lina.demo.fixed-space-key: CPC` (모두 `${...}` 환경변수 오버라이드 가능). `db-schema.md`/구현에 위 결정 명시.
+4. **데이터 저장소** (2026-05-20): 2단계 BFF 도메인(대화·메시지·피드백) 영속은 **MongoDB** 사용. `message_sources`는 별도 컬렉션 없이 `messages.sources` 내장 배열로 단순화. MySQL 은 2단계에서는 미사용이며 3단계의 `users`/`user_tokens`/`user_space_acl`/`admins` 도입 시 재도입. `backend/CLAUDE.md` §2.2/§6/§7 의 MongoDB 쓰기 금지 규칙은 **RAG 파이프라인 데이터**(`raw_pages`/`raw_attachments`/`attachment_texts`/`chunked_units`/`import_jobs`/`sync_logs`)에 한정하도록 함께 갱신.

@@ -1,190 +1,180 @@
 # DB Schema
 
-> 기준: 2단계 BFF Server 핵심 API (중간발표, 인증 없음)
-> 저장소: MySQL 8.x (정형 데이터). MongoDB/Vector DB는 본 문서 범위 밖.
-> 규칙: `docs/conventions.md` §11 (snake_case 컬럼, 복수형 테이블, FK·인덱스 목적 문서화).
+> 기준: 2단계 BFF Server 핵심 API (중간발표, 인증 없음).
+> 본 문서는 BFF Server 가 직접 다루는 컬렉션의 구조·인덱스·결정 사항을 정의한다.
+> 규칙: `docs/conventions.md` §11 (snake_case 컬럼/필드, 인덱스 목적 문서화).
 
 ---
 
-## 1. 적용 결정 (확정)
+## 1. 저장소 역할 분리
+
+| 저장소 | 컬렉션/테이블 | 접근 | 비고 |
+|---|---|---|---|
+| **MongoDB (BFF CRUD)** | `conversations`, `messages`(`sources` 내장), `feedbacks` | BFF 가 읽기/쓰기 | 본 문서 §3 의 정의 대상 |
+| **MongoDB (BFF 읽기 전용)** | `raw_pages`, `raw_attachments`, `attachment_texts`, `chunked_units`, `import_jobs`, `sync_logs` | BFF 는 조회만, 쓰기는 Ingestion/Sync Worker | RAG 파이프라인 입력 데이터 |
+| **MongoDB (RAG 파이프라인 전용)** | `inference_logs`, `audit_logs`, `qca_dataset` | RAG 파이프라인이 관리. BFF 접근 없음 | 본 문서 범위 밖 |
+| **MySQL (3단계)** | `users`, `user_tokens`, `user_space_acl`, `admins` | Authorization Server 가 관리 | 2단계에서는 미사용. 3단계 도입 시 별도 정의 |
+
+`backend/CLAUDE.md` §2.2 / §6 의 MongoDB 쓰기 금지 규칙은 위 두 번째 행(RAG 파이프라인 데이터)에 한정된다. 대화/피드백 컬렉션은 BFF 가 정상 CRUD 한다.
+
+---
+
+## 2. 적용 결정 (확정)
 
 | 항목 | 결정 | 근거 |
 |---|---|---|
-| 삭제 방식 | **soft delete** — `conversations.deleted_at`, `messages.deleted_at`. 모든 조회는 `deleted_at IS NULL` 필터 | 연결된 피드백·QCA 데이터 보존 (`current-plan.md` 확정된 결정 #2) |
-| 피드백 재등록 | **메시지당 1건** — `uniq_feedbacks_message (message_id)`. 같은 메시지 재요청 시 기존 row upsert (신규 201 / 갱신 200) | `current-plan.md` 확정된 결정 #1 |
-| ID 전략 | 대화/메시지/피드백 PK는 애플리케이션 생성 UUID(`VARCHAR(36)`). `message_sources`만 `BIGINT AUTO_INCREMENT` | UUID는 분산 생성·노출 안전, 출처는 종속 엔티티라 surrogate key로 충분 |
-| 시간 컬럼 | `DATETIME(6)` UTC 저장. JPA는 `java.time.Instant`로 매핑 (API ISO-8601 `Z` 표기와 일치) | `docs/api-spec.md` 응답 포맷 |
-| 답변 본문 | `messages.content`는 `LONGTEXT` (긴 RAG 답변 저장) | `current-plan.md` 위험 요소 — 길이 초과 방지 |
+| 저장소 | **MongoDB 7.x** — `conversations`, `messages`, `feedbacks` 세 컬렉션. `message_sources`는 별도 컬렉션이 아니라 `messages.sources` 내장 배열로 단순화 | `current-plan.md` 확정된 결정 #4 (2026-05-20) |
+| 삭제 방식 | **soft delete** — `conversations.deletedAt`, `messages.deletedAt`. 모든 조회는 `deletedAt == null` 필터 | 연결된 피드백·QCA 데이터 보존 |
+| 피드백 재등록 | **메시지당 1건** — `uniq_feedbacks_message` 유니크 인덱스. 동일 메시지 재요청 시 동일 문서 upsert (Feature 6 에서 신규 201 / 갱신 200) | `current-plan.md` 확정된 결정 #1 |
+| ID 전략 | `conversationId`/`messageId`/`feedbackId` 는 애플리케이션 생성 UUID(`String`)를 `_id` 로 사용 | 분산 생성·노출 안전. ObjectId 대신 UUID 로 외부 노출도 안전한 형식 |
+| 시간 필드 | UTC `Date`(BSON). JPA 시절과 동일하게 `java.time.Instant` 로 매핑 (API ISO-8601 `Z` 표기와 일치) | `docs/api-spec.md` 응답 포맷 |
 
-> **JPA 매핑 노트:** FK는 본 문서의 MySQL DDL에서 제약으로 강제한다. Entity는 계층 단순성과 Virtual Thread 친화성을 위해 `@ManyToOne` 연관 대신 FK 컬럼(`conversation_id`, `message_id`)을 평문 컬럼으로 보유한다. 따라서 테스트용 H2(엔티티 기반 `ddl-auto`)에는 FK 제약이 생성되지 않으며, 운영 MySQL 스키마는 본 DDL을 단일 기준으로 한다.
-
----
-
-## 2. ERD
-
-```mermaid
-erDiagram
-    conversations ||--o{ messages : "conversation_id"
-    messages ||--o{ message_sources : "message_id"
-    messages ||--o| feedbacks : "message_id (unique)"
-
-    conversations {
-        varchar(36) conversation_id PK
-        varchar(64) user_id
-        varchar(255) title
-        datetime created_at
-        datetime updated_at
-        datetime last_message_at
-        datetime deleted_at "nullable (soft delete)"
-    }
-    messages {
-        varchar(36) message_id PK
-        varchar(36) conversation_id FK
-        varchar(16) role "USER | ASSISTANT"
-        longtext content
-        double confidence_score "nullable"
-        varchar(32) verification_result "nullable"
-        datetime created_at
-        datetime deleted_at "nullable (soft delete)"
-    }
-    message_sources {
-        bigint source_id PK
-        varchar(36) message_id FK
-        varchar(512) title
-        varchar(64) page_id
-        varchar(64) space_id "nullable"
-        varchar(255) space_name "nullable"
-        varchar(1024) url "nullable"
-        datetime source_updated_at "nullable"
-        double relevance_score "nullable"
-    }
-    feedbacks {
-        varchar(36) feedback_id PK
-        varchar(36) message_id FK "unique"
-        varchar(16) rating "LIKE | DISLIKE"
-        varchar(1000) comment "nullable"
-        datetime created_at
-    }
-```
+> **인덱스 생성:** Spring Data MongoDB 의 `spring.data.mongodb.auto-index-creation: true` 로 엔티티의 `@Indexed`/`@CompoundIndex` 가 부팅 시 자동 생성된다. 운영 환경에서는 동일 정의의 인덱스 생성 스크립트를 미리 적용해도 무방하다(중복 정의는 idempotent).
 
 ---
 
-## 3. 테이블 DDL (MySQL 8.x)
+## 3. 컬렉션 정의
 
 ### 3.1 `conversations`
 
-```sql
-CREATE TABLE conversations (
-    conversation_id  VARCHAR(36)  NOT NULL,
-    user_id          VARCHAR(64)  NOT NULL,
-    title            VARCHAR(255) NOT NULL,
-    created_at       DATETIME(6)  NOT NULL,
-    updated_at       DATETIME(6)  NOT NULL,
-    last_message_at  DATETIME(6)  NOT NULL,
-    deleted_at       DATETIME(6)  NULL,
-    PRIMARY KEY (conversation_id),
-    KEY idx_conversations_user_active_recent (user_id, deleted_at, last_message_at)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+| 필드 | 타입 | 필수 | 비고 |
+|---|---|---|---|
+| `_id` (`conversationId`) | String (UUID) | ✅ | 애플리케이션 생성 UUID |
+| `userId` | String | ✅ | 2단계는 고정 데모 사용자 |
+| `title` | String | ✅ | |
+| `createdAt` | Date (UTC) | ✅ | |
+| `updatedAt` | Date (UTC) | ✅ | |
+| `lastMessageAt` | Date (UTC) | ✅ | 목록 정렬 키 |
+| `deletedAt` | Date (UTC) | — | nullable. soft delete |
+
+샘플 문서:
+
+```json
+{
+  "_id": "conv-uuid-001",
+  "userId": "user-001",
+  "title": "S3 권한 오류 트러블슈팅",
+  "createdAt": { "$date": "2026-05-06T10:00:00Z" },
+  "updatedAt": { "$date": "2026-05-06T10:10:00Z" },
+  "lastMessageAt": { "$date": "2026-05-06T10:05:00Z" },
+  "deletedAt": null
+}
 ```
 
-- `idx_conversations_user_active_recent (user_id, deleted_at, last_message_at)`
-  - 목적: 대화 목록 조회 `WHERE user_id = ? AND deleted_at IS NULL ORDER BY last_message_at DESC` 페이징 지원.
-  - 컬럼 순서 근거: 등치 조건(`user_id`) → soft delete 필터(`deleted_at`) → 정렬 키(`last_message_at`) 순으로 두어 필터 선택도와 정렬 활용을 함께 만족. (`current-plan.md` 초안의 `(user_id, last_message_at, deleted_at)`에서 필터 선택도 개선을 위해 컬럼 순서를 조정 — 목적 동일.)
-  - 호출 위치: `ConversationRepository.findByUserIdAndDeletedAtIsNullOrderByLastMessageAtDesc`.
+인덱스:
 
-### 3.2 `messages`
-
-```sql
-CREATE TABLE messages (
-    message_id           VARCHAR(36) NOT NULL,
-    conversation_id      VARCHAR(36) NOT NULL,
-    role                 VARCHAR(16) NOT NULL,
-    content              LONGTEXT    NOT NULL,
-    confidence_score     DOUBLE      NULL,
-    verification_result  VARCHAR(32) NULL,
-    created_at           DATETIME(6) NOT NULL,
-    deleted_at           DATETIME(6) NULL,
-    PRIMARY KEY (message_id),
-    KEY idx_messages_conversation_created (conversation_id, deleted_at, created_at),
-    CONSTRAINT fk_messages_conversation
-        FOREIGN KEY (conversation_id) REFERENCES conversations (conversation_id)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
-```
-
-- `role`: `USER` | `ASSISTANT` (애플리케이션 enum 문자열).
-- `verification_result`: `SUPPORTED` | `PARTIALLY_SUPPORTED` | `NOT_SUPPORTED` (assistant 메시지에만 존재, nullable).
-- `idx_messages_conversation_created (conversation_id, deleted_at, created_at)`
-  - 목적: 메시지 이력 조회 `WHERE conversation_id = ? AND deleted_at IS NULL ORDER BY created_at ASC` (멀티턴 복원).
-  - 호출 위치: `MessageRepository.findByConversationIdAndDeletedAtIsNullOrderByCreatedAtAsc`.
-- FK `fk_messages_conversation`: `messages.conversation_id` → `conversations.conversation_id`.
-
-### 3.3 `message_sources`
-
-```sql
-CREATE TABLE message_sources (
-    source_id          BIGINT       NOT NULL AUTO_INCREMENT,
-    message_id         VARCHAR(36)  NOT NULL,
-    title              VARCHAR(512) NOT NULL,
-    page_id            VARCHAR(64)  NOT NULL,
-    space_id           VARCHAR(64)  NULL,
-    space_name         VARCHAR(255) NULL,
-    url                VARCHAR(1024) NULL,
-    source_updated_at  DATETIME(6)  NULL,
-    relevance_score    DOUBLE       NULL,
-    PRIMARY KEY (source_id),
-    KEY idx_message_sources_message (message_id),
-    CONSTRAINT fk_message_sources_message
-        FOREIGN KEY (message_id) REFERENCES messages (message_id)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
-```
-
-- assistant 메시지의 인용 출처(페이지 제목/소속 스페이스/원본 링크/수정일/관련도). `docs/api-spec.md` §1-2 메시지 이력 응답의 `sources[]`와 매핑.
-- `idx_message_sources_message (message_id)`
-  - 목적: 메시지별 출처 묶음 조회. 호출 위치(예정): 메시지 이력 DTO 변환(Feature 4).
-- FK `fk_message_sources_message`: `message_sources.message_id` → `messages.message_id`.
-
-### 3.4 `feedbacks`
-
-```sql
-CREATE TABLE feedbacks (
-    feedback_id  VARCHAR(36)   NOT NULL,
-    message_id   VARCHAR(36)   NOT NULL,
-    rating       VARCHAR(16)   NOT NULL,
-    comment      VARCHAR(1000) NULL,
-    created_at   DATETIME(6)   NOT NULL,
-    PRIMARY KEY (feedback_id),
-    UNIQUE KEY uniq_feedbacks_message (message_id),
-    CONSTRAINT fk_feedbacks_message
-        FOREIGN KEY (message_id) REFERENCES messages (message_id)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
-```
-
-- `rating`: `LIKE` | `DISLIKE`.
-- `uniq_feedbacks_message (message_id)`
-  - 목적: 메시지당 피드백 1건 보장. 재등록은 동일 row upsert (Feature 6에서 신규 201 / 갱신 200 분기).
-  - QCA 연결: `message_id`(assistant 메시지) → `conversation_id` 기준 직전 `USER` 메시지로 질문 추적 (`backend/rules/domains.md` §2).
-- FK `fk_feedbacks_message`: `feedbacks.message_id` → `messages.message_id`.
+| 인덱스 | 정의 | 목적 |
+|---|---|---|
+| `idx_conversations_user_active_recent` | `{ userId: 1, deletedAt: 1, lastMessageAt: -1 }` | `findByUserIdAndDeletedAtIsNullOrderByLastMessageAtDesc` — 사용자별 활성 대화 최신순 페이징. 컬럼 순서 = 등치(`userId`) → 필터(`deletedAt`) → 정렬(`lastMessageAt`). |
 
 ---
 
-## 4. FK 관계 요약
+### 3.2 `messages`
 
-| 자식 테이블 | 컬럼 | 부모 테이블 | 제약명 |
+| 필드 | 타입 | 필수 | 비고 |
 |---|---|---|---|
-| `messages` | `conversation_id` | `conversations(conversation_id)` | `fk_messages_conversation` |
-| `message_sources` | `message_id` | `messages(message_id)` | `fk_message_sources_message` |
-| `feedbacks` | `message_id` | `messages(message_id)` | `fk_feedbacks_message` |
+| `_id` (`messageId`) | String (UUID) | ✅ | |
+| `conversationId` | String | ✅ | 부모 대화 식별자 (참조 키, FK 제약은 없음) |
+| `role` | String | ✅ | `USER` / `ASSISTANT` |
+| `content` | String | ✅ | 본문(길이 제한 없음. MongoDB 문서당 16MB 한도 내) |
+| `sources` | Array<Embedded> | — | assistant 메시지의 인용 출처. user 메시지는 빈 배열 |
+| `sources[].title` | String | — | 페이지 제목 |
+| `sources[].pageId` | String | — | Confluence page ID |
+| `sources[].spaceId` | String | — | |
+| `sources[].spaceName` | String | — | |
+| `sources[].url` | String | — | 원본 링크 |
+| `sources[].sourceUpdatedAt` | Date (UTC) | — | Confluence 페이지 최종 수정일 |
+| `sources[].relevanceScore` | Double | — | RAG 관련도 점수 |
+| `confidenceScore` | Double | — | RAG 답변 신뢰도. assistant 메시지에만 |
+| `verificationResult` | String | — | `SUPPORTED` / `PARTIALLY_SUPPORTED` / `NOT_SUPPORTED` |
+| `createdAt` | Date (UTC) | ✅ | |
+| `deletedAt` | Date (UTC) | — | nullable. soft delete |
+
+샘플 문서:
+
+```json
+{
+  "_id": "msg-uuid-002",
+  "conversationId": "conv-uuid-001",
+  "role": "ASSISTANT",
+  "content": "S3 권한 오류는 IAM 정책을 수정하여 해결했습니다...",
+  "sources": [
+    {
+      "title": "S3 트러블슈팅 가이드",
+      "pageId": "12345",
+      "spaceId": "98310",
+      "spaceName": "Cloud Control Center",
+      "url": "https://confluence.example.com/pages/12345",
+      "sourceUpdatedAt": { "$date": "2026-04-15T09:30:00Z" },
+      "relevanceScore": 0.92
+    }
+  ],
+  "confidenceScore": 0.85,
+  "verificationResult": "SUPPORTED",
+  "createdAt": { "$date": "2026-05-06T10:00:05Z" },
+  "deletedAt": null
+}
+```
+
+인덱스:
+
+| 인덱스 | 정의 | 목적 |
+|---|---|---|
+| `idx_messages_conversation_active_created` | `{ conversationId: 1, deletedAt: 1, createdAt: 1 }` | `findByConversationIdAndDeletedAtIsNullOrderByCreatedAtAsc` — 대화별 활성 메시지 시간순(멀티턴 복원). |
+
+> **내장 배열 결정:** 출처는 메시지와 함께만 의미를 가지며 메시지 단위로 같이 읽힌다. 별도 컬렉션 + 조인 대신 `sources` 내장이 1회 read 로 끝나 효율적이다. (조회 패턴: `docs/api-spec.md` §1-2 메시지 이력 응답에서 메시지와 함께 sources 를 반환)
+
+---
+
+### 3.3 `feedbacks`
+
+| 필드 | 타입 | 필수 | 비고 |
+|---|---|---|---|
+| `_id` (`feedbackId`) | String (UUID) | ✅ | |
+| `messageId` | String | ✅ | 대상 assistant 메시지 식별자. UNIQUE |
+| `rating` | String | ✅ | `LIKE` / `DISLIKE` |
+| `comment` | String | — | nullable |
+| `createdAt` | Date (UTC) | ✅ | |
+
+샘플 문서:
+
+```json
+{
+  "_id": "fb-uuid-001",
+  "messageId": "msg-uuid-002",
+  "rating": "LIKE",
+  "comment": "정확한 답변이었어요",
+  "createdAt": { "$date": "2026-05-06T10:06:00Z" }
+}
+```
+
+인덱스:
+
+| 인덱스 | 정의 | 목적 |
+|---|---|---|
+| `uniq_feedbacks_message` | `{ messageId: 1 }` UNIQUE | 메시지당 피드백 1건 보장. 재등록은 동일 문서 upsert (Feature 6). QCA 연결은 `messageId`(assistant) → `conversationId` 기준 직전 `USER` 메시지로 추적 (`backend/rules/domains.md` §2). |
+
+---
+
+## 4. 참조 관계 요약
+
+문서 간 참조는 FK 제약 없이 `*Id` 필드로 표현한다(MongoDB 는 FK 제약을 강제하지 않음). 무결성은 애플리케이션 계층에서 보장한다.
+
+| 자식 | 필드 | 부모 |
+|---|---|---|
+| `messages` | `conversationId` | `conversations._id` |
+| `messages[].sources` | (내장) | `messages` 내부 |
+| `feedbacks` | `messageId` | `messages._id` |
 
 ---
 
 ## 5. 인덱스 요약
 
-| 인덱스 | 테이블 | 컬럼 | 목적 |
+| 인덱스 | 컬렉션 | 정의 | 목적 |
 |---|---|---|---|
-| `idx_conversations_user_active_recent` | `conversations` | `(user_id, deleted_at, last_message_at)` | 사용자별 활성 대화 최신순 페이징 |
-| `idx_messages_conversation_created` | `messages` | `(conversation_id, deleted_at, created_at)` | 대화별 활성 메시지 시간순(멀티턴 복원) |
-| `idx_message_sources_message` | `message_sources` | `(message_id)` | 메시지별 출처 묶음 조회 |
-| `uniq_feedbacks_message` | `feedbacks` | `(message_id)` UNIQUE | 메시지당 피드백 1건 강제 |
+| `idx_conversations_user_active_recent` | `conversations` | `{ userId:1, deletedAt:1, lastMessageAt:-1 }` | 사용자별 활성 대화 최신순 페이징 |
+| `idx_messages_conversation_active_created` | `messages` | `{ conversationId:1, deletedAt:1, createdAt:1 }` | 대화별 활성 메시지 시간순(멀티턴 복원) |
+| `uniq_feedbacks_message` | `feedbacks` | `{ messageId:1 }` UNIQUE | 메시지당 피드백 1건 강제 |
 
 ---
 
@@ -192,4 +182,5 @@ CREATE TABLE feedbacks (
 
 | 날짜 | 변경 | 비고 |
 |---|---|---|
-| 2026-05-19 | 최초 작성 — 2단계 Feature 1. `conversations`/`messages`/`message_sources`/`feedbacks` 정의 | DB 신규 도입 |
+| 2026-05-19 | 최초 작성 — MySQL/JPA 기반 4테이블 정의 | DB 신규 도입 |
+| 2026-05-20 | 저장소 전환 — MongoDB 3컬렉션(`messages.sources` 내장)으로 재정의. MySQL 은 3단계의 `users`/`user_tokens`/`user_space_acl`/`admins` 도입 시 별도 정의 | `current-plan.md` 확정된 결정 #4 |

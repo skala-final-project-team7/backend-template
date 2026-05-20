@@ -6,28 +6,30 @@ import com.lina.bff.chat.entity.Conversation;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
+import org.springframework.boot.test.autoconfigure.data.mongo.DataMongoTest;
 import org.springframework.test.context.ActiveProfiles;
 
-@DataJpaTest
+@DataMongoTest
 @ActiveProfiles("test")
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 class ConversationRepositoryTest {
 
   @Autowired private ConversationRepository conversationRepository;
+
+  @BeforeEach
+  void clean() {
+    conversationRepository.deleteAll();
+  }
 
   private Conversation conversation(String userId, String title, Instant lastMessageAt) {
     return Conversation.builder().userId(userId).title(title).lastMessageAt(lastMessageAt).build();
   }
 
   @Test
-  @DisplayName("사용자별 활성 대화를 last_message_at 내림차순으로 페이징 조회한다")
+  @DisplayName("사용자별 활성 대화를 lastMessageAt 내림차순으로 페이징 조회한다")
   void shouldPageActiveConversationsByLastMessageAtDesc() {
     Instant base = Instant.now();
     conversationRepository.save(
@@ -36,9 +38,9 @@ class ConversationRepositoryTest {
     conversationRepository.save(conversation("user-001", "중간 대화", base.minus(1, ChronoUnit.HOURS)));
     conversationRepository.save(conversation("user-999", "다른 사용자", base));
 
-    Page<Conversation> firstPage =
+    var firstPage =
         conversationRepository.findByUserIdAndDeletedAtIsNullOrderByLastMessageAtDesc(
-            "user-001", PageRequest.of(0, 2));
+            "user-001", org.springframework.data.domain.PageRequest.of(0, 2));
 
     assertThat(firstPage.getTotalElements()).isEqualTo(3);
     assertThat(firstPage.getContent())
@@ -53,12 +55,12 @@ class ConversationRepositoryTest {
     Conversation deleted =
         conversationRepository.save(conversation("user-001", "삭제될 대화", Instant.now()));
     deleted.markDeleted();
-    conversationRepository.saveAndFlush(deleted);
+    conversationRepository.save(deleted);
 
     List<Conversation> active =
         conversationRepository
             .findByUserIdAndDeletedAtIsNullOrderByLastMessageAtDesc(
-                "user-001", PageRequest.of(0, 10))
+                "user-001", org.springframework.data.domain.PageRequest.of(0, 10))
             .getContent();
 
     assertThat(active).extracting(Conversation::getTitle).containsExactly("남는 대화");

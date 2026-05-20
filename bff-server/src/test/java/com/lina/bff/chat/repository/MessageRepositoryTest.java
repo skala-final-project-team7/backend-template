@@ -4,22 +4,27 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.lina.bff.chat.entity.Message;
 import com.lina.bff.chat.entity.MessageRole;
+import com.lina.bff.chat.entity.MessageSource;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.data.mongo.DataMongoTest;
 import org.springframework.test.context.ActiveProfiles;
 
-@DataJpaTest
+@DataMongoTest
 @ActiveProfiles("test")
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 class MessageRepositoryTest {
 
   @Autowired private MessageRepository messageRepository;
+
+  @BeforeEach
+  void clean() {
+    messageRepository.deleteAll();
+  }
 
   private Message message(
       String conversationId, MessageRole role, String content, Instant createdAt) {
@@ -32,7 +37,7 @@ class MessageRepositoryTest {
   }
 
   @Test
-  @DisplayName("대화별 활성 메시지를 created_at 오름차순(질문→답변)으로 조회한다")
+  @DisplayName("대화별 활성 메시지를 createdAt 오름차순(질문→답변)으로 조회한다")
   void shouldReturnMessageHistoryOrderedByCreatedAtAsc() {
     Instant base = Instant.now();
     messageRepository.save(
@@ -53,11 +58,45 @@ class MessageRepositoryTest {
     Message deleted =
         messageRepository.save(message("conv-1", MessageRole.ASSISTANT, "삭제될 답변", Instant.now()));
     deleted.markDeleted();
-    messageRepository.saveAndFlush(deleted);
+    messageRepository.save(deleted);
 
     List<Message> history =
         messageRepository.findByConversationIdAndDeletedAtIsNullOrderByCreatedAtAsc("conv-1");
 
     assertThat(history).extracting(Message::getContent).containsExactly("남는 질문");
+  }
+
+  @Test
+  @DisplayName("Message 의 sources 배열이 내장된 채로 저장·조회된다")
+  void shouldPersistSourcesAsEmbeddedArray() {
+    MessageSource source =
+        MessageSource.builder()
+            .title("S3 트러블슈팅 가이드")
+            .pageId("12345")
+            .spaceId("98310")
+            .spaceName("Cloud Control Center")
+            .url("https://confluence.example.com/pages/12345")
+            .relevanceScore(0.92)
+            .build();
+    Message saved =
+        messageRepository.save(
+            Message.builder()
+                .conversationId("conv-1")
+                .role(MessageRole.ASSISTANT)
+                .content("S3 권한 오류는 IAM 정책을 수정하여 해결합니다")
+                .sources(List.of(source))
+                .createdAt(Instant.now())
+                .build());
+
+    Message reloaded = messageRepository.findById(saved.getMessageId()).orElseThrow();
+
+    assertThat(reloaded.getSources())
+        .singleElement()
+        .satisfies(
+            s -> {
+              assertThat(s.getTitle()).isEqualTo("S3 트러블슈팅 가이드");
+              assertThat(s.getPageId()).isEqualTo("12345");
+              assertThat(s.getRelevanceScore()).isEqualTo(0.92);
+            });
   }
 }

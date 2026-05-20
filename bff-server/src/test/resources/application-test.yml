@@ -1,17 +1,16 @@
 spring:
-  datasource:
-    url: jdbc:h2:mem:lina;DB_CLOSE_DELAY=-1;MODE=LEGACY
-    driver-class-name: org.h2.Driver
-    username: sa
-    password: ""
-  jpa:
-    hibernate:
-      ddl-auto: create-drop
-    properties:
-      hibernate:
-        # base 의 MySQLDialect 를 테스트에서 H2 로 override
-        dialect: org.hibernate.dialect.H2Dialect
-    show-sql: false
+  data:
+    mongodb:
+      database: lina_test
+      auto-index-creation: true
+
+# @DataMongoTest 는 de.flapdoodle.embed.mongo.spring30x 가 클래스패스에 있을 때
+# 임베디드 MongoDB(랜덤 포트)를 자동 기동하고 spring.data.mongodb.uri 를 주입한다.
+de:
+  flapdoodle:
+    mongodb:
+      embedded:
+        version: 7.0.4
 
 logging:
   level:
