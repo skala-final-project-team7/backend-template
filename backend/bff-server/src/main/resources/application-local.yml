@@ -1,6 +1,12 @@
 server:
   port: 8080
 
+spring:
+  data:
+    mongodb:
+      uri: ${BFF_MONGODB_URI:mongodb://localhost:27017}
+      database: ${BFF_MONGODB_DATABASE:lina_local}
+
 logging:
   level:
     com.lina: DEBUG

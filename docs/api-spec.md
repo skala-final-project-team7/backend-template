@@ -548,3 +548,60 @@ BFF → Authorization Server 위임 구조 (기획서 v2.1.7 반영)
   }
 }
 ```
+
+## 4-3. Confluence 페이지 미리보기 (5주차 이후 — 인증 의존)
+
+> 출처 hover preview 및 Chat 메인 추천 문서 preview에 사용한다.
+> **선행 조건:** 3단계(Authorization Server)에서 OAuth Access Token이 MySQL에 암호화 저장된 이후에만 동작한다. 인증이 없는 중간발표(2단계) 범위에는 포함하지 않는다.
+
+| 항목 | 내용 |
+|------|------|
+| Method | `GET` |
+| URL | `/api/confluence/pages/preview` |
+| 설명 | 출처 문서의 Confluence 페이지 HTML 본문 + 메타데이터 조회 |
+
+**Query Parameter**
+| Key | Type | Required | Description |
+|-----|------|----------|-------------|
+| page_id | string | ✅ | Confluence page ID |
+
+**처리 방식**
+- Frontend는 출처 목록 문서 hover 시 `page_id`를 담아 BFF에 요청한다.
+- BFF는 서버에 저장된 OAuth 토큰으로 Confluence REST API를 호출한다.
+- BFF는 Confluence 응답의 `body.view.value` HTML 문자열을 `bodyViewValue`로 변환해 반환한다.
+- BFF는 Confluence 응답의 `space.name`, `ancestors[].title`, `title`을 조합해 `breadcrumbs`를 파생한다.
+- Frontend는 `bodyViewValue`를 DOMPurify로 sanitize한 뒤 `v-html`로 렌더링한다.
+- 원본 열기 아이콘 클릭 시 `pageUrl`을 새 탭에서 연다.
+
+> **TBD (3단계에서 결정):** 저장된 OAuth 토큰으로 Confluence를 호출하는 주체 — (a) BFF가 토큰을 사용해 직접 호출 vs (b) Authorization Server 프록시. `backend/CLAUDE.md` §6(BFF는 Confluence 토큰을 직접 교환하지 않는다) / `docs/architecture.md`와 함께 3단계 착수 시 확정하고 본 절을 갱신한다.
+
+**Response**
+```json
+{
+  "isSuccess": true,
+  "code": 200,
+  "message": "Confluence 페이지 미리보기 조회 성공",
+  "data": {
+    "pageId": "12345",
+    "title": "S3 트러블슈팅 가이드",
+    "spaceName": "Cloud Control Center",
+    "authorName": "Platform Team",
+    "updatedAt": "2026-04-15T09:30:00Z",
+    "breadcrumbs": ["Cloud Control Center", "AWS", "S3", "S3 트러블슈팅 가이드"],
+    "pageUrl": "https://confluence.example.com/pages/12345",
+    "bodyViewValue": "<h1>S3 트러블슈팅 가이드</h1><p>S3 권한 오류는...</p>"
+  }
+}
+```
+
+**Error Response**
+```json
+{
+  "isSuccess": false,
+  "code": 404,
+  "message": "Confluence 페이지 미리보기를 찾을 수 없습니다",
+  "data": null
+}
+```
+
+> **보안 주의:** BFF는 OAuth token을 Frontend에 노출하지 않는다. Frontend는 HTML 렌더링 전 반드시 sanitize한다.

@@ -6,6 +6,13 @@ spring:
   threads:
     virtual:
       enabled: true
+  data:
+    mongodb:
+      # 평문 secret 미포함 — URI 는 환경 변수/Secret 으로만 주입 (예: mongodb://user:pwd@host:27017)
+      uri: ${BFF_MONGODB_URI:mongodb://localhost:27017}
+      database: ${BFF_MONGODB_DATABASE:lina}
+      # 엔티티의 @Indexed / @CompoundIndex 를 부팅 시 자동 생성
+      auto-index-creation: true
 
 server:
   port: ${BFF_SERVER_PORT:8080}
@@ -43,3 +50,8 @@ lina:
   jwt:
     issuer: ${LINA_JWT_ISSUER:lina-auth-server}
     public-key: ${LINA_JWT_PUBLIC_KEY:}
+  # 중간발표(인증 없음) 한정 고정 데모 사용자/스페이스 — 3단계에서 JWT Claim 으로 대체
+  demo:
+    fixed-user-id: ${LINA_DEMO_USER_ID:user-001}
+    fixed-groups: ${LINA_DEMO_GROUPS:Cloud-Control-Center}
+    fixed-space-key: ${LINA_DEMO_SPACE_KEY:CPC}
