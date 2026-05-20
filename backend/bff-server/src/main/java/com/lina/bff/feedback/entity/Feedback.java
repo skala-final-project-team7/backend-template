@@ -35,13 +35,20 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Feedback {
 
+  /** 피드백 식별자. 애플리케이션이 생성한 UUID 문자열이며 MongoDB `_id`로 매핑된다. */
   @Id private String feedbackId;
 
+  /** 피드백 대상 assistant 메시지 식별자. UNIQUE 인덱스로 메시지당 1건만 허용된다. */
   @Indexed(unique = true, name = "uniq_feedbacks_message")
   private String messageId;
 
+  /** 사용자 평가(`LIKE` / `DISLIKE`). API 의 "like"/"dislike" 와 매핑된다. */
   private FeedbackRating rating;
+
+  /** 사용자 코멘트(선택). 부정 피드백 원인 분석에 활용되며 입력하지 않을 수 있다. */
   private String comment;
+
+  /** 피드백 생성 시각(UTC). upsert(갱신)되더라도 최초 생성 시각을 유지한다. */
   private Instant createdAt;
 
   @Builder

@@ -38,13 +38,25 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Conversation {
 
+  /** 대화방 식별자. 애플리케이션이 생성한 UUID 문자열이며 MongoDB `_id`로 매핑된다. */
   @Id private String conversationId;
 
+  /** 대화 소유자(사용자) 식별자. 2단계에서는 고정 데모 사용자, 3단계 이후 JWT Claim `user_id` 값. */
   private String userId;
+
+  /** 대화 제목. 생성 시 기본 제목으로 시작하며 사용자가 수정할 수 있다. */
   private String title;
+
+  /** 대화 생성 시각(UTC). 생성 후 변경하지 않는다. */
   private Instant createdAt;
+
+  /** 대화 메타데이터(제목 등) 최종 수정 시각(UTC). */
   private Instant updatedAt;
+
+  /** 가장 최근 메시지가 추가된 시각(UTC). 대화 목록 정렬 키로 사용된다. */
   private Instant lastMessageAt;
+
+  /** soft delete 시각(UTC). null 이면 활성 대화. 모든 조회는 `deletedAt == null` 필터 적용. */
   private Instant deletedAt;
 
   @Builder

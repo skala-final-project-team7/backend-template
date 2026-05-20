@@ -1,8 +1,10 @@
-# Current Plan
+# bff-server Current Plans
 
-> 현재 진행 중인 Backend 작업 계획. 세션 간 인수인계용 (`docs/ai/workflow.md` §6.3).
-> 1단계 완료 후 2단계 계획을 이어 작성한다.
+> `bff-server` 모듈의 현재 진행 중인 Plan. 세션 간 인수인계용 (`docs/ai/workflow.md` §6.3).
+> 모듈 전용 규칙은 `backend/bff-server/CLAUDE.md` 참조.
+> 3단계(Authorization Server) Plan 은 `backend/auth-server/current-plans.md` 로 분리.
 > 2026-05-15: 중간발표 대비로 2단계(BFF Server) ↔ 3단계(Authorization Server) 순서 변경.
+> 2026-05-20: 디렉토리 재정리 — `docs/ai/current-plan.md` → 본 파일로 이관.
 
 ---
 
@@ -10,9 +12,8 @@
 
 | 단계 | 범위 | 상태 |
 |---|---|---|
-| 1단계 | 프로젝트 초기 셋업 (패키지 구조, 설정, 공통 예외/응답) | ✅ 완료 (2026-05-15) |
-| 2단계 | BFF Server 핵심 API (대화 CRUD, RAG 호출 + SSE 중계, 메시지 이력, 피드백, DB 스키마) | 📝 Plan 작성 완료 (착수 전, 2026-05-19) |
-| 3단계 | Authorization Server (Confluence OAuth 2.0, JWT 발급) + BFF JWT 검증 필터 | 미착수 |
+| 1단계 | 프로젝트 초기 셋업 (패키지 구조, 설정, 공통 예외/응답) | ✅ 완료 (2026-05-15, `auth-server` 와 공동) |
+| 2단계 | BFF Server 핵심 API (대화 CRUD, RAG 호출 + SSE 중계, 메시지 이력, 피드백, DB 스키마) | 🚧 Feature 1 완료, Feature 2~ 미착수 |
 | 4단계 | 부가 API (관리자 대시보드) | 미착수 |
 
 > **2026-05-19 범위 조정:** 중간발표를 인증 없이 시연하기 위해 2단계에서 **JWT 검증 필터를 제외**하고 3단계로 이동한다. 대신 **피드백 API**를 4단계에서 2단계로 당긴다. 근거: 사용자 지시 + `docs/api-spec.md` 전제("중간 발표 시 인증 하드코딩, 로그인 제외"). 상세는 아래 **2단계** 섹션 참조.

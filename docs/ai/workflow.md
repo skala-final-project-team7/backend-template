@@ -277,7 +277,7 @@ Plan의 1단계만 먼저 구현해.
 - 실패한 테스트와 원인
 - 다음 작업에서 이어갈 내용
 
-필요 시 `docs/ai/current-plan.md`와 `docs/ai/working-log.md`에 기록한다.
+필요 시 `backend/<module>/current-plans.md`(모듈별 진행 중 Plan)와 `docs/ai/working-log.md`(전 모듈 누적 작업 로그)에 기록한다.
 
 ---
 

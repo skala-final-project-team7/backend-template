@@ -29,12 +29,25 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class MessageSource {
 
+  /** 인용된 Confluence 페이지 제목. Frontend 출처 카드에 그대로 표시된다. */
   private String title;
+
+  /** Confluence 페이지 ID. 원본 링크 생성 및 미리보기 API 호출 시 키로 사용된다. */
   private String pageId;
+
+  /** 페이지가 속한 Confluence 스페이스 ID. ACL/필터링 메타데이터. */
   private String spaceId;
+
+  /** 페이지가 속한 스페이스의 표시명. Frontend 출처 카드에 표시된다. */
   private String spaceName;
+
+  /** Confluence 원본 페이지 URL. Frontend 의 "원본 열기" 액션 대상. */
   private String url;
+
+  /** Confluence 페이지 최종 수정 시각(UTC). 출처 신선도 표시에 사용된다. */
   private Instant sourceUpdatedAt;
+
+  /** RAG 검색이 산출한 관련도 점수(0.0 ~ 1.0). 출처 정렬·필터링에 사용된다. */
   private Double relevanceScore;
 
   @Builder

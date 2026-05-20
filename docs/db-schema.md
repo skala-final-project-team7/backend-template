@@ -23,9 +23,9 @@
 
 | 항목 | 결정 | 근거 |
 |---|---|---|
-| 저장소 | **MongoDB 7.x** — `conversations`, `messages`, `feedbacks` 세 컬렉션. `message_sources`는 별도 컬렉션이 아니라 `messages.sources` 내장 배열로 단순화 | `current-plan.md` 확정된 결정 #4 (2026-05-20) |
+| 저장소 | **MongoDB 7.x** — `conversations`, `messages`, `feedbacks` 세 컬렉션. `message_sources`는 별도 컬렉션이 아니라 `messages.sources` 내장 배열로 단순화 | `backend/bff-server/current-plans.md` 확정된 결정 #4 (2026-05-20) |
 | 삭제 방식 | **soft delete** — `conversations.deletedAt`, `messages.deletedAt`. 모든 조회는 `deletedAt == null` 필터 | 연결된 피드백·QCA 데이터 보존 |
-| 피드백 재등록 | **메시지당 1건** — `uniq_feedbacks_message` 유니크 인덱스. 동일 메시지 재요청 시 동일 문서 upsert (Feature 6 에서 신규 201 / 갱신 200) | `current-plan.md` 확정된 결정 #1 |
+| 피드백 재등록 | **메시지당 1건** — `uniq_feedbacks_message` 유니크 인덱스. 동일 메시지 재요청 시 동일 문서 upsert (Feature 6 에서 신규 201 / 갱신 200) | `backend/bff-server/current-plans.md` 확정된 결정 #1 |
 | ID 전략 | `conversationId`/`messageId`/`feedbackId` 는 애플리케이션 생성 UUID(`String`)를 `_id` 로 사용 | 분산 생성·노출 안전. ObjectId 대신 UUID 로 외부 노출도 안전한 형식 |
 | 시간 필드 | UTC `Date`(BSON). JPA 시절과 동일하게 `java.time.Instant` 로 매핑 (API ISO-8601 `Z` 표기와 일치) | `docs/api-spec.md` 응답 포맷 |
 
@@ -183,4 +183,4 @@
 | 날짜 | 변경 | 비고 |
 |---|---|---|
 | 2026-05-19 | 최초 작성 — MySQL/JPA 기반 4테이블 정의 | DB 신규 도입 |
-| 2026-05-20 | 저장소 전환 — MongoDB 3컬렉션(`messages.sources` 내장)으로 재정의. MySQL 은 3단계의 `users`/`user_tokens`/`user_space_acl`/`admins` 도입 시 별도 정의 | `current-plan.md` 확정된 결정 #4 |
+| 2026-05-20 | 저장소 전환 — MongoDB 3컬렉션(`messages.sources` 내장)으로 재정의. MySQL 은 3단계의 `users`/`user_tokens`/`user_space_acl`/`admins` 도입 시 별도 정의 | `backend/bff-server/current-plans.md` 확정된 결정 #4 |
