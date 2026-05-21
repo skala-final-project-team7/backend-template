@@ -347,11 +347,13 @@
 - `config/CurrentUserProvider.java`, `config/FixedDemoUserProvider.java`, `config/DemoSecurityConfig.java`, `config/RagClientConfig.java`
 
 #### 체크리스트
-- [ ] `CurrentUserProvider` 인터페이스 (`userId`, `groups` 반환) — 3단계 JWT 구현체로 교체 가능한 경계
-- [ ] `FixedDemoUserProvider` — `lina.demo.fixed-user-id`/`fixed-groups`/`fixed-space-key` 설정값 주입
-- [ ] `DemoSecurityConfig` — 전 경로 `permitAll` + CSRF 비활성, 표준 주석 + `NOTE:` 마커("중간발표 한정, 3단계에서 JWT 검증으로 대체")
-- [ ] `RagClientConfig` — 동기 `RestClient` 빈 (타임아웃 `lina.rag.*` 설정 주입, `Mono`/`Flux` 미사용)
-- [ ] production Controller/Service에 인증 비활성화 조건 분기 미추가 확인
+- [x] `CurrentUserProvider` 인터페이스 (`userId`, `groups` 반환) — 3단계 JWT 구현체로 교체 가능한 경계
+- [x] `FixedDemoUserProvider` — `lina.demo.fixed-user-id`/`fixed-groups`/`fixed-space-key` 설정값 주입
+- [x] `DemoSecurityConfig` — 전 경로 `permitAll` + CSRF 비활성, 표준 주석 + `NOTE:` 마커("중간발표 한정, 3단계에서 JWT 검증으로 대체")
+- [x] `RagClientConfig` — 동기 `RestClient` 빈 (타임아웃 `lina.rag.*` 설정 주입, `Mono`/`Flux` 미사용)
+- [x] production Controller/Service에 인증 비활성화 조건 분기 미추가 확인
+
+> Feature 2 완료 (2026-05-21). `CurrentUserProvider` / `FixedDemoUserProvider` / `DemoSecurityConfig` / `RagClientConfig` 4종을 `bff-server/config/` 에 추가. `./scripts/verify.sh` 통과. Controller/Service 미수정 (Feature 3 이후 도입 시 본 추상화 사용).
 
 ---
 
