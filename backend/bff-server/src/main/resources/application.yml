@@ -45,6 +45,16 @@ lina:
     request-timeout-ms: ${ML_PIPELINE_TIMEOUT_MS:30000}
     sse-timeout-ms: ${ML_PIPELINE_SSE_TIMEOUT_MS:60000}
     history-turns: ${ML_PIPELINE_HISTORY_TURNS:10}
+  # AI Agent 서버 — RAG Pipeline 워크플로 진입점. 기본값은 lina.rag.base-url 과 동일하지만
+  # 별도 라우팅(예: agent-workflow 트래픽 분리)이 필요해질 때를 위해 키를 분리해 둔다.
+  ai-agent:
+    base-url: ${AI_AGENT_BASE_URL:${ML_PIPELINE_BASE_URL:}}
+    request-timeout-ms: ${AI_AGENT_TIMEOUT_MS:30000}
+  # Confluence OAuth 토큰/cloudId 전달 (3단계 auth-server PoC 도입)
+  # 평문 secret 미포함 — 모두 환경 변수 주입. PoC 모드에서만 사용하며 확장 단계에서 connectionId 로 대체된다.
+  confluence:
+    access-token: ${CONFLUENCE_ACCESS_TOKEN:}
+    cloud-id: ${CONFLUENCE_CLOUD_ID:}
   auth-server:
     base-url: ${AUTH_SERVER_BASE_URL:}
   jwt:

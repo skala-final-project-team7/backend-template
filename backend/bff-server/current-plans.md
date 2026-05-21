@@ -369,7 +369,8 @@
 - [ ] `DELETE /api/conversations/{conversationId}` — soft delete, `data: null` 반환
 - [ ] 존재하지 않거나 삭제된 대화 접근 시 `RESOURCE_NOT_FOUND`(404)
 - [ ] 필수 필드 누락/형식 오류는 공통 `ErrorResponse`(400)
-- [ ] Service Unit Test (Repository Mock) + Controller MockMvc(정상/검증실패/404, Wrapper 구조 검증)
+- [ ] **DTO 변환 시 모든 timestamp 를 KST(`Asia/Seoul`) `ZonedDateTime` 으로 직렬화** (확정된 결정 #6)
+- [ ] Service Unit Test (Repository Mock) + Controller MockMvc(정상/검증실패/404, Wrapper 구조·KST 표기 검증)
 
 ---
 
@@ -384,7 +385,8 @@
 - [ ] Entity→DTO 변환 (Entity 직접 반환 금지), 인용 출처·`confidenceScore`·`verificationResult` 포함
 - [ ] `created_at ASC` 순서 보장, 삭제 메시지 제외
 - [ ] 없는/삭제 대화 시 404
-- [ ] Service Unit Test + Controller MockMvc (출처 포함 응답 구조 검증)
+- [ ] **`createdAt`·출처 `updatedAt` 모두 KST(`+09:00`) 표기로 직렬화** (확정된 결정 #6)
+- [ ] Service Unit Test + Controller MockMvc (출처 포함 응답 구조·KST 표기 검증)
 
 ---
 
@@ -397,13 +399,18 @@
 - `rag/client/RagClientTest.java`, `chat/service/ChatServiceTest.java`, `chat/controller/ChatControllerTest.java`
 
 #### 체크리스트
-- [ ] `RagClient` — `rag/client/`에서만 ML 호출, 동기 `RestClient`/`HttpClient` InputStream으로 SSE 파싱 (`Mono`/`Flux`/WebFlux 미사용)
-- [ ] ML 호출 시 질문·대화이력(최근 N턴, `lina.rag.history-turns` 기본 10)·ACL(`userId`/`groups`)·`conversationId` 전달 (ACL 누락 경로 없음)
+- [ ] `RagClient` — `rag/client/`에서만 ML/AI Agent 호출, 동기 `RestClient`/`HttpClient` InputStream으로 SSE 파싱 (`Mono`/`Flux`/WebFlux 미사용)
+- [ ] ML 호출 시 다음을 전달 (ACL/PoC 토큰 누락 경로 없음):
+  - 질문(`question`), `conversationId`, 대화이력(최근 N턴 — `lina.rag.history-turns` 기본 10)
+  - ACL: `userId`/`groups` (2단계 데모 고정값)
+  - 검색 컨텍스트: `spaceKey` (`lina.demo.fixed-space-key`)
+  - **PoC 토큰 전달 (확정된 결정 #5)**: `accessToken`, `cloudId` — `lina.confluence.*` 설정값 또는 auth-server `/api/auth/confluence-token` 조회 결과 (3단계 도입 후)
 - [ ] `POST /api/conversations/{conversationId}/chat` — `SseEmitter` 반환, Wrapper 미적용
-- [ ] `token`/`sources`/`verification`/`done` 이벤트 순서대로 중계
+- [ ] `token`/`sources`/`verification`/`done` 이벤트 순서대로 중계 (출처 `updatedAt`·`done` 페이로드 timestamp 는 **KST 직렬화**)
 - [ ] user 메시지 선저장 → `done` 수신 시 assistant 메시지+출처+검증 저장 → `last_message_at` 갱신
 - [ ] ML 실패/타임아웃 시 재시도 없이 `error` 이벤트 전송 후 연결 정리 (SSE 타임아웃 `lina.rag.sse-timeout-ms`)
-- [ ] WireMock 테스트: SSE 정상 스트림 / ML 5xx / 타임아웃 → `error` 이벤트·연결 정리 (실제 ML 호출 금지)
+- [ ] **PoC 토큰 보안**: `accessToken` 을 로그·tracing 본문에 노출하지 않음 (마스킹), RabbitMQ 페이로드 미포함, actuator 민감 endpoint 비노출 — `docs/api-spec.md` §2-1 보안 주의 준수
+- [ ] WireMock 테스트: SSE 정상 스트림 / ML 5xx / 타임아웃 → `error` 이벤트·연결 정리, 요청 body 에 `accessToken`/`cloudId` 포함 검증 (실제 ML 호출 금지)
 - [ ] `ChatService` Service Unit Test (RagClient·Repository Mock), Controller 이벤트 시퀀스 검증
 
 ---
@@ -419,6 +426,7 @@
 - [ ] `POST /api/messages/{messageId}/feedback` — `rating`(like/dislike) 검증, `comment` 선택
 - [ ] 메시지당 1건 unique + upsert: 신규 201 / 갱신 200
 - [ ] 잘못된 `rating`/필수 누락 시 400, 없는 메시지 시 404
+- [ ] **`createdAt` 응답을 KST(`+09:00`)로 직렬화** (확정된 결정 #6)
 - [ ] Service Unit Test (신규/갱신 분기) + Controller MockMvc
 
 ---
@@ -471,3 +479,5 @@
 2. **삭제 방식** (2026-05-19): soft delete 확정. `conversations.deletedAt`, `messages.deletedAt` 사용. 조회는 모두 `deletedAt == null` 필터. 연결 피드백·QCA 데이터 보존.
 3. **데모 사용자/스페이스** (2026-05-19): 설정값으로 분리하고 기본값은 임의 지정. `application.yml`에 `lina.demo.fixed-user-id: user-001`, `lina.demo.fixed-groups: Cloud-Control-Center`, `lina.demo.fixed-space-key: CPC` (모두 `${...}` 환경변수 오버라이드 가능). `db-schema.md`/구현에 위 결정 명시.
 4. **데이터 저장소** (2026-05-20): 2단계 BFF 도메인(대화·메시지·피드백) 영속은 **MongoDB** 사용. `message_sources`는 별도 컬렉션 없이 `messages.sources` 내장 배열로 단순화. MySQL 은 2단계에서는 미사용이며 3단계의 `users`/`user_tokens`/`user_space_acl`/`admins` 도입 시 재도입. `backend/CLAUDE.md` §2.2/§6/§7 의 MongoDB 쓰기 금지 규칙은 **RAG 파이프라인 데이터**(`raw_pages`/`raw_attachments`/`attachment_texts`/`chunked_units`/`import_jobs`/`sync_logs`)에 한정하도록 함께 갱신.
+5. **Confluence OAuth 토큰/cloudId 전달 모드** (2026-05-21): **PoC 모드 우선** — 3단계 auth-server 에서 access_token + cloudId 를 발급/조회한 뒤 BFF 가 ML 서버 요청 본문에 평문으로 첨부해 전달 (`docs/api-spec.md` §2-1). 운영 보호장치(로그·tracing 본문 마스킹, actuator 민감 endpoint 차단, NetworkPolicy, RabbitMQ payload 미포함) 동반 필수. **확장 모드(connectionId)** 는 후속 별도 라운드에서 RAG client 키 교체만으로 전환 가능하도록 인터페이스 경계 유지. 관련 설정 키: `lina.confluence.*`, `lina.ai-agent.*`. 상세는 `backend/auth-server/current-plans.md` §3단계 Feature A~D 참조.
+6. **시간 표기 정책** (2026-05-21): 저장은 UTC(`Instant`), **응답 JSON 의 모든 timestamp 는 KST(`+09:00`)** 로 절대 전환 — `instant.atZone(ZoneId.of("Asia/Seoul"))`. Feature 3/4/5(`done` 페이로드 및 출처)/6 응답 DTO 변환에 동일 정책 적용. `docs/api-spec.md` 모든 응답 예시도 이 표기로 일괄 갱신 완료.

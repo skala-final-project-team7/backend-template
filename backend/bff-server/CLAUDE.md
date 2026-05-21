@@ -11,7 +11,7 @@
 
 - API 단일 진입점 (Spring Cloud Gateway Server MVC + Spring MVC + Virtual Threads)
 - Authorization Server가 발급한 JWT의 서명/만료/Claim 검증 (3단계 이후)
-- 라우팅, Rate Limiting, CORS 처리, 내부 API 결과 조합
+- 라우팅, Rate Li초miting, CORS 처리, 내부 API 결과 조합
 - RAG Pipeline HTTP 호출 및 SSE 스트리밍 중계
 - 대화/메시지/피드백(MongoDB) CRUD
 
