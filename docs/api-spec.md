@@ -364,22 +364,16 @@ data: {"code": "ML_SERVER_ERROR", "message": "답변 생성 중 오류가 발생
   ],
   "userId": "user-001",
   "groups": ["Cloud-Control-Center"],
-  "spaceKey": "CPC",
-  "accessToken": "<Confluence OAuth access_token>",
-  "cloudId": "11111111-2222-3333-4444-555555555555"
+  "spaceKey": "CPC"
 }
 ```
 - `history`: BFF가 DB에서 이전 대화 이력을 꺼내서 전달 (멀티턴용)
 - `userId` / `groups`: ACL Pre-filtering, JWT 에서 추출 (2단계는 데모 고정값)
 - `spaceKey`: 검색 대상 Confluence 스페이스. 2단계는 고정값(`lina.demo.fixed-space-key`)
-- `accessToken` / `cloudId` (**PoC 모드, 3단계 도입**): Confluence OAuth 로 발급한 access token 과 `accessible-resources`로 조회한 cloudId. BFF 가 auth-server 로부터 수신해 ML 서버로 그대로 전달. **추후 확장 단계에서 `connectionId` + `cloudId` 조합으로 교체 예정** — 그때는 ML 서버가 connectionId 로 BFF/auth-server 에 토큰을 재요청.
 
-> **보안 주의 (PoC 모드 한정):** 요청 body 에 access token 이 평문으로 노출되므로 다음 운영 규칙을 함께 강제한다.
-> - ML/BFF 로그·tracing 본문에 token 미수집 (마스킹 또는 본문 제외)
-> - RabbitMQ 메시지·이벤트 페이로드에 token 미포함
-> - actuator `env`/`heapdump`/`threaddump` 등 민감 endpoint 비노출
-> - AI Agent Pod 에 NetworkPolicy 적용해 호출자 제한
-> - 확장 단계(`connectionId`)로의 전환 시점을 사전에 정한다.
+> **Confluence 토큰 미포함 (2026-05-22 변경):** 권한은 수집 시 Qdrant payload(`allowed_groups`/`allowed_users`)에 ACL 로 저장되고, 질의 시 JWT 의 `user_id`/`groups` 로 필터링한다 (기획서 §6.4/§6.6). 따라서 RAG 질의 경로(`/ml/query`)는 라이브 Confluence 호출이 없어 `accessToken`/`cloudId` 가 불필요하며, 토큰은 크롤하는 수집 단계(`/ml/ingest`, §2-2)에서만 전달한다.
+>
+> ※ ML 확인 대기: `/ml/query` 가 실시간 Confluence 호출을 일절 하지 않음을 ML 팀과 확인한 뒤 본 결정을 확정한다. 확인 결과에 따라 토큰 전달 경로가 다시 조정될 수 있다.
 
 **Response**: SSE 스트리밍 (외부 API와 동일 형식, BFF가 그대로 중계)
 
@@ -392,9 +386,22 @@ data: {"code": "ML_SERVER_ERROR", "message": "답변 생성 중 오류가 발생
 
 **Request Body**
 ```json
-{ "spaceKey": "CPC", "mode": "full" }
+{
+  "spaceKey": "CPC",
+  "mode": "full",
+  "accessToken": "<Confluence OAuth access_token>",
+  "cloudId": "11111111-2222-3333-4444-555555555555"
+}
 ```
 - `mode`: `"full"` (전체) | `"delta"` (변경분만)
+- `accessToken` / `cloudId` (**PoC 모드, 3단계 도입**): Confluence OAuth 로 발급한 access token 과 `accessible-resources`로 조회한 cloudId. BFF 가 auth-server 로부터 수신해 Data Ingestion Pipeline 으로 그대로 전달한다 — 수집 단계에서 Confluence REST API 호출 (페이지/첨부파일 크롤) 시 사용. **추후 확장 단계에서 `connectionId` + `cloudId` 조합으로 교체 예정** — 그때는 Data Ingestion 서버가 connectionId 로 BFF/auth-server 에 토큰을 재요청.
+
+> **보안 주의 (PoC 모드 한정):** 요청 body 에 access token 이 평문으로 노출되므로 다음 운영 규칙을 함께 강제한다.
+> - ML/BFF 로그·tracing 본문에 token 미수집 (마스킹 또는 본문 제외)
+> - RabbitMQ 메시지·이벤트 페이로드에 token 미포함
+> - actuator `env`/`heapdump`/`threaddump` 등 민감 endpoint 비노출
+> - Data Ingestion Pipeline Pod 에 NetworkPolicy 적용해 호출자 제한
+> - 확장 단계(`connectionId`)로의 전환 시점을 사전에 정한다.
 
 ## 2-3. 수집 상태 조회
 | 항목 | 내용 |

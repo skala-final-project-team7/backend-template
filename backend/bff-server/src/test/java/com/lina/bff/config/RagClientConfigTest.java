@@ -15,8 +15,8 @@ class RagClientConfigTest {
           .withPropertyValues(
               "lina.rag.base-url=http://rag.example",
               "lina.rag.request-timeout-ms=15000",
-              "lina.ai-agent.base-url=http://agent.example",
-              "lina.ai-agent.request-timeout-ms=20000");
+              "lina.data-ingestion.base-url=http://ingest.example",
+              "lina.data-ingestion.request-timeout-ms=20000");
 
   @Test
   @DisplayName("ragRestClient 빈이 등록된다")
@@ -29,12 +29,12 @@ class RagClientConfigTest {
   }
 
   @Test
-  @DisplayName("aiAgentRestClient 빈이 등록된다")
-  void shouldRegisterAiAgentRestClientBean() {
+  @DisplayName("dataIngestionRestClient 빈이 등록된다")
+  void shouldRegisterDataIngestionRestClientBean() {
     runner.run(
         context -> {
-          assertThat(context).hasBean("aiAgentRestClient");
-          assertThat(context.getBean("aiAgentRestClient")).isInstanceOf(RestClient.class);
+          assertThat(context).hasBean("dataIngestionRestClient");
+          assertThat(context.getBean("dataIngestionRestClient")).isInstanceOf(RestClient.class);
         });
   }
 
@@ -46,8 +46,8 @@ class RagClientConfigTest {
         .withPropertyValues(
             "lina.rag.base-url=",
             "lina.rag.request-timeout-ms=15000",
-            "lina.ai-agent.base-url=",
-            "lina.ai-agent.request-timeout-ms=20000")
+            "lina.data-ingestion.base-url=",
+            "lina.data-ingestion.request-timeout-ms=20000")
         .run(context -> assertThat(context).hasNotFailed());
   }
 }
