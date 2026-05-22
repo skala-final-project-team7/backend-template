@@ -387,7 +387,7 @@
 - [ ] Entity→DTO 변환 (Entity 직접 반환 금지), 인용 출처·`confidenceScore`·`verificationResult` 포함
 - [ ] `created_at ASC` 순서 보장, 삭제 메시지 제외
 - [ ] 없는/삭제 대화 시 404
-- [ ] **`createdAt`·출처 `updatedAt` 모두 KST(`+09:00`) 표기로 직렬화** (확정된 결정 #6)
+- [ ] **`createdAt`·출처 `sourceUpdatedAt` 모두 KST(`+09:00`) 표기로 직렬화** (확정된 결정 #6)
 - [ ] Service Unit Test + Controller MockMvc (출처 포함 응답 구조·KST 표기 검증)
 
 ---
@@ -408,7 +408,7 @@
   - 검색 컨텍스트: `spaceKey` (`lina.demo.fixed-space-key`)
   - **`/ml/query` 본문에 `accessToken`/`cloudId` 미포함** (확정된 결정 #5, 2026-05-22 갱신). PoC 토큰은 Data Ingestion 호출(`/ml/ingest`, `api-spec.md` §2-2) 시에만 전달 — `lina.confluence.*` 설정값 또는 auth-server `/api/auth/confluence-token` 조회 결과 (3단계 도입 후, 4단계 `/api/admin/ingest` 경로에서 사용)
 - [ ] `POST /api/conversations/{conversationId}/chat` — `SseEmitter` 반환, Wrapper 미적용
-- [ ] `token`/`sources`/`verification`/`done` 이벤트 순서대로 중계 (출처 `updatedAt`·`done` 페이로드 timestamp 는 **KST 직렬화**)
+- [ ] `token`/`sources`/`verification`/`done` 이벤트 순서대로 중계 (출처 `sourceUpdatedAt`·`done` 페이로드 timestamp 는 **KST 직렬화**)
 - [ ] user 메시지 선저장 → `done` 수신 시 assistant 메시지+출처+검증 저장 → `last_message_at` 갱신
 - [ ] ML 실패/타임아웃 시 재시도 없이 `error` 이벤트 전송 후 연결 정리 (SSE 타임아웃 `lina.rag.sse-timeout-ms`)
 - [ ] **PoC 토큰 보안 (Data Ingestion 호출 경로 한정)**: `accessToken` 을 로그·tracing 본문에 노출하지 않음 (마스킹), RabbitMQ 페이로드 미포함, actuator 민감 endpoint 비노출 — `docs/api-spec.md` §2-2 보안 주의 준수 (RAG 질의 경로엔 토큰 자체가 없으므로 본 규칙 적용 대상은 ingestion 호출)

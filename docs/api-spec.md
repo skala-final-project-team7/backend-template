@@ -41,7 +41,9 @@
 | Name | Type | Description | Required |
 |------|------|-------------|----------|
 | Content-Type | String | application/json | ✅ |
-| Authorization | String | Bearer {JWT 토큰} | ✅ |
+| Authorization | String | Bearer {JWT 토큰} | ✅ (3단계 이후) |
+
+> ※ **2단계(중간 발표) 데모 범위에서는 인증이 비활성화**되어 있어 `Authorization` 헤더를 사용하지 않는다 (`DemoSecurityConfig` 의 `permitAll` + 고정 데모 사용자 `lina.demo.fixed-user-id`). 3단계(Authorization Server) 도입 이후부터 JWT 발급/검증이 활성화되며 본 헤더가 Required 가 된다. 상세는 `backend/bff-server/current-plans.md` §2단계 인증 부재 처리 방침 참조.
 
 ---
 
@@ -77,7 +79,7 @@ data: {
       "spaceId": "98310",
       "spaceName": "Cloud Control Center",
       "url": "https://confluence.example.com/pages/12345",
-      "updatedAt": "2026-04-15T18:30:00+09:00",
+      "sourceUpdatedAt": "2026-04-15T18:30:00+09:00",
       "relevanceScore": 0.92
     }
   ]
@@ -197,7 +199,7 @@ data: {"code": "ML_SERVER_ERROR", "message": "답변 생성 중 오류가 발생
             "spaceId": "98310",
             "spaceName": "Cloud Control Center",
             "url": "https://confluence.example.com/pages/12345",
-            "updatedAt": "2026-04-15T18:30:00+09:00",
+            "sourceUpdatedAt": "2026-04-15T18:30:00+09:00",
             "relevanceScore": 0.92
           }
         ],
