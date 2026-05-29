@@ -131,18 +131,20 @@ event: done
 data: {"messageId": "msg-uuid-001"}
 
 event: error
-data: {"code": "ML_SERVER_ERROR", "message": "답변 생성 중 오류가 발생했습니다"}
+data: {"errorCode": "ML_SERVER_ERROR", "message": "답변 생성 중 오류가 발생했습니다"}
 ```
 
 **이벤트 타입**
+
+> 아래 7종이 SSE 이벤트 **정본**이다. 내부 중계(§2-1)와 `backend/rules/rag-pipeline.md` §4 도 동일 집합을 따른다.
 
 - `status` — RAG 파이프라인 진행 상태 메시지 (`message`는 프론트 표시 문구로 그대로 사용)
 - `token` — 답변 청크 (스트리밍)
 - `sources` — RAG 참조 문서 목록
 - `verification` — 답변 신뢰도 검증 결과 (`SUPPORTED` / `PARTIALLY_SUPPORTED` / `NOT_SUPPORTED`)
 - `meta` — 현재 ML 구현 호환용 응답 메타데이터. 답변 본문이 아니며 `done` 직전 즈음 1회 송신된다. BE 통합 목표 계약에서는 제거 예정이며, `intent` / `used_llm` / `latency_ms`는 ML 내부 메트릭으로 관측하고 저신뢰 신호는 `verification.confidenceScore`로 표현한다.
-- `done` — 스트림 종료, `messageId` 반환
-- `error` — ML 서버 오류 발생 시 에러 정보 전달, 스트림 종료
+- `done` — 스트림 정상 종료, `messageId` 반환
+- `error` — 스트림 오류 종료. `errorCode` / `message` 전달 (코드는 아래 "`error` 이벤트 / 에러 코드" 표)
 
 **status 이벤트 phase**
 
@@ -165,6 +167,29 @@ data: {"code": "ML_SERVER_ERROR", "message": "답변 생성 중 오류가 발생
 - `message` 문구는 운영 중 변경될 수 있으므로 UI 분기 로직은 `message`가 아니라 `phase` 기준으로 처리한다.
 - 비-streaming(`stream=false`) 모드에는 `status` 이벤트가 오지 않는다.
 - 알 수 없는 phase 값은 무시하거나 직전 상태를 유지한다.
+
+**스트림 종료 · 영속 규칙**
+
+- 모든 스트림은 `done` 또는 `error` **정확히 하나**로 종료된다(상호 배타). 클라이언트는 둘 중 하나 수신 시 연결을 닫는다.
+- user 메시지는 질의 시작 시 선저장한다. `done` 수신 시 BFF 가 assistant 메시지(+`sources`+`verification`)를 저장하고 그 `messageId` 를 `done` 으로 반환한다 (`backend/bff-server/current-plans.md` Feature 5).
+- `error` 로 종료되면 assistant 메시지는 저장하지 않는다(선저장된 user 메시지는 유지). 따라서 `error` 에는 `messageId` 가 없다.
+- `token` 청크는 수신 순서대로 **그대로 이어 붙인다**(트림·구분자 삽입 금지). 예: `"S3 권한 오류는"` + `" IAM 정책을"`.
+
+**0건(검색 결과 없음) 처리**
+
+- phase 단축은 위 "status 이벤트 처리 규칙" 참조(`answering` / `streaming` / `verifying` 생략).
+- `sources` 는 **빈 배열로 1회** 전송하고, `verification` 은 생략한다(검증할 근거 없음).
+- 고정 안내 문구를 `token` 으로 보낼 수 있다(문구·전송 여부는 ML 구현). 0건도 `done` + `messageId` 로 **정상 종료**하며 assistant 메시지(빈 `sources`)를 저장한다.
+
+**`error` 이벤트 / 에러 코드**
+
+`error.data` 는 `{ "errorCode": string, "message": string }` 이다. `errorCode` 는 공통 Wrapper 의 `errorCode` 와 동일한 문자열 체계를 따른다(SSE 에는 HTTP 정수 `code` 가 없다 — Wrapper 의 `code`(int)와 혼동 금지).
+
+| errorCode             | 의미                                            |
+| --------------------- | ----------------------------------------------- |
+| `ML_SERVER_ERROR`     | ML 서버 5xx·내부 처리 오류                      |
+| `ML_TIMEOUT`          | ML 응답/스트림 타임아웃 (`lina.rag.sse-timeout-ms`) |
+| `ML_CONNECTION_ERROR` | ML 연결 실패·스트림 중단                        |
 
 **meta 이벤트 payload (현재 구현 호환용, 추후 제거 예정)**
 
@@ -490,7 +515,7 @@ data: {"code": "ML_SERVER_ERROR", "message": "답변 생성 중 오류가 발생
 - `history`: BFF가 DB에서 이전 대화 이력을 꺼내서 전달 (멀티턴용). `role` 값은 저장과 동일한 `USER`/`ASSISTANT`.
 - `userId` / `groups`: ACL Pre-filtering. JWT claim `userId`/`groups` 를 그대로 전달한다 — JWT claim·와이어 필드 모두 **camelCase** 로 통일(외부 API 및 같은 body 의 `conversationId` 와 정합). ML(FastAPI)은 Pydantic `alias`/`populate_by_name` 으로 camelCase 를 수신한다. 2단계는 데모 고정값.
 - `spaceKey`: 검색 대상 Confluence 스페이스. 2단계는 고정값(`lina.demo.fixed-space-key`)
-- 이 경로는 SSE streaming 모드로 응답하며 외부 API와 같은 `status` / `token` / `sources` / `verification` / `meta` / `done` 이벤트를 중계한다.
+- 이 경로는 SSE streaming 모드로 응답하며 외부 API와 같은 `status` / `token` / `sources` / `verification` / `meta` / `done` / `error` 이벤트를 그대로 중계한다(정본 §1-1).
 
 > **Confluence 토큰 미포함 (2026-05-22 변경):** 권한은 수집 시 Qdrant payload(`allowed_groups`/`allowed_users`)에 ACL로 저장되고, 질의 시 JWT의 `userId`/`groups`로 필터링한다 (기획서 §6.4/§6.6). 따라서 RAG 질의 경로(`/ml/query`)는 라이브 Confluence 호출이 없어 `accessToken`/`cloudId`가 불필요하며, 토큰은 크롤하는 수집 단계(`/ml/ingest`, §2-2)에서만 전달한다.
 >
