@@ -13,7 +13,7 @@
 
 | 버전   | 일자       | 주요 변경                                                                                                                                                                                                                                                                                                                                                                              |
 | ------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| v2.2.0 | 2026-05-29 | **SSE 계약 전면 정리**: `status`/`meta` 포함 **7종 이벤트 정본화**, 이벤트 순서 불변식·스트림 종료/영속·0건 처리·`error`(`errorCode` + 코드 enum) 명문화, idle 기준 타임아웃·`status` keep-alive, SSE 응답 헤더(`text/event-stream` 등), 재연결(`Last-Event-ID`) 미지원. 챗 엔드포인트는 항상 스트리밍(`stream=false` 모드 제거). `meta.title` → 첫 응답 1회 자동 제목 설정 규칙. **채팅방 고정 `isPinned`**(목록 응답·`PATCH` 확장·고정 우선 정렬). **Enum 값 `UPPER_SNAKE` 정책** 확정 및 `role`/`rating` 대문자 정정. 에러 응답 봉투 4필드 고정(`ErrorResponse` 정합). 스페이스 식별자(`spaceKey`/`spaceId`/`spaceName`) 구분 명시. ACL 질의 필드 `userId` camelCase 통일. `feature13` 미정의 마커 서술형 교체. `## 변경 이력` 신설·상단 이동. |
+| v2.2.0 | 2026-05-29 | **SSE 계약 전면 정리**: `status`/`meta` 포함 **7종 이벤트 정본화**, 이벤트 순서 불변식·스트림 종료/영속·0건 처리·`error`(`errorCode` + 코드 enum) 명문화, idle 기준 타임아웃·`status` keep-alive, SSE 응답 헤더(`text/event-stream` 등), 재연결(`Last-Event-ID`) 미지원. 챗 엔드포인트는 항상 스트리밍(`stream=false` 모드 제거). `meta.title` → 첫 응답 1회 자동 제목 설정 규칙. **채팅방 고정 `isPinned`**(목록 응답·`PATCH` 확장·고정 우선 정렬). **Enum 값 `UPPER_SNAKE` 정책** 확정 및 `role`/`rating` 대문자 정정. 에러 응답 봉투 4필드 고정(`ErrorResponse` 정합). 스페이스 식별자(`spaceKey`/`spaceId`/`spaceName`) 구분 명시. ACL 질의 필드 `userId` camelCase 통일. `feature13` 미정의 마커 서술형 교체. `## 변경 이력` 신설·상단 이동. 미리보기 쿼리 파라미터 `page_id`→`pageId` 정합. |
 
 ---
 
@@ -808,11 +808,11 @@ BFF → Authorization Server 위임 구조 (기획서 v2.1.7 반영)
 **Query Parameter**
 | Key | Type | Required | Description |
 |-----|------|----------|-------------|
-| page_id | string | ✅ | Confluence page ID |
+| pageId | string | ✅ | Confluence page ID |
 
 **처리 방식**
 
-- Frontend는 출처 목록 문서 hover 시 `page_id`를 담아 BFF에 요청한다.
+- Frontend는 출처 목록 문서 hover 시 `pageId`를 담아 BFF에 요청한다.
 - BFF는 서버에 저장된 OAuth 토큰으로 Confluence REST API를 호출한다.
 - BFF는 Confluence 응답의 `body.view.value` HTML 문자열을 `bodyViewValue`로 변환해 반환한다.
 - BFF는 Confluence 응답의 `space.name`, `ancestors[].title`, `title`을 조합해 `breadcrumbs`를 파생한다.
