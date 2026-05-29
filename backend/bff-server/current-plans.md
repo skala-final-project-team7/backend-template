@@ -411,6 +411,7 @@
 - [ ] `POST /api/conversations/{conversationId}/chat` — `SseEmitter` 반환, Wrapper 미적용
 - [ ] `status`/`token`/`sources`/`verification`/`meta`/`done`/`error` 이벤트 중계 (집합 정본 `docs/api-spec.md` §1-1). `status`=진행표시, `meta`=호환용(제거 예정), 스트림은 `done`/`error`로 종료. 출처 `sourceUpdatedAt`·`done` 페이로드 timestamp 는 **KST 직렬화**
 - [ ] user 메시지 선저장 → `done` 수신 시 assistant 메시지+출처+검증 저장 → `last_message_at` 갱신
+- [ ] 첫 assistant 응답의 `meta.title` 로 대화 제목 **1회 자동 설정** (현재 `title` 이 기본 `"새 대화"` 일 때만; 이후·사용자 PATCH 수정 시 무시) — `docs/api-spec.md` §1-1 "대화 제목 자동 설정 규칙"
 - [ ] ML 실패/타임아웃 시 재시도 없이 `error` 이벤트 전송 후 연결 정리 (SSE 타임아웃 `lina.rag.sse-timeout-ms`)
 - [ ] **PoC 토큰 보안 (Data Ingestion 호출 경로 한정)**: `accessToken` 을 로그·tracing 본문에 노출하지 않음 (마스킹), RabbitMQ 페이로드 미포함, actuator 민감 endpoint 비노출 — `docs/api-spec.md` §2-2 보안 주의 준수 (RAG 질의 경로엔 토큰 자체가 없으므로 본 규칙 적용 대상은 ingestion 호출)
 - [ ] WireMock 테스트: SSE 정상 스트림 / ML 5xx / 타임아웃 → `error` 이벤트·연결 정리, **요청 body 에 `accessToken`/`cloudId` 미포함** 검증 (`/ml/query` 본문에 토큰 누출 없음). 토큰 포함 검증은 4단계 `/ml/ingest` 호출 WireMock 테스트에서 수행. 실제 ML 호출 금지.
