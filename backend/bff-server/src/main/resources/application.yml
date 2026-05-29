@@ -40,11 +40,26 @@ logging:
     com.lina: INFO
 
 lina:
+  # RAG Pipeline(/ml/query) 진입점. 사용자 질의 → SSE 스트리밍 응답 중계용.
+  # ML 서버 단일 배포면 ML_PIPELINE_BASE_URL 만 지정하면 data-ingestion 도 같은 값으로 fallback.
+  # Confluence 토큰은 본 클라이언트의 /ml/query 본문에 미포함 — ACL 은 Qdrant payload 에 저장되고
+  # 질의 시 JWT 의 user_id/groups 로 필터링한다 (api-spec.md §2-1, 기획서 §6.4/§6.6).
   rag:
     base-url: ${ML_PIPELINE_BASE_URL:}
     request-timeout-ms: ${ML_PIPELINE_TIMEOUT_MS:30000}
     sse-timeout-ms: ${ML_PIPELINE_SSE_TIMEOUT_MS:60000}
     history-turns: ${ML_PIPELINE_HISTORY_TURNS:10}
+  # Data Ingestion Pipeline(/ml/ingest) 진입점. 수집 서버 별도 배포면 DATA_INGESTION_BASE_URL 지정,
+  # 동일 ML 서버면 ML_PIPELINE_BASE_URL 로 fallback. Confluence 토큰(lina.confluence.*)은
+  # 이 클라이언트의 /ml/ingest 요청 본문에 실린다.
+  data-ingestion:
+    base-url: ${DATA_INGESTION_BASE_URL:${ML_PIPELINE_BASE_URL:}}
+    request-timeout-ms: ${DATA_INGESTION_TIMEOUT_MS:30000}
+  # Confluence OAuth 토큰/cloudId 전달 (3단계 auth-server PoC 도입)
+  # 평문 secret 미포함 — 모두 환경 변수 주입. PoC 모드에서만 사용하며 확장 단계에서 connectionId 로 대체된다.
+  confluence:
+    access-token: ${CONFLUENCE_ACCESS_TOKEN:}
+    cloud-id: ${CONFLUENCE_CLOUD_ID:}
   auth-server:
     base-url: ${AUTH_SERVER_BASE_URL:}
   jwt:

@@ -32,11 +32,18 @@
 
 > **예외**: SSE 스트리밍 응답(`/api/conversations/{id}/chat`)은 Wrapper 미적용, 이벤트 스트림으로 전달.
 
+**시간 표기 정책 (2026-05-21 확정)**
+- 저장은 UTC(`Instant`)로 통일하고, **응답 JSON 의 모든 timestamp 는 KST(`+09:00`) 로 절대 전환해 반환한다.**
+- 직렬화 예: `Instant` → `ZonedDateTime kst = instant.atZone(ZoneId.of("Asia/Seoul"))` → `2026-05-06T19:00:00+09:00`
+- 본 문서의 모든 응답 예시는 KST 표기로 작성한다.
+
 **공통 Request Header**
 | Name | Type | Description | Required |
 |------|------|-------------|----------|
 | Content-Type | String | application/json | ✅ |
-| Authorization | String | Bearer {JWT 토큰} | ✅ |
+| Authorization | String | Bearer {JWT 토큰} | ✅ (3단계 이후) |
+
+> ※ **2단계(중간 발표) 데모 범위에서는 인증이 비활성화**되어 있어 `Authorization` 헤더를 사용하지 않는다 (`DemoSecurityConfig` 의 `permitAll` + 고정 데모 사용자 `lina.demo.fixed-user-id`). 3단계(Authorization Server) 도입 이후부터 JWT 발급/검증이 활성화되며 본 헤더가 Required 가 된다. 상세는 `backend/bff-server/current-plans.md` §2단계 인증 부재 처리 방침 참조.
 
 ---
 
@@ -72,7 +79,7 @@ data: {
       "spaceId": "98310",
       "spaceName": "Cloud Control Center",
       "url": "https://confluence.example.com/pages/12345",
-      "updatedAt": "2026-04-15T09:30:00Z",
+      "sourceUpdatedAt": "2026-04-15T18:30:00+09:00",
       "relevanceScore": 0.92
     }
   ]
@@ -119,7 +126,7 @@ data: {"code": "ML_SERVER_ERROR", "message": "답변 생성 중 오류가 발생
   "data": {
     "conversationId": "conv-uuid-001",
     "title": "새 대화",
-    "createdAt": "2026-05-06T10:00:00Z"
+    "createdAt": "2026-05-06T19:00:00+09:00"
   }
 }
 ```
@@ -148,7 +155,7 @@ data: {"code": "ML_SERVER_ERROR", "message": "답변 생성 중 오류가 발생
       {
         "conversationId": "conv-uuid-001",
         "title": "S3 권한 오류 해결 방법",
-        "lastMessageAt": "2026-05-06T10:05:00Z",
+        "lastMessageAt": "2026-05-06T19:05:00+09:00",
         "messageCount": 4
       }
     ],
@@ -179,7 +186,7 @@ data: {"code": "ML_SERVER_ERROR", "message": "답변 생성 중 오류가 발생
         "messageId": "msg-uuid-001",
         "role": "user",
         "content": "지난번 S3 버킷 권한 오류 때 어떻게 해결했어?",
-        "createdAt": "2026-05-06T10:00:00Z"
+        "createdAt": "2026-05-06T19:00:00+09:00"
       },
       {
         "messageId": "msg-uuid-002",
@@ -192,13 +199,13 @@ data: {"code": "ML_SERVER_ERROR", "message": "답변 생성 중 오류가 발생
             "spaceId": "98310",
             "spaceName": "Cloud Control Center",
             "url": "https://confluence.example.com/pages/12345",
-            "updatedAt": "2026-04-15T09:30:00Z",
+            "sourceUpdatedAt": "2026-04-15T18:30:00+09:00",
             "relevanceScore": 0.92
           }
         ],
         "confidenceScore": 0.85,
         "verificationResult": "SUPPORTED",
-        "createdAt": "2026-05-06T10:00:05Z"
+        "createdAt": "2026-05-06T19:00:05+09:00"
       }
     ]
   }
@@ -225,7 +232,7 @@ data: {"code": "ML_SERVER_ERROR", "message": "답변 생성 중 오류가 발생
   "data": {
     "conversationId": "conv-uuid-001",
     "title": "S3 권한 오류 트러블슈팅",
-    "updatedAt": "2026-05-06T10:10:00Z"
+    "updatedAt": "2026-05-06T19:10:00+09:00"
   }
 }
 ```
@@ -276,7 +283,7 @@ data: {"code": "ML_SERVER_ERROR", "message": "답변 생성 중 오류가 발생
     "feedbackId": "fb-uuid-001",
     "messageId": "msg-uuid-002",
     "rating": "like",
-    "createdAt": "2026-05-06T10:06:00Z"
+    "createdAt": "2026-05-06T19:06:00+09:00"
   }
 }
 ```
@@ -306,7 +313,7 @@ data: {"code": "ML_SERVER_ERROR", "message": "답변 생성 중 오류가 발생
   "data": {
     "jobId": "job-uuid-001",
     "status": "STARTED",
-    "startedAt": "2026-05-06T10:00:00Z"
+    "startedAt": "2026-05-06T19:00:00+09:00"
   }
 }
 ```
@@ -329,7 +336,7 @@ data: {"code": "ML_SERVER_ERROR", "message": "답변 생성 중 오류가 발생
     "totalPages": 150,
     "processedPages": 87,
     "failedPages": 2,
-    "startedAt": "2026-05-06T10:00:00Z"
+    "startedAt": "2026-05-06T19:00:00+09:00"
   }
 }
 ```
@@ -358,12 +365,17 @@ data: {"code": "ML_SERVER_ERROR", "message": "답변 생성 중 오류가 발생
     { "role": "assistant", "content": "최근 S3 관련 장애는 3건이 있었습니다..." }
   ],
   "userId": "user-001",
-  "groups": ["Cloud-Control-Center"]
+  "groups": ["Cloud-Control-Center"],
+  "spaceKey": "CPC"
 }
 ```
 - `history`: BFF가 DB에서 이전 대화 이력을 꺼내서 전달 (멀티턴용)
-- `userId` / `groups`: ACL Pre-filtering, JWT에서 추출
-- 중간 발표 시 `spaceKey`를 고정값으로 추가 전달 가능
+- `userId` / `groups`: ACL Pre-filtering, JWT 에서 추출 (2단계는 데모 고정값)
+- `spaceKey`: 검색 대상 Confluence 스페이스. 2단계는 고정값(`lina.demo.fixed-space-key`)
+
+> **Confluence 토큰 미포함 (2026-05-22 변경):** 권한은 수집 시 Qdrant payload(`allowed_groups`/`allowed_users`)에 ACL 로 저장되고, 질의 시 JWT 의 `user_id`/`groups` 로 필터링한다 (기획서 §6.4/§6.6). 따라서 RAG 질의 경로(`/ml/query`)는 라이브 Confluence 호출이 없어 `accessToken`/`cloudId` 가 불필요하며, 토큰은 크롤하는 수집 단계(`/ml/ingest`, §2-2)에서만 전달한다.
+>
+> ※ ML 확인 대기: `/ml/query` 가 실시간 Confluence 호출을 일절 하지 않음을 ML 팀과 확인한 뒤 본 결정을 확정한다. 확인 결과에 따라 토큰 전달 경로가 다시 조정될 수 있다.
 
 **Response**: SSE 스트리밍 (외부 API와 동일 형식, BFF가 그대로 중계)
 
@@ -376,9 +388,22 @@ data: {"code": "ML_SERVER_ERROR", "message": "답변 생성 중 오류가 발생
 
 **Request Body**
 ```json
-{ "spaceKey": "CPC", "mode": "full" }
+{
+  "spaceKey": "CPC",
+  "mode": "full",
+  "accessToken": "<Confluence OAuth access_token>",
+  "cloudId": "11111111-2222-3333-4444-555555555555"
+}
 ```
 - `mode`: `"full"` (전체) | `"delta"` (변경분만)
+- `accessToken` / `cloudId` (**PoC 모드, 3단계 도입**): Confluence OAuth 로 발급한 access token 과 `accessible-resources`로 조회한 cloudId. BFF 가 auth-server 로부터 수신해 Data Ingestion Pipeline 으로 그대로 전달한다 — 수집 단계에서 Confluence REST API 호출 (페이지/첨부파일 크롤) 시 사용. **추후 확장 단계에서 `connectionId` + `cloudId` 조합으로 교체 예정** — 그때는 Data Ingestion 서버가 connectionId 로 BFF/auth-server 에 토큰을 재요청.
+
+> **보안 주의 (PoC 모드 한정):** 요청 body 에 access token 이 평문으로 노출되므로 다음 운영 규칙을 함께 강제한다.
+> - ML/BFF 로그·tracing 본문에 token 미수집 (마스킹 또는 본문 제외)
+> - RabbitMQ 메시지·이벤트 페이로드에 token 미포함
+> - actuator `env`/`heapdump`/`threaddump` 등 민감 endpoint 비노출
+> - Data Ingestion Pipeline Pod 에 NetworkPolicy 적용해 호출자 제한
+> - 확장 단계(`connectionId`)로의 전환 시점을 사전에 정한다.
 
 ## 2-3. 수집 상태 조회
 | 항목 | 내용 |
@@ -389,26 +414,45 @@ data: {"code": "ML_SERVER_ERROR", "message": "답변 생성 중 오류가 발생
 Response: 외부 API `/api/admin/ingest/status/{jobId}`의 `data` 내부와 동일.
 
 ## 2-4. 헬스체크
+
+ML 서버는 책임이 다른 두 파이프라인으로 분리되어 있으며, 각각의 헬스 엔드포인트도 분리해 관리한다.
+
+### 2-4-1. RAG Pipeline 헬스체크
 | 항목 | 내용 |
 |------|------|
 | Method | `GET` |
-| URL | `/ml/health` |
-| 목적 | BFF가 RAG / AI Agent 서버가 정상 응답 가능한지만 확인 |
-
-- BFF는 Vector DB, LLM 등 ML 내부 의존성을 **전역적으로 health check 하지 않는다**. RAG / AI Agent 서버가 요청을 받아 응답할 수 있는 상태(reachable & responsive)인지만 확인한다.
-- Vector DB, LLM 등 ML 내부 컴포넌트의 상세 상태 점검 책임은 ML 서버 자체에 둔다. BFF는 그 상세 상태를 응답으로 받지 않는다.
+| URL | `/ml/rag/health` |
+| 목적 | BFF 가 RAG Pipeline 서버(질의/응답 생성·AI Agent 워크플로)가 정상 응답 가능한지만 확인 |
 
 **Response**
 ```json
 { "status": "UP" }
 ```
 
+### 2-4-2. Data Ingestion Pipeline 헬스체크
+| 항목 | 내용 |
+|------|------|
+| Method | `GET` |
+| URL | `/ml/ingest/health` |
+| 목적 | BFF 가 Data Ingestion Pipeline 서버(Confluence 수집/청킹/임베딩)가 정상 응답 가능한지만 확인 |
+
+**Response**
+```json
+{ "status": "UP" }
+```
+
+### 공통 규칙
+
 | status | 의미 |
 |--------|------|
-| `UP` | RAG / AI Agent 서버 정상 응답 |
+| `UP` | 대상 서버 정상 응답 |
 | `DOWN` | 응답 불가 또는 오류 |
 
-> **Spring Boot 측 적용 노트**: RAG 서버 호출 경로에는 Resilience4j 등의 Circuit Breaker를 적용해, RAG / AI Agent 서버 장애가 BFF 전체로 전파되지 않도록 격리한다. Circuit Breaker는 RAG 서버 호출에만 한정 적용하며, BFF 자체 헬스체크와는 분리한다.
+- BFF 는 Vector DB, LLM, Confluence API, RabbitMQ 등 ML 내부 의존성을 **전역적으로 health check 하지 않는다**. 각 서버(RAG Pipeline / Data Ingestion Pipeline)가 요청을 받아 응답할 수 있는 상태(reachable & responsive)인지만 확인한다.
+- 내부 컴포넌트의 상세 상태 점검 책임은 각 ML 서버 자체에 둔다. BFF 는 그 상세 상태를 응답으로 받지 않는다.
+- 두 엔드포인트는 독립적으로 평가된다. 한쪽이 `DOWN` 이어도 다른 한쪽이 `UP` 이면 해당 기능만 영향을 받는다 (예: Ingestion 다운 시 신규 수집만 차단, 기존 검색·질의는 정상).
+
+> **Spring Boot 측 적용 노트**: 각 ML 서버 호출 경로에는 Resilience4j 등의 Circuit Breaker 를 적용해, ML 서버 장애가 BFF 전체로 전파되지 않도록 격리한다. Circuit Breaker 는 RAG Pipeline / Data Ingestion Pipeline 호출에 각각 독립적으로 적용하며, BFF 자체 헬스체크와는 분리한다.
 
 ---
 
@@ -456,7 +500,7 @@ BFF → Authorization Server 위임 구조 (기획서 v2.1.7 반영)
     "email": "dayeon@example.com",
     "role": "USER",
     "profileImageUrl": "https://...",
-    "lastLoginAt": "2026-05-20T09:00:00Z"
+    "lastLoginAt": "2026-05-20T18:00:00+09:00"
   }
 }
 ```
@@ -504,7 +548,7 @@ BFF → Authorization Server 위임 구조 (기획서 v2.1.7 반영)
         "userId": "user-001",
         "name": "이다연",
         "conversationCount": 35,
-        "lastAccessAt": "2026-05-20T09:00:00Z"
+        "lastAccessAt": "2026-05-20T18:00:00+09:00"
       }
     ]
   }
@@ -523,7 +567,7 @@ BFF → Authorization Server 위임 구조 (기획서 v2.1.7 반영)
     "totalAttachments": 187,
     "vectorDbSize": "2.3 GB",
     "totalChunks": 8940,
-    "lastSyncAt": "2026-05-20T08:00:00Z"
+    "lastSyncAt": "2026-05-20T17:00:00+09:00"
   }
 }
 ```
@@ -542,7 +586,7 @@ BFF → Authorization Server 위임 구조 (기획서 v2.1.7 반영)
         "updatedPages": 12,
         "deletedPages": 1,
         "duration": 45,
-        "completedAt": "2026-05-20T08:00:00Z"
+        "completedAt": "2026-05-20T17:00:00+09:00"
       }
     ]
   }
@@ -586,7 +630,7 @@ BFF → Authorization Server 위임 구조 (기획서 v2.1.7 반영)
     "title": "S3 트러블슈팅 가이드",
     "spaceName": "Cloud Control Center",
     "authorName": "Platform Team",
-    "updatedAt": "2026-04-15T09:30:00Z",
+    "updatedAt": "2026-04-15T18:30:00+09:00",
     "breadcrumbs": ["Cloud Control Center", "AWS", "S3", "S3 트러블슈팅 가이드"],
     "pageUrl": "https://confluence.example.com/pages/12345",
     "bodyViewValue": "<h1>S3 트러블슈팅 가이드</h1><p>S3 권한 오류는...</p>"
