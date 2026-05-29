@@ -45,6 +45,7 @@
 | `createdAt` | Date (UTC) | ✅ | |
 | `updatedAt` | Date (UTC) | ✅ | |
 | `lastMessageAt` | Date (UTC) | ✅ | 목록 정렬 키 |
+| `isPinned` | Boolean | ✅ | 기본 `false`. 채팅방 고정 여부(목록 정렬 시 상단 우선) |
 | `deletedAt` | Date (UTC) | — | nullable. soft delete |
 
 샘플 문서:
@@ -57,6 +58,7 @@
   "createdAt": { "$date": "2026-05-06T10:00:00Z" },
   "updatedAt": { "$date": "2026-05-06T10:10:00Z" },
   "lastMessageAt": { "$date": "2026-05-06T10:05:00Z" },
+  "isPinned": false,
   "deletedAt": null
 }
 ```
@@ -65,7 +67,7 @@
 
 | 인덱스 | 정의 | 목적 |
 |---|---|---|
-| `idx_conversations_user_active_recent` | `{ userId: 1, deletedAt: 1, lastMessageAt: -1 }` | `findByUserIdAndDeletedAtIsNullOrderByLastMessageAtDesc` — 사용자별 활성 대화 최신순 페이징. 컬럼 순서 = 등치(`userId`) → 필터(`deletedAt`) → 정렬(`lastMessageAt`). |
+| `idx_conversations_user_active_recent` | `{ userId: 1, deletedAt: 1, isPinned: -1, lastMessageAt: -1 }` | `findByUserIdAndDeletedAtIsNullOrderByIsPinnedDescLastMessageAtDesc` — 사용자별 활성 대화를 고정 우선·최신순 페이징. 컬럼 순서 = 등치(`userId`) → 필터(`deletedAt`) → 정렬(`isPinned` 우선 → `lastMessageAt`). |
 
 ---
 
@@ -172,7 +174,7 @@
 
 | 인덱스 | 컬렉션 | 정의 | 목적 |
 |---|---|---|---|
-| `idx_conversations_user_active_recent` | `conversations` | `{ userId:1, deletedAt:1, lastMessageAt:-1 }` | 사용자별 활성 대화 최신순 페이징 |
+| `idx_conversations_user_active_recent` | `conversations` | `{ userId:1, deletedAt:1, isPinned:-1, lastMessageAt:-1 }` | 사용자별 활성 대화 고정 우선·최신순 페이징 |
 | `idx_messages_conversation_active_created` | `messages` | `{ conversationId:1, deletedAt:1, createdAt:1 }` | 대화별 활성 메시지 시간순(멀티턴 복원) |
 | `uniq_feedbacks_message` | `feedbacks` | `{ messageId:1 }` UNIQUE | 메시지당 피드백 1건 강제 |
 
@@ -184,3 +186,4 @@
 |---|---|---|
 | 2026-05-19 | 최초 작성 — MySQL/JPA 기반 4테이블 정의 | DB 신규 도입 |
 | 2026-05-20 | 저장소 전환 — MongoDB 3컬렉션(`messages.sources` 내장)으로 재정의. MySQL 은 3단계의 `users`/`user_tokens`/`user_space_acl`/`admins` 도입 시 별도 정의 | `backend/bff-server/current-plans.md` 확정된 결정 #4 |
+| 2026-05-29 | `conversations.isPinned`(채팅방 고정) 추가. `idx_conversations_user_active_recent` 에 `isPinned:-1` 정렬 컬럼 반영(고정 우선 정렬). PATCH 토글은 `docs/api-spec.md` §1-2 | FE 채팅방 고정 기능 |

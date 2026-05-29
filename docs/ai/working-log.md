@@ -5,6 +5,11 @@
 
 ---
 
+## 2026-05-29
+
+- **페이지 단위 ACL 권한 모델 협의 (ADR 0001 초안)**: RAG 팀의 "페이지/유저 단위 권한 전환" 요청에 대응. **source of truth = Confluence content restrictions API(수집 단계)** 로 결정, BE 는 별도 권한 테이블 없이 (a) 수집용 OAuth 토큰 제공 (b) 질의 시 JWT claim 발급만 담당. 질의 측은 **JWT pass-through**(식별자 값 무변형), 매칭 책임은 색인(Ingestion)이 payload 를 JWT vocabulary 에 맞추는 쪽으로 둠. 신규 파일: `docs/adr/0001-page-level-acl-source.md` (상태: Proposed — RAG/ML 합의 대기). 미해결: JWT vocabulary 확정, inherited 권한 산출 책임, 첨부파일 권한 상속, `/ml/query` 무-Confluence 전제 재확인 (ADR §4).
+- **JWT claim·내부 API 필드 표기 통일 (`user_id` → `userId`)**: JSON 표면 전체가 camelCase(`conversationId` 등)인데 JWT claim 만 snake 라 혼재. claim·`/ml/query` 와이어 필드를 모두 **camelCase `userId`/`groups`** 로 통일. Qdrant payload 키(`allowed_users`/`allowed_groups`)는 ML/Qdrant 표기 유지, DB 컬럼(snake)은 불변. 변경: `backend/rules/auth.md`(정의+근거)·`domains.md`·`rag-pipeline.md`, `backend/auth-server/CLAUDE.md`·`current-plans.md`, `backend/bff-server/current-plans.md`, `docs/api-spec.md` §2-1, `docs/adr/0001`, `application.yml` 주석, `Conversation.java` javadoc.
+
 ## 2026-05-22
 
 - **Confluence 토큰 전달 대상 변경 (`/ml/query` → `/ml/ingest`)**: 토큰(`accessToken`/`cloudId`) 을 RAG 질의 본문에서 제거하고 Data Ingestion 호출 본문에만 첨부하도록 일괄 갱신. **근거**: 권한은 수집 시 Qdrant payload(`allowed_groups`/`allowed_users`) 에 ACL 저장 + 질의 시 JWT 의 `user_id`/`groups` 로 필터링 (기획서 §6.4/§6.6). 따라서 `/ml/query` 는 라이브 Confluence 호출이 없어 토큰 불필요. **전제**: `/ml/query` 가 실시간 Confluence 호출을 일절 안 한다고 가정 (※ ML 확인 대기). 변경 파일: `docs/api-spec.md` §2-1/§2-2 (토큰 필드·보안 박스 이동), `backend/bff-server/current-plans.md` 확정 결정 #5 + Feature 5 체크리스트.

@@ -28,7 +28,7 @@
 
 - Confluence OAuth를 통해 인증된 사용자 정보를 저장/갱신한다.
 - 사용자-권한 매핑(접근 가능 스페이스, 페이지 권한)을 관리한다.
-- ACL 정보는 RAG Pipeline 호출 시 `user_id`, `groups` 형태로 전달한다.
+- ACL 정보는 RAG Pipeline 호출 시 `userId`, `groups` 형태로 전달한다.
 
 ---
 

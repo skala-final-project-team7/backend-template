@@ -43,7 +43,7 @@ lina:
   # RAG Pipeline(/ml/query) 진입점. 사용자 질의 → SSE 스트리밍 응답 중계용.
   # ML 서버 단일 배포면 ML_PIPELINE_BASE_URL 만 지정하면 data-ingestion 도 같은 값으로 fallback.
   # Confluence 토큰은 본 클라이언트의 /ml/query 본문에 미포함 — ACL 은 Qdrant payload 에 저장되고
-  # 질의 시 JWT 의 user_id/groups 로 필터링한다 (api-spec.md §2-1, 기획서 §6.4/§6.6).
+  # 질의 시 JWT 의 userId/groups 로 필터링한다 (api-spec.md §2-1, 기획서 §6.4/§6.6).
   rag:
     base-url: ${ML_PIPELINE_BASE_URL:}
     request-timeout-ms: ${ML_PIPELINE_TIMEOUT_MS:30000}

@@ -42,7 +42,7 @@
 - [ ] 응답에 만료 시각 포함, BFF 가 만료 임박 시 별도 갱신 호출
 
 ### Feature C. JWT 발급 계약 (확장 단계 기반 작업, 본 라운드는 인터페이스만)
-- [ ] JWT Claim 셋 정의: `user_id`, `groups`, `iss`, `exp`, `iat` (`backend/rules/auth.md` §2)
+- [ ] JWT Claim 셋 정의: `userId`, `groups`, `iss`, `exp`, `iat` (`backend/rules/auth.md` §2)
 - [ ] 서명 알고리즘·키 형식 확정(서명 알고리즘/공개키·개인키 PEM 위치) — `backend/rules/auth.md` 참조
 - [ ] HttpOnly Cookie 발급 방식 (`backend/rules/auth.md` §3, Body 금지)
 - [ ] BFF JWT 검증 필터와 계약 동기 (현재 bff-server Feature 2 가 `CurrentUserProvider` 인터페이스로 격리됨)

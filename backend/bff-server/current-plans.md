@@ -232,7 +232,7 @@
 | 새 대화 생성 | POST | `/api/conversations` |
 | 대화 목록 조회 | GET | `/api/conversations` |
 | 대화 메시지 이력 조회 | GET | `/api/conversations/{conversationId}/messages` |
-| 대화 제목 수정 | PATCH | `/api/conversations/{conversationId}` |
+| 대화 수정(제목/고정) | PATCH | `/api/conversations/{conversationId}` |
 | 대화 삭제 | DELETE | `/api/conversations/{conversationId}` |
 | 챗봇 질의 (SSE 중계) | POST | `/api/conversations/{conversationId}/chat` |
 | 피드백 등록 | POST | `/api/messages/{messageId}/feedback` |
@@ -298,14 +298,14 @@
 
 | 컬렉션 | 핵심 필드 | 비고 |
 |---|---|---|
-| `conversations` | `_id`(=`conversationId` UUID), `userId`, `title`, `createdAt`, `updatedAt`, `lastMessageAt`, `deletedAt`(soft delete) | `userId`는 2단계에서 고정 데모 사용자 |
+| `conversations` | `_id`(=`conversationId` UUID), `userId`, `title`, `createdAt`, `updatedAt`, `lastMessageAt`, `isPinned`(기본 false), `deletedAt`(soft delete) | `userId`는 2단계에서 고정 데모 사용자. `isPinned`=채팅방 고정 |
 | `messages` | `_id`(=`messageId` UUID), `conversationId`, `role`(USER/ASSISTANT), `content`, `sources[]`(내장 배열), `confidenceScore`(nullable), `verificationResult`(nullable), `createdAt`, `deletedAt` | 질문·답변 모두 저장. 인용 출처는 별도 컬렉션 없이 `sources` 내장 (`domains.md` §1) |
 | `feedbacks` | `_id`(=`feedbackId` UUID), `messageId`(UNIQUE), `rating`(LIKE/DISLIKE), `comment`(nullable), `createdAt` | 메시지 단위 피드백. QCA 연결은 `messageId`→assistant→직전 user 메시지로 추적 (`domains.md` §2) |
 
 > MySQL 기반 4테이블 설계(`message_sources` 별도 컬렉션 포함)는 2026-05-20 자로 폐기. MySQL 은 3단계의 `users`/`user_tokens`/`user_space_acl`/`admins` 도입 시 재도입한다.
 
 인덱스 (목적 함께 기록):
-- `idx_conversations_user_active_recent { userId:1, deletedAt:1, lastMessageAt:-1 }` — 사용자별 활성 대화 최신순 페이징
+- `idx_conversations_user_active_recent { userId:1, deletedAt:1, isPinned:-1, lastMessageAt:-1 }` — 사용자별 활성 대화 고정 우선·최신순 페이징
 - `idx_messages_conversation_active_created { conversationId:1, deletedAt:1, createdAt:1 }` — 메시지 이력 멀티턴 복원
 - `uniq_feedbacks_message { messageId:1 } UNIQUE` — 메시지당 피드백 1건 강제 (재등록은 동일 문서 upsert)
 
@@ -361,14 +361,15 @@
 
 #### 변경 대상 파일
 - `chat/controller/ConversationController.java`, `chat/service/ConversationService.java`
-- `chat/dto/{CreateConversationResponse,ConversationListResponse,ConversationSummaryResponse,UpdateConversationTitleRequest,UpdateConversationResponse}.java`
+- `chat/dto/{CreateConversationResponse,ConversationListResponse,ConversationSummaryResponse,UpdateConversationRequest,UpdateConversationResponse}.java`
 - `chat/service/ConversationServiceTest.java`, `chat/controller/ConversationControllerTest.java`
 
 #### 체크리스트
-- [ ] `POST /api/conversations` — `conversationId`/`title`/`createdAt` 반환, `ApiResponse` code 201
-- [ ] `GET /api/conversations` — 고정 데모 사용자 기준 `last_message_at DESC` 페이징(page/size), 삭제 대화 제외
-- [ ] `PATCH /api/conversations/{conversationId}` — 제목 수정, `updatedAt` 반환
+- [ ] `POST /api/conversations` — `conversationId`/`title`/`isPinned`(기본 false)/`createdAt` 반환, `ApiResponse` code 201
+- [ ] `GET /api/conversations` — 고정 데모 사용자 기준 고정 우선(`isPinned DESC`) → `last_message_at DESC` 페이징(page/size), 삭제 대화 제외
+- [ ] `PATCH /api/conversations/{conversationId}` — `title`/`isPinned` 부분 수정(둘 중 하나 이상 필수), `title`/`isPinned`/`updatedAt` 반환
 - [ ] `DELETE /api/conversations/{conversationId}` — soft delete, `data: null` 반환
+- [ ] `Conversation` 엔티티에 `isPinned`(기본 false) 필드 추가 + Repository 정렬 메서드를 `findByUserIdAndDeletedAtIsNullOrderByIsPinnedDescLastMessageAtDesc` 로 변경 + 인덱스 `{userId,deletedAt,isPinned:-1,lastMessageAt:-1}` 갱신 (Feature 1 산출물 보강)
 - [ ] 존재하지 않거나 삭제된 대화 접근 시 `RESOURCE_NOT_FOUND`(404)
 - [ ] 필수 필드 누락/형식 오류는 공통 `ErrorResponse`(400)
 - [ ] **DTO 변환 시 모든 timestamp 를 KST(`Asia/Seoul`) `ZonedDateTime` 으로 직렬화** (확정된 결정 #6)
@@ -482,5 +483,5 @@
 3. **데모 사용자/스페이스** (2026-05-19): 설정값으로 분리하고 기본값은 임의 지정. `application.yml`에 `lina.demo.fixed-user-id: user-001`, `lina.demo.fixed-groups: Cloud-Control-Center`, `lina.demo.fixed-space-key: CPC` (모두 `${...}` 환경변수 오버라이드 가능). `db-schema.md`/구현에 위 결정 명시.
 4. **데이터 저장소** (2026-05-20): 2단계 BFF 도메인(대화·메시지·피드백) 영속은 **MongoDB** 사용. `message_sources`는 별도 컬렉션 없이 `messages.sources` 내장 배열로 단순화. MySQL 은 2단계에서는 미사용이며 3단계의 `users`/`user_tokens`/`user_space_acl`/`admins` 도입 시 재도입. `backend/CLAUDE.md` §2.2/§6/§7 의 MongoDB 쓰기 금지 규칙은 **RAG 파이프라인 데이터**(`raw_pages`/`raw_attachments`/`attachment_texts`/`chunked_units`/`import_jobs`/`sync_logs`)에 한정하도록 함께 갱신.
 5. **Confluence OAuth 토큰/cloudId 전달 모드** (2026-05-21, 2026-05-22 갱신): **PoC 모드 우선** — 3단계 auth-server 에서 access_token + cloudId 를 발급/조회한 뒤 BFF 가 **Data Ingestion Pipeline 요청 본문에 평문 첨부해 전달** (`docs/api-spec.md` §2-2). 운영 보호장치(로그·tracing 본문 마스킹, actuator 민감 endpoint 차단, NetworkPolicy, RabbitMQ payload 미포함) 동반 필수. **확장 모드(connectionId)** 는 후속 별도 라운드에서 수집 클라이언트 키 교체만으로 전환 가능하도록 인터페이스 경계 유지. 관련 설정 키: `lina.confluence.*` (토큰/cloudId 환경 변수 참조), `lina.data-ingestion.*` (Data Ingestion 호출 클라이언트 base-url/timeout). 상세는 `backend/auth-server/current-plans.md` §3단계 Feature A~D 참조.
-   - **2026-05-22 갱신**: 토큰 전달 대상을 RAG 질의(`/ml/query`, §2-1) → 데이터 수집(`/ml/ingest`, §2-2) 로 변경. **근거**: 권한은 수집 시 Qdrant payload(`allowed_groups`/`allowed_users`) 에 ACL 저장 + 질의 시 JWT 의 `user_id`/`groups` 로 필터링 (기획서 §6.4/§6.6). 따라서 `/ml/query` 는 라이브 Confluence 호출이 없어 토큰 불필요, 토큰은 크롤하는 수집 단계에만 필요. **전제**: "`/ml/query` 가 실시간 Confluence 호출을 일절 안 함" 을 가정 (※ ML 확인 대기 — 확인 후 본 결정 확정).
+   - **2026-05-22 갱신**: 토큰 전달 대상을 RAG 질의(`/ml/query`, §2-1) → 데이터 수집(`/ml/ingest`, §2-2) 로 변경. **근거**: 권한은 수집 시 Qdrant payload(`allowed_groups`/`allowed_users`) 에 ACL 저장 + 질의 시 JWT 의 `userId`/`groups` 로 필터링 (기획서 §6.4/§6.6). 따라서 `/ml/query` 는 라이브 Confluence 호출이 없어 토큰 불필요, 토큰은 크롤하는 수집 단계에만 필요. **전제**: "`/ml/query` 가 실시간 Confluence 호출을 일절 안 함" 을 가정 (※ ML 확인 대기 — 확인 후 본 결정 확정).
 6. **시간 표기 정책** (2026-05-21): 저장은 UTC(`Instant`), **응답 JSON 의 모든 timestamp 는 KST(`+09:00`)** 로 절대 전환 — `instant.atZone(ZoneId.of("Asia/Seoul"))`. Feature 3/4/5(`done` 페이로드 및 출처)/6 응답 DTO 변환에 동일 정책 적용. `docs/api-spec.md` 모든 응답 예시도 이 표기로 일괄 갱신 완료.

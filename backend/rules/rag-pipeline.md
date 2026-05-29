@@ -23,7 +23,7 @@ RAG Pipeline 호출 시 다음 정보를 전달한다.
 
 - 사용자 질문 텍스트
 - 대화 이력 (최근 N턴)
-- ACL 필터 정보 (`user_id`, `groups`)
+- ACL 필터 정보 (`userId`, `groups`)
 - 대화방 ID
 
 ---
