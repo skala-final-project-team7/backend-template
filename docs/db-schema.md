@@ -6,6 +6,16 @@
 
 ---
 
+## 변경 이력
+
+| 날짜 | 변경 | 비고 |
+|---|---|---|
+| 2026-05-19 | 최초 작성 — MySQL/JPA 기반 4테이블 정의 | DB 신규 도입 |
+| 2026-05-20 | 저장소 전환 — MongoDB 3컬렉션(`messages.sources` 내장)으로 재정의. MySQL 은 3단계의 `users`/`user_tokens`/`user_space_acl`/`admins` 도입 시 별도 정의 | `backend/bff-server/current-plans.md` 확정된 결정 #4 |
+| 2026-05-29 | `conversations.isPinned`(채팅방 고정) 추가. `idx_conversations_user_active_recent` 에 `isPinned:-1` 정렬 컬럼 반영(고정 우선 정렬). PATCH 토글은 `docs/api-spec.md` §1-2 | FE 채팅방 고정 기능 |
+
+---
+
 ## 1. 저장소 역할 분리
 
 | 저장소 | 컬렉션/테이블 | 접근 | 비고 |
@@ -177,13 +187,3 @@
 | `idx_conversations_user_active_recent` | `conversations` | `{ userId:1, deletedAt:1, isPinned:-1, lastMessageAt:-1 }` | 사용자별 활성 대화 고정 우선·최신순 페이징 |
 | `idx_messages_conversation_active_created` | `messages` | `{ conversationId:1, deletedAt:1, createdAt:1 }` | 대화별 활성 메시지 시간순(멀티턴 복원) |
 | `uniq_feedbacks_message` | `feedbacks` | `{ messageId:1 }` UNIQUE | 메시지당 피드백 1건 강제 |
-
----
-
-## 6. 변경 이력
-
-| 날짜 | 변경 | 비고 |
-|---|---|---|
-| 2026-05-19 | 최초 작성 — MySQL/JPA 기반 4테이블 정의 | DB 신규 도입 |
-| 2026-05-20 | 저장소 전환 — MongoDB 3컬렉션(`messages.sources` 내장)으로 재정의. MySQL 은 3단계의 `users`/`user_tokens`/`user_space_acl`/`admins` 도입 시 별도 정의 | `backend/bff-server/current-plans.md` 확정된 결정 #4 |
-| 2026-05-29 | `conversations.isPinned`(채팅방 고정) 추가. `idx_conversations_user_active_recent` 에 `isPinned:-1` 정렬 컬럼 반영(고정 우선 정렬). PATCH 토글은 `docs/api-spec.md` §1-2 | FE 채팅방 고정 기능 |

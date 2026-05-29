@@ -42,6 +42,6 @@ RAG Pipeline 호출 시 다음 정보를 전달한다.
 ML Pipeline의 응답을 프론트엔드로 중계할 때 SSE(Server-Sent Events) 스트리밍을 사용한다.
 
 - 반환 타입은 `SseEmitter`를 사용한다.
-- SSE 연결 타임아웃을 설정한다 (기본 60초).
+- SSE 타임아웃은 **idle 기준**으로 설정한다(기본 60초, `lina.rag.sse-timeout-ms`). 장시간 phase 동안 `status` 이벤트로 keep-alive 하고, idle 초과 시 `error`(`ML_TIMEOUT`) 전송 후 정리한다 (계약: `docs/api-spec.md` §1-1).
 - SSE 이벤트 타입(집합 정본은 `docs/api-spec.md` §1-1): `status`(진행 상태), `token`(답변 토큰), `sources`(인용 출처), `verification`(검증 결과), `meta`(현재 ML 구현 호환용·제거 예정), `done`(완료·`messageId`), `error`(오류 종료·`errorCode`). 스트림은 `done` / `error` 중 하나로 종료한다.
 - 연결 실패, ML Pipeline 타임아웃 시 적절한 에러 이벤트를 전송하고 연결을 정리한다.
