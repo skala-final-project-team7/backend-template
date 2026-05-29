@@ -37,4 +37,4 @@
 
 - 인증 흐름을 우회하는 코드를 작성하지 않는다.
 - 테스트 환경에서 인증을 비활성화할 때는 별도의 Test Security Config를 사용하고, production 코드에 조건 분기를 추가하지 않는다.
-- Token을 프론트엔드 응답 Body에 포함하지 않는다 (HttpOnly Cookie 또는 별도 전달 방식 사용).
+- **Confluence OAuth Access/Refresh Token(Atlassian 발급)은 프론트엔드에 노출하지 않는다** — 서버(MySQL)에만 암호화 보관한다. LINA 세션 JWT 는 `Authorization: Bearer` 방식으로 사용하며, 로그인/갱신 응답 `data` 로 access JWT + (LINA 발급) refresh token 을 FE 에 전달한다. **HttpOnly 쿠키는 사용하지 않는다**(`docs/api-spec.md` §4-1).
