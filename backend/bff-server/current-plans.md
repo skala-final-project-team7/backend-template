@@ -14,7 +14,7 @@
 |---|---|---|
 | 1단계 | 프로젝트 초기 셋업 (패키지 구조, 설정, 공통 예외/응답) | ✅ 완료 (2026-05-15, `auth-server` 와 공동) |
 | 2단계 | BFF Server 핵심 API (대화 CRUD, RAG 호출 + SSE 중계, 메시지 이력, 피드백, DB 스키마) | 🚧 Feature 1 완료, Feature 2~ 미착수 |
-| 4단계 | 부가 API (관리자 대시보드) | 미착수 |
+| 4단계 | 부가 API (관리자 대시보드 · Confluence 미리보기) | 미착수 |
 
 > **2026-05-19 범위 조정:** 중간발표를 인증 없이 시연하기 위해 2단계에서 **JWT 검증 필터를 제외**하고 3단계로 이동한다. 대신 **피드백 API**를 4단계에서 2단계로 당긴다. 근거: 사용자 지시 + `docs/api-spec.md` 전제("중간 발표 시 인증 하드코딩, 로그인 제외"). 상세는 아래 **2단계** 섹션 참조.
 
@@ -489,3 +489,47 @@
 5. **Confluence OAuth 토큰/cloudId 전달 모드** (2026-05-21, 2026-05-22 갱신): **PoC 모드 우선** — 3단계 auth-server 에서 access_token + cloudId 를 발급/조회한 뒤 BFF 가 **Data Ingestion Pipeline 요청 본문에 평문 첨부해 전달** (`docs/api-spec.md` §2-2). 운영 보호장치(로그·tracing 본문 마스킹, actuator 민감 endpoint 차단, NetworkPolicy, RabbitMQ payload 미포함) 동반 필수. **확장 모드(connectionId)** 는 후속 별도 라운드에서 수집 클라이언트 키 교체만으로 전환 가능하도록 인터페이스 경계 유지. 관련 설정 키: `lina.confluence.*` (토큰/cloudId 환경 변수 참조), `lina.data-ingestion.*` (Data Ingestion 호출 클라이언트 base-url/timeout). 상세는 `backend/auth-server/current-plans.md` §3단계 Feature A~D 참조.
    - **2026-05-22 갱신**: 토큰 전달 대상을 RAG 질의(`/ml/query`, §2-1) → 데이터 수집(`/ml/ingest`, §2-2) 로 변경. **근거**: 권한은 수집 시 Qdrant payload(`allowed_groups`/`allowed_users`) 에 ACL 저장 + 질의 시 JWT 의 `userId`/`groups` 로 필터링 (기획서 §6.4/§6.6). 따라서 `/ml/query` 는 라이브 Confluence 호출이 없어 토큰 불필요, 토큰은 크롤하는 수집 단계에만 필요. **전제**: "`/ml/query` 가 실시간 Confluence 호출을 일절 안 함" 을 가정 (※ ML 확인 대기 — 확인 후 본 결정 확정).
 6. **시간 표기 정책** (2026-05-21): 저장은 UTC(`Instant`), **응답 JSON 의 모든 timestamp 는 KST(`+09:00`)** 로 절대 전환 — `instant.atZone(ZoneId.of("Asia/Seoul"))`. Feature 3/4/5(`done` 페이로드 및 출처)/6 응답 DTO 변환에 동일 정책 적용. `docs/api-spec.md` 모든 응답 예시도 이 표기로 일괄 갱신 완료.
+
+---
+
+# 4단계 — 부가 API (관리자 대시보드 · Confluence 미리보기)
+
+> 진행 상태: 미착수. 6주차(관리자 대시보드)·5주차 이후(미리보기) 진입 시 본 섹션을 풀세트 Feature(체크리스트·변경 대상 파일·테스트)로 확장한다.
+> 상세 계약: `docs/api-spec.md` §4-2 / §4-3, 데이터 소스: `backend/rules/domains.md` §4, 화면: 기획서 §5.2 ADMIN-01.
+
+## 추적 대상 엔드포인트
+
+### 관리자 대시보드 (6주차, ADMIN 전용)
+
+| 엔드포인트 | 응답 핵심 | 데이터 소스 | 기획서 |
+|---|---|---|---|
+| `GET /api/admin/stats` | 일간 질의 수·평균 응답 시간·시간대별 접속 추이 | MySQL | §6.7 사용 추이 |
+| `GET /api/admin/users` | 일일/전체 사용자 + 사용자별 ACL 카운트(접근 스페이스/페이지/첨부) | MySQL | §6.7 인원 관리 |
+| `GET /api/admin/data` | 스페이스/페이지/`vectorDbSize`·`lastSyncAt` | MongoDB (읽기) | §6.7 데이터 관리 |
+| `GET /api/admin/feedback` | 긍정/부정 비율·추이·부정 원문(QCA 매핑) | MySQL | §6.7 피드백 관리 |
+| `GET /api/admin/sync` | 동기화 이력(`syncId`/`status`/`updatedPages`/...) | MongoDB (읽기) | §6.7 데이터 관리 |
+
+공통:
+- `/api/admin/*` **ADMIN 전용** — 미인증 `401(UNAUTHORIZED)`, 일반 사용자 `403(FORBIDDEN)` (`docs/api-spec.md` §4-2 / §1-4).
+- 공통 쿼리 파라미터(제안 — 6주차 확정): `period`(daily/hourly), `from`/`to`(KST), `page`/`size`.
+- 응답은 공통 Wrapper(`ApiResponse`), 시간은 **KST 직렬화**.
+- QCA 매핑: assistant `messageId` → 직전 `user` 메시지 (`backend/rules/domains.md` §2).
+
+### Confluence 페이지 미리보기 (5주차 이후 — 인증 의존)
+
+| 엔드포인트 | 응답 핵심 | 데이터 소스 |
+|---|---|---|
+| `GET /api/confluence/pages/preview?pageId=...` | `bodyViewValue`(HTML)·`breadcrumbs`·`pageUrl`·메타데이터 | Confluence REST (서버 보관 OAuth 토큰) |
+
+공통:
+- 인증 필수(Bearer JWT). 미인증 `401`.
+- FE 는 `bodyViewValue` 를 DOMPurify 로 sanitize 후 `v-html` 렌더링.
+- **TBD (3단계 결정)**: 호출 주체 — (a) BFF 가 토큰 사용해 직접 Confluence 호출 vs (b) Authorization Server 프록시 (`docs/api-spec.md` §4-3 TBD, `backend/CLAUDE.md` §6).
+
+## 진입 주차에서 정의할 것
+
+- Feature 단위 분할(엔드포인트별 또는 영역별 — 관리자 통계/사용자/데이터/피드백/동기화, 미리보기 1건)
+- `admin/controller`·`admin/service` 또는 `dashboard/...` 등 패키지/파일 구조
+- ADMIN 권한 가드(`@PreAuthorize` 또는 Spring Security Filter) 설계
+- WireMock/MockMvc 테스트 시나리오(권한 분기·기간 필터·페이지네이션)
+- 6주차 쿼리 파라미터 확정 (제안값 `period`/`from`/`to`/`page`/`size` 검증)

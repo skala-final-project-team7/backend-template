@@ -60,6 +60,8 @@
 - [ ] `GET /api/auth/accessible-resources` 호출로 cloudId 목록 조회
 - [ ] 사용자가 선택한 cloudId 저장 (세션 또는 임시 스토어)
 - [ ] `POST /api/auth/refresh` — `refresh_token` 으로 access token 재발급(AUTH-03). **Rotating Refresh**: 새 refresh 로 저장소 덮어쓰기, 만료/무효(`invalid_grant`) 시 재로그인 유도
+- [ ] `POST /api/auth/logout` — refresh token 무효화 + 세션 정리. `Authorization: Bearer {accessToken}` 로 식별. 응답 `data: null` (`docs/api-spec.md` §4-1)
+- [ ] `GET /api/users/me` — 현재 로그인 사용자 정보 조회(`userId`/`name`/`email`/`role`/`profileImageUrl`/`lastLoginAt`). Bearer 검증 필수, 미인증 `401(UNAUTHORIZED)` (`docs/api-spec.md` §4-1)
 
 > 위 4개 호출의 외부 계약·파라미터·주의사항은 본 파일 **§외부 OAuth 계약 참조 (Atlassian 3LO)** 참고.
 
