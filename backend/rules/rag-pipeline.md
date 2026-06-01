@@ -34,9 +34,9 @@ RAG Pipeline 호출 시 다음 정보를 전달한다 (상세 계약: `docs/api-
 
 - ML 서버의 SSE 스트림을 수신하여 프론트엔드로 중계한다.
 - user 메시지는 질의 시작 시 **선저장**, assistant 메시지(+`sources`+`verification`)는 **`done` 수신 시** MongoDB `messages` 컬렉션(`docs/db-schema.md` §3.2)에 저장한다. `error` 종료 시 assistant 는 미저장 (`docs/api-spec.md` §1-1 "스트림 종료·영속 규칙").
-- **Boundary 변환 (RAG → BFF → FE)**:
-  - RAG `error: { "code": ..., "message": ... }` → BFF `error: { "errorCode": ..., "message": ... }` 로 키 매핑 (SSE 에러 코드 enum 정본은 `docs/api-spec.md` §1-1)
-  - RAG `done: {}` → BFF 가 저장한 assistant 의 `messageId` 를 채워 FE 로 `done: { "messageId": ... }` 중계
+- **Boundary 가공 (RAG → BFF → FE)**:
+  - `error` 이벤트: RAG·BFF·FE 모두 `{ "errorCode": ..., "message": ... }` 동일 키 — passthrough, `errorCode` 값이 SSE 에러 코드 enum 표(`docs/api-spec.md` §1-1)와 일치하는지만 검증
+  - `done` 이벤트: RAG `{}` → BFF 가 저장한 assistant 의 `messageId` 를 채워 FE 로 `done: { "messageId": ... }` 중계 (가공 필요)
 - ML 서버 호출 실패 시 재시도하지 않고, 에러 이벤트를 프론트엔드에 전달한다.
 - ML 서버 응답 타임아웃은 설정값으로 관리한다 (§4 SSE 스트리밍 규칙 참조).
 
