@@ -13,6 +13,7 @@
 | 2026-05-19 | 최초 작성 — MySQL/JPA 기반 4테이블 정의 | DB 신규 도입 |
 | 2026-05-20 | 저장소 전환 — MongoDB 3컬렉션(`messages.sources` 내장)으로 재정의. MySQL 은 3단계의 `users`/`user_tokens`/`user_space_acl`/`admins` 도입 시 별도 정의 | `backend/bff-server/current-plans.md` 확정된 결정 #4 |
 | 2026-05-29 | `conversations.isPinned`(채팅방 고정) 추가. `idx_conversations_user_active_recent` 에 `isPinned:-1` 정렬 컬럼 반영(고정 우선 정렬). PATCH 토글은 `docs/api-spec.md` §1-2 | FE 채팅방 고정 기능 |
+| 2026-06-01 | `messages.role` 저장값을 `USER`/`ASSISTANT` → **`user`/`assistant`** (lowercase) 로 통일 — LLM/OpenAI 산업 표준, RAG `/ml/query` 와이어와 동일 값(boundary 변환 제거). Common Enum 표기 정책의 명시된 예외 | RAG boundary 매핑 제거·산업 표준 정렬 |
 
 ---
 
@@ -37,7 +38,7 @@
 | 삭제 방식 | **soft delete** — `conversations.deletedAt`, `messages.deletedAt`. 모든 조회는 `deletedAt == null` 필터 | 연결된 피드백·QCA 데이터 보존 |
 | 피드백 재등록 | **메시지당 1건** — `uniq_feedbacks_message` 유니크 인덱스. 동일 메시지 재요청 시 동일 문서 upsert (Feature 6 에서 신규 201 / 갱신 200) | `backend/bff-server/current-plans.md` 확정된 결정 #1 |
 | ID 전략 | `conversationId`/`messageId`/`feedbackId` 는 애플리케이션 생성 UUID(`String`)를 `_id` 로 사용 | 분산 생성·노출 안전. ObjectId 대신 UUID 로 외부 노출도 안전한 형식 |
-| 시간 필드 | UTC `Date`(BSON). JPA 시절과 동일하게 `java.time.Instant` 로 매핑 (API ISO-8601 `Z` 표기와 일치) | `docs/api-spec.md` 응답 포맷 |
+| 시간 필드 | 저장은 UTC `Date`(BSON), `java.time.Instant` 로 매핑. **응답 JSON 은 KST(`+09:00`) 로 절대 전환해 반환** (2026-05-21 확정) | `docs/api-spec.md` Common 시간 표기 정책 |
 
 > **인덱스 생성:** Spring Data MongoDB 의 `spring.data.mongodb.auto-index-creation: true` 로 엔티티의 `@Indexed`/`@CompoundIndex` 가 부팅 시 자동 생성된다. 운영 환경에서는 동일 정의의 인덱스 생성 스크립트를 미리 적용해도 무방하다(중복 정의는 idempotent).
 
@@ -87,7 +88,7 @@
 |---|---|---|---|
 | `_id` (`messageId`) | String (UUID) | ✅ | |
 | `conversationId` | String | ✅ | 부모 대화 식별자 (참조 키, FK 제약은 없음) |
-| `role` | String | ✅ | `USER` / `ASSISTANT` |
+| `role` | String | ✅ | `user` / `assistant` (lowercase — LLM/OpenAI 산업 표준, RAG `/ml/query` `history[].role` 과 동일 값) |
 | `content` | String | ✅ | 본문(길이 제한 없음. MongoDB 문서당 16MB 한도 내) |
 | `sources` | Array<Embedded> | — | assistant 메시지의 인용 출처. user 메시지는 빈 배열 |
 | `sources[].title` | String | — | 페이지 제목 |
@@ -108,7 +109,7 @@
 {
   "_id": "msg-uuid-002",
   "conversationId": "conv-uuid-001",
-  "role": "ASSISTANT",
+  "role": "assistant",
   "content": "S3 권한 오류는 IAM 정책을 수정하여 해결했습니다...",
   "sources": [
     {

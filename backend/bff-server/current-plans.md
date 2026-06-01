@@ -299,7 +299,7 @@
 | 컬렉션 | 핵심 필드 | 비고 |
 |---|---|---|
 | `conversations` | `_id`(=`conversationId` UUID), `userId`, `title`, `createdAt`, `updatedAt`, `lastMessageAt`, `isPinned`(기본 false), `deletedAt`(soft delete) | `userId`는 2단계에서 고정 데모 사용자. `isPinned`=채팅방 고정 |
-| `messages` | `_id`(=`messageId` UUID), `conversationId`, `role`(USER/ASSISTANT), `content`, `sources[]`(내장 배열), `confidenceScore`(nullable), `verificationResult`(nullable), `createdAt`, `deletedAt` | 질문·답변 모두 저장. 인용 출처는 별도 컬렉션 없이 `sources` 내장 (`domains.md` §1) |
+| `messages` | `_id`(=`messageId` UUID), `conversationId`, `role`(user/assistant — lowercase, LLM/OpenAI 표준), `content`, `sources[]`(내장 배열), `confidenceScore`(nullable), `verificationResult`(nullable), `createdAt`, `deletedAt` | 질문·답변 모두 저장. 인용 출처는 별도 컬렉션 없이 `sources` 내장 (`domains.md` §1) |
 | `feedbacks` | `_id`(=`feedbackId` UUID), `messageId`(UNIQUE), `rating`(LIKE/DISLIKE), `comment`(nullable), `createdAt` | 메시지 단위 피드백. QCA 연결은 `messageId`→assistant→직전 user 메시지로 추적 (`domains.md` §2) |
 
 > MySQL 기반 4테이블 설계(`message_sources` 별도 컬렉션 포함)는 2026-05-20 자로 폐기. MySQL 은 3단계의 `users`/`user_tokens`/`user_space_acl`/`admins` 도입 시 재도입한다.
@@ -403,13 +403,16 @@
 
 #### 체크리스트
 - [ ] `RagClient` — `rag/client/`에서만 ML/AI Agent 호출, 동기 `RestClient`/`HttpClient` InputStream으로 SSE 파싱 (`Mono`/`Flux`/WebFlux 미사용)
-- [ ] ML 호출 시 다음을 전달 (ACL 누락 경로 없음):
-  - 질문(`question`), `conversationId`, 대화이력(최근 N턴 — `lina.rag.history-turns` 기본 10)
+- [ ] ML 호출 시 다음을 전달 (`docs/api-spec.md` §2-1):
+  - 질문(`question`), `conversationId`, 대화이력(`history`, 최근 N턴 — `lina.rag.history-turns` 기본 10). **`history[].role` 은 저장값 그대로**(`user`/`assistant` lowercase, LLM/OpenAI 표준 — boundary 변환 없음)
   - ACL: `userId`/`groups` (2단계 데모 고정값)
   - 검색 컨텍스트: `spaceKey` (`lina.demo.fixed-space-key`)
+  - **`stream: true`** — BFF 는 항상 명시(토큰 스트리밍 ON, RAG 기본은 `false`)
   - **`/ml/query` 본문에 `accessToken`/`cloudId` 미포함** (확정된 결정 #5, 2026-05-22 갱신). PoC 토큰은 Data Ingestion 호출(`/ml/ingest`, `api-spec.md` §2-2) 시에만 전달 — `lina.confluence.*` 설정값 또는 auth-server `/api/auth/confluence-token` 조회 결과 (3단계 도입 후, 4단계 `/api/admin/ingest` 경로에서 사용)
+- [ ] **ACL fail-closed 게이트**: `groups` 가 빈 배열(`[]`)이거나 `spaceKey` 가 빈 문자열이면 `/ml/query` 호출을 **차단**하고 SSE `error`(`errorCode: UNAUTHORIZED` 또는 `INVALID_REQUEST`)로 종료 (`backend/CLAUDE.md` §6 "ACL 필터 없이 RAG 호출 금지" / `docs/api-spec.md` §2-1)
 - [ ] `POST /api/conversations/{conversationId}/chat` — `SseEmitter` 반환, Wrapper 미적용
 - [ ] `status`/`token`/`sources`/`verification`/`meta`/`done`/`error` 이벤트 중계 (집합 정본 `docs/api-spec.md` §1-1). `status`=진행표시, `meta`=호환용(제거 예정), 스트림은 `done`/`error`로 종료. 출처 `sourceUpdatedAt`·`done` 페이로드 timestamp 는 **KST 직렬화**
+- [ ] **Boundary 변환 (RAG → BFF → FE)**: (a) RAG `error: { "code": ..., "message": ... }` → BFF `error: { "errorCode": ..., "message": ... }` 키 매핑; (b) RAG `done: {}` → BFF 가 저장한 assistant 의 `messageId` 를 채워 `done: { "messageId": ... }` 로 중계 (`docs/api-spec.md` §2-1 / `backend/rules/rag-pipeline.md` §3)
 - [ ] user 메시지 선저장 → `done` 수신 시 assistant 메시지+출처+검증 저장 → `last_message_at` 갱신
 - [ ] 첫 assistant 응답의 `meta.title` 로 대화 제목 **1회 자동 설정** (현재 `title` 이 기본 `"새 대화"` 일 때만; 이후·사용자 PATCH 수정 시 무시) — `docs/api-spec.md` §1-1 "대화 제목 자동 설정 규칙"
 - [ ] ML 실패/타임아웃 시 재시도 없이 `error` 이벤트 전송 후 연결 정리 — SSE 타임아웃은 **idle 기준** `lina.rag.sse-timeout-ms`(기본 60s), 장시간 phase 는 `status` keep-alive, idle 초과 시 `error`(`ML_TIMEOUT`). 응답 헤더 `text/event-stream`/`no-cache`/`X-Accel-Buffering: no` (`docs/api-spec.md` §1-1)

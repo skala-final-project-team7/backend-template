@@ -19,21 +19,26 @@ BFF Server → (HTTP/SSE) → FastAPI ML Server
 
 ## 2. 요청 시 전달 항목
 
-RAG Pipeline 호출 시 다음 정보를 전달한다.
+RAG Pipeline 호출 시 다음 정보를 전달한다 (상세 계약: `docs/api-spec.md` §2-1).
 
-- 사용자 질문 텍스트
-- 대화 이력 (최근 N턴)
-- ACL 필터 정보 (`userId`, `groups`)
-- 대화방 ID
+- 사용자 질문 텍스트 (`question`)
+- 대화 이력 (`history`, 최근 N턴) — `history[].role` 은 lowercase(`user`/`assistant`, LLM/OpenAI 표준, 저장값과 동일)
+- ACL 필터 정보 (`userId`, `groups`) — 빈 값이면 BFF 가 호출을 **차단**(fail-closed)
+- 대화방 ID (`conversationId`)
+- 검색 스코프 (`spaceKey`) — 빈 문자열 금지(fail-closed)
+- `stream: true` — 토큰 스트리밍 명시 (BFF 는 항상 `true` 로 호출)
 
 ---
 
 ## 3. 응답 처리
 
 - ML 서버의 SSE 스트림을 수신하여 프론트엔드로 중계한다.
-- 답변 완료 후 메시지(질문 + 답변 + 인용 출처 + 검증 결과)를 MySQL에 저장한다.
+- user 메시지는 질의 시작 시 **선저장**, assistant 메시지(+`sources`+`verification`)는 **`done` 수신 시** MongoDB `messages` 컬렉션(`docs/db-schema.md` §3.2)에 저장한다. `error` 종료 시 assistant 는 미저장 (`docs/api-spec.md` §1-1 "스트림 종료·영속 규칙").
+- **Boundary 변환 (RAG → BFF → FE)**:
+  - RAG `error: { "code": ..., "message": ... }` → BFF `error: { "errorCode": ..., "message": ... }` 로 키 매핑 (SSE 에러 코드 enum 정본은 `docs/api-spec.md` §1-1)
+  - RAG `done: {}` → BFF 가 저장한 assistant 의 `messageId` 를 채워 FE 로 `done: { "messageId": ... }` 중계
 - ML 서버 호출 실패 시 재시도하지 않고, 에러 이벤트를 프론트엔드에 전달한다.
-- ML 서버 응답 타임아웃은 설정값으로 관리한다.
+- ML 서버 응답 타임아웃은 설정값으로 관리한다 (§4 SSE 스트리밍 규칙 참조).
 
 ---
 

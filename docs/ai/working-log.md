@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-06-01
+
+- **§3 호출 흐름 다이어그램 확장**: "전체 호출 흐름"이라는 제목에 맞게 §4(인증·관리자 대시보드·미리보기)까지 포함하도록 그룹별로 재구성(2단계 / §4-1 / §4-2 / §4-3). 기존 "§4는 범위 밖" 안내는 제거 — 구현 전 명세 완성 방침에 따라 진짜 '전체' 다이어그램으로 통합. `docs/api-spec.md` §3.
+- **`messageCount` 제거**: §1-2 대화 목록 응답의 `messageCount` 필드 제거. 기획서 §5.2/§6.7 에 근거 없고(채팅 사이드바에서 카운트 노출 요구 없음), db-schema 에도 정의 안 됨 → 비정규화/집계 비용 없이 단순화. 필요해지면 그때 재도입.
+- **db-schema 시간 표기 행 정정**: `docs/db-schema.md` §2 "시간 필드" 행이 "API ISO-8601 `Z` 표기와 일치"라고 stale 문구를 갖고 있던 것을 KST 정책(2026-05-21 확정)에 맞게 "응답 JSON 은 KST(`+09:00`)" 로 정정. api-spec ↔ db-schema 시간 표기 일관.
+- **§2-1 RAG 질의 입력 명세 정밀화**: RAG 팀 협의 결과 반영. (1) 엔드포인트는 `POST /ml/query` 하나, 요청/응답을 동일 절에서 명시적으로 분리 표기. (2) Request Header 표·Request Body 필드 표(Required) 정형화. (3) **`stream` 필드 추가**(기본 `false`이지만 BFF 는 항상 `true` 로 호출 — 토큰 스트리밍, PoC fallback 가능). (4) **`history[].role` 을 RAG/OpenAI 관용 소문자**(`user`/`assistant`)로 매핑. (5) `groups`/`spaceKey` **fail-closed** 명문화(BFF 가 빈 값 시 호출 차단). (6) **boundary 변환 명시**: RAG `error` `code` → BFF `errorCode`, RAG `done` `{}` → BFF 가 `messageId` 채워 중계.
+- **`backend/bff-server/current-plans.md` Feature 5 보강**: api-spec §2-1 정밀화 결과를 체크리스트로 끌어옴 — (1) ML 호출 전달 항목에 `stream: true`(BFF 항상 명시)·`history[].role` lowercase 그대로 전달(변환 없음) 추가, (2) `groups`/`spaceKey` 빈 값 시 호출 차단하는 **ACL fail-closed 게이트** 항목 신설, (3) **Boundary 변환** 항목(`code`→`errorCode` 매핑·`done {}` → `messageId` 채움) 신설. 구현자가 체크리스트만 보고도 누락 없이 만들도록 명시.
+- **`backend/rules/rag-pipeline.md` 정합화**: §2 "요청 시 전달 항목" 에 `spaceKey`·`stream: true` 추가, `history[].role` lowercase·fail-closed 명시. §3 "응답 처리" 의 stale 한 "MySQL에 저장" → **MongoDB** 로 정정하고 user 선저장/assistant `done` 시 저장/`error` 시 미저장 규칙 명문화. RAG → BFF → FE **boundary 변환**(`code`→`errorCode`, `done: {}` → `messageId` 채워 중계) 추가 — api-spec §2-1·§1-1 과 정합.
+- **메시지 `role` 저장 표기 lowercase 통일**: 위 §2-1 정밀화에서 "BFF boundary 변환(USER↔user)" 로 잡았던 것을 한 단계 더 정리. **저장(`messages.role`)·외부 응답(`§1-2`)·RAG 와이어(`/ml/query history[].role`) 모두 lowercase `user`/`assistant`** 로 통일 — LLM/OpenAI 산업 표준, RAG boundary 매핑 자체를 제거(더 단순). `rating`(LIKE/DISLIKE)·`verificationResult`·`status`·사용자 `role`(USER/ADMIN) 등 다른 UPPER enum 은 그대로 유지. Common Enum 정책의 lowercase 예외로 명시. 변경 파일: `docs/api-spec.md`(Common·§1-2·§2-1·changelog), `docs/db-schema.md`(필드·샘플·변경이력), `backend/bff-server/current-plans.md`, `backend/bff-server/.../entity/MessageRole.java`(enum 상수 lowercase + javadoc), `Message.java`(javadoc), `MessageRepositoryTest.java`(테스트 참조).
+
 ## 2026-05-29
 
 - **페이지 단위 ACL 권한 모델 협의 (ADR 0001 초안)**: RAG 팀의 "페이지/유저 단위 권한 전환" 요청에 대응. **source of truth = Confluence content restrictions API(수집 단계)** 로 결정, BE 는 별도 권한 테이블 없이 (a) 수집용 OAuth 토큰 제공 (b) 질의 시 JWT claim 발급만 담당. 질의 측은 **JWT pass-through**(식별자 값 무변형), 매칭 책임은 색인(Ingestion)이 payload 를 JWT vocabulary 에 맞추는 쪽으로 둠. 신규 파일: `docs/adr/0001-page-level-acl-source.md` (상태: Proposed — RAG/ML 합의 대기). 미해결: JWT vocabulary 확정, inherited 권한 산출 책임, 첨부파일 권한 상속, `/ml/query` 무-Confluence 전제 재확인 (ADR §4).
