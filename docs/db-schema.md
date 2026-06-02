@@ -14,6 +14,8 @@
 | 2026-05-20 | 저장소 전환 — MongoDB 3컬렉션(`messages.sources` 내장)으로 재정의. MySQL 은 3단계의 `users`/`user_tokens`/`user_space_acl`/`admins` 도입 시 별도 정의 | `backend/bff-server/current-plans.md` 확정된 결정 #4 |
 | 2026-05-29 | `conversations.isPinned`(채팅방 고정) 추가. `idx_conversations_user_active_recent` 에 `isPinned:-1` 정렬 컬럼 반영(고정 우선 정렬). PATCH 토글은 `docs/api-spec.md` §1-2 | FE 채팅방 고정 기능 |
 | 2026-06-01 | `messages.role` 저장값을 `USER`/`ASSISTANT` → **`user`/`assistant`** (lowercase) 로 통일 — LLM/OpenAI 산업 표준, RAG `/ml/query` 와이어와 동일 값(boundary 변환 제거). Common Enum 표기 정책의 명시된 예외 | RAG boundary 매핑 제거·산업 표준 정렬 |
+| 2026-06-02 | MySQL `users` 테이블 정의(§6.1) — `role` 컬럼(`USER`/`ADMIN`) 포함, JWT `role` claim 의 single source. 별도 `admins` 테이블 계획 흡수. 최초 admin 은 마이그레이션 스크립트에 하드코딩 INSERT | 권한 모델 DB 단일화·YAML config 미사용 |
+| 2026-06-02 | `messages.content` 본문 검색 인덱스 권고(§3.2 후속) — `GET /api/conversations/search` (api-spec §1-2 신설) 를 위한 인덱스. PoC 는 `$regex`, 후속에 text index 전환 검토 | 대화 본문 검색 endpoint 도입 |
 
 ---
 
@@ -24,7 +26,7 @@
 | **MongoDB (BFF CRUD)** | `conversations`, `messages`(`sources` 내장), `feedbacks` | BFF 가 읽기/쓰기 | 본 문서 §3 의 정의 대상 |
 | **MongoDB (BFF 읽기 전용)** | `raw_pages`, `raw_attachments`, `attachment_texts`, `chunked_units`, `import_jobs`, `sync_logs` | BFF 는 조회만, 쓰기는 Ingestion/Sync Worker | RAG 파이프라인 입력 데이터 |
 | **MongoDB (RAG 파이프라인 전용)** | `inference_logs`, `audit_logs`, `qca_dataset` | RAG 파이프라인이 관리. BFF 접근 없음 | 본 문서 범위 밖 |
-| **MySQL (3단계)** | `users`, `user_tokens`, `user_space_acl`, `admins` | Authorization Server 가 관리 | 2단계에서는 미사용. 3단계 도입 시 별도 정의 |
+| **MySQL (3단계)** | `users`(role 포함, §6.1), `user_tokens`, `user_space_acl` | Authorization Server 가 관리 | 2단계에서는 미사용. 3단계 도입 시 별도 정의. 별도 `admins` 테이블 계획은 `users.role` 컬럼으로 흡수(2026-06-02). |
 
 `backend/CLAUDE.md` §2.2 / §6 의 MongoDB 쓰기 금지 규칙은 위 두 번째 행(RAG 파이프라인 데이터)에 한정된다. 대화/피드백 컬렉션은 BFF 가 정상 CRUD 한다.
 
@@ -134,6 +136,7 @@
 | 인덱스 | 정의 | 목적 |
 |---|---|---|
 | `idx_messages_conversation_active_created` | `{ conversationId: 1, deletedAt: 1, createdAt: 1 }` | `findByConversationIdAndDeletedAtIsNullOrderByCreatedAtAsc` — 대화별 활성 메시지 시간순(멀티턴 복원). |
+| (후속) `idx_messages_content_text` | `{ content: "text" }` | `GET /api/conversations/search` 본문 검색 가속용 — PoC 는 `$regex` (case-insensitive), 후속 라운드에서 text index 도입 시 `$text` 로 전환 검토 (단, `$regex` 와 `$text` 는 매칭 시맨틱이 달라 cutover 시 결과 차이 검증 필요). |
 
 > **내장 배열 결정:** 출처는 메시지와 함께만 의미를 가지며 메시지 단위로 같이 읽힌다. 별도 컬렉션 + 조인 대신 `sources` 내장이 1회 read 로 끝나 효율적이다. (조회 패턴: `docs/api-spec.md` §1-2 메시지 이력 응답에서 메시지와 함께 sources 를 반환)
 
@@ -188,3 +191,60 @@
 | `idx_conversations_user_active_recent` | `conversations` | `{ userId:1, deletedAt:1, isPinned:-1, lastMessageAt:-1 }` | 사용자별 활성 대화 고정 우선·최신순 페이징 |
 | `idx_messages_conversation_active_created` | `messages` | `{ conversationId:1, deletedAt:1, createdAt:1 }` | 대화별 활성 메시지 시간순(멀티턴 복원) |
 | `uniq_feedbacks_message` | `feedbacks` | `{ messageId:1 }` UNIQUE | 메시지당 피드백 1건 강제 |
+
+---
+
+## 6. MySQL 테이블 (3단계)
+
+> 3단계 Authorization Server 도입 시 사용. 본 절은 plan-ahead 정의이며 실제 마이그레이션은 3단계 착수 시 적용한다.
+
+### 6.1 `users`
+
+| 컬럼 | 타입 | 필수 | 비고 |
+|---|---|---|---|
+| `user_id` | VARCHAR(64) **PK** | ✅ | Confluence accountId (예: `712020:91b5112c-...`). JWT `userId` claim 과 동일 식별자 |
+| `role` | ENUM(`USER`, `ADMIN`) | ✅ | 권한 역할. JWT `role` claim 의 **source of truth** (DB 단일). 기존 별도 `admins` 테이블 계획 흡수 |
+| `name` | VARCHAR(128) | — | 표시 이름 (Confluence 응답에서 받아 저장) |
+| `email` | VARCHAR(256) | — | 이메일 |
+| `profile_image_url` | VARCHAR(512) | — | |
+| `last_login_at` | DATETIME (UTC) | — | OAuth callback 시 갱신 |
+| `created_at` | DATETIME (UTC) | ✅ | INSERT 시각 |
+
+샘플 행:
+
+| user_id | role | name | created_at |
+|---|---|---|---|
+| `712020:91b5112c-...` | `ADMIN` | yhlee | 2026-05-29 |
+| `712020:b5462b07-...` | `USER` | 신유진 | 2026-05-30 |
+| `712020:d54eba09-...` | `USER` | sunny | 2026-06-01 |
+
+**역할 결정 (auth-server Feature A)**
+
+- OAuth callback 에서 Confluence accountId 받음 → `SELECT role FROM users WHERE user_id = ?`
+- 행 없음 → `INSERT (..., role = 'USER')` 기본
+- 행 있음 → 그 `role` 사용
+- JWT `role` claim 으로 발급
+- **config 분기 없이 DB 단일 source** (YAML bootstrap 미사용)
+
+**최초 admin seed (PoC)**
+
+첫 배포 시 마이그레이션 스크립트(예: `V001__seed_initial_admin.sql`)에 admin accountId 를 **하드코딩 INSERT** 한다(`role='ADMIN'`). 운영 진입 시 Flyway placeholder + env 외부화 가능. 추가 admin 권한 부여/박탈은 DB UPDATE/DELETE 또는 향후 admin 관리 API 로 처리.
+
+```sql
+-- V001__seed_initial_admin.sql (예시)
+INSERT INTO users (user_id, role, name, created_at)
+VALUES ('712020:91b5112c-...', 'ADMIN', 'yhlee', NOW());
+```
+
+**별도 `admins` 테이블 미사용** — §1 의 MySQL 행에서도 admins 항목 제거. `users.role` 컬럼으로 흡수(2026-06-02 결정).
+
+인덱스:
+
+| 인덱스 | 정의 | 목적 |
+|---|---|---|
+| PK | `user_id` | OAuth callback 시 accountId lookup |
+| (선택) `idx_users_role` | `(role, last_login_at)` | admin 목록 조회·활성 사용자 정렬용(운영 시) |
+
+### 6.2 (예정) `user_tokens`, `user_space_acl`
+
+Confluence OAuth access/refresh token 암호화 저장 + per-user space ACL (3단계 Feature A). 컬럼 구조는 3단계 착수 시 정의 — `backend/auth-server/current-plans.md` Feature A 참조.

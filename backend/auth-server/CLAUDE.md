@@ -12,7 +12,7 @@
 - Confluence OAuth 2.0 Authorization Code Flow 처리
 - Access/Refresh Token MySQL **암호화 저장** (평문 저장 금지)
 - 사용자 스페이스 접근 권한(ACL) 조회·관리
-- JWT 발급 (Claim: `userId`, `groups`, `iss`, `exp`, `iat`)
+- JWT 발급 (Claim: `userId`, `groups`, `role`, `iss`, `exp`, `iat`) — `role` 은 MySQL `users.role` 단일 source, `userId` 는 Confluence accountId (`docs/db-schema.md` §6.1)
 - Refresh Token 기반 자동 갱신
 
 세부 흐름은 `docs/architecture.md` §7, `backend/rules/auth.md` §1·§2 를 따른다.

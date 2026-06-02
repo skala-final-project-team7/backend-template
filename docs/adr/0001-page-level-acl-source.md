@@ -92,7 +92,7 @@ RAG 검색 파이프라인의 ACL 모델을 **스페이스 단위 → 페이지/
 
 ## 4. 미해결 / 확인 필요 (Open Questions)
 
-1. **JWT `userId`/`groups` 의 vocabulary 확정** — auth-server 의 Confluence OAuth 가 산출하는 값이 accountId / group name / groupId 중 무엇인지. 테스트 결과 restriction API 는 user 측 `accountId`(예: `712020:...`)와 group 측 `name` 을 반환하므로 JWT `userId` 는 `accountId`, `groups` 는 group `name` 으로 정합 가능성 큼. 첫 OAuth 토큰 확보 시 `/me` 응답 형식과 함께 최종 확정.
+1. **JWT vocabulary 확정** — `userId` 는 **Confluence `accountId`** 로 확정(`docs/db-schema.md` §6.1 `users.user_id` 정의, 2026-06-02). `groups` vocabulary 는 group `name` (restriction API 응답 형식) 으로 정합 가능성 크나, auth-server `/api/users/me` 또는 Confluence 그룹 API 첫 호출 결과로 최종 확정 필요.
 2. **inherited 권한 산출 책임** — Admin Key 테스트(§11.2) 에서 page-level restriction 비어 있어도 일반 호출에서 안 보이는 페이지 2건 확인. parent folder/page restriction 또는 space permission 계층 영향. PoC 결정 필요: (a) page-level restriction 만 반영하고 누락 감수 vs (b) 상위 계층까지 조회해 effective 산출. (a) 가 단순하지만 일부 페이지 권한 누설 위험.
 3. 첨부파일(`raw_attachments`) 권한이 부모 페이지 권한을 따르는지 — 테스트 미실시. 첨부 API 응답에 별도 restriction 이 있는지 확인 필요.
 4. `/ml/query` 가 실시간 Confluence 호출을 일절 하지 않는다는 전제(§2-1) 재확인 — 본 ADR 도 이 전제에 의존.

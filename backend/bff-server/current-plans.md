@@ -302,7 +302,7 @@
 | `messages` | `_id`(=`messageId` UUID), `conversationId`, `role`(user/assistant — lowercase, LLM/OpenAI 표준), `content`, `sources[]`(내장 배열), `confidenceScore`(nullable), `verificationResult`(nullable), `createdAt`, `deletedAt` | 질문·답변 모두 저장. 인용 출처는 별도 컬렉션 없이 `sources` 내장 (`domains.md` §1) |
 | `feedbacks` | `_id`(=`feedbackId` UUID), `messageId`(UNIQUE), `rating`(LIKE/DISLIKE), `comment`(nullable), `createdAt` | 메시지 단위 피드백. QCA 연결은 `messageId`→assistant→직전 user 메시지로 추적 (`domains.md` §2) |
 
-> MySQL 기반 4테이블 설계(`message_sources` 별도 컬렉션 포함)는 2026-05-20 자로 폐기. MySQL 은 3단계의 `users`/`user_tokens`/`user_space_acl`/`admins` 도입 시 재도입한다.
+> MySQL 기반 4테이블 설계(`message_sources` 별도 컬렉션 포함)는 2026-05-20 자로 폐기. MySQL 은 3단계의 `users`(`role` 포함, §6.1)/`user_tokens`/`user_space_acl` 도입 시 재도입한다. 별도 `admins` 테이블 계획은 `users.role` 로 흡수(2026-06-02, `docs/db-schema.md` §6.1).
 
 인덱스 (목적 함께 기록):
 - `idx_conversations_user_active_recent { userId:1, deletedAt:1, isPinned:-1, lastMessageAt:-1 }` — 사용자별 활성 대화 고정 우선·최신순 페이징
@@ -438,7 +438,24 @@
 
 ---
 
-### Feature 7. 검증
+### Feature 7. 대화 검색 (`GET /api/conversations/search`)
+
+본인 대화의 메시지 본문(`messages.content`)에서 검색어 매칭. 결과는 대화 단위로 묶고 매칭 메시지 샘플 + 카운트 동반. (`docs/api-spec.md` §1-2 「대화 검색」, `docs/db-schema.md` §3.2)
+
+#### 체크리스트
+- [ ] `ConversationSearchController` — `GET /api/conversations/search` 진입점
+- [ ] `q` 검증: **trim 후 길이 2~50 자**. 위반 시 `400` (`errorCode: INVALID_SEARCH_QUERY`). `size` 최대 50.
+- [ ] `q` 의 정규식 메타문자 escape 후 `$regex` (case-insensitive) on `messages.content`. text index 는 후속 라운드 (`db-schema.md` §3.2 인덱스 표 후속 행)
+- [ ] 권한 격리: `conversations.userId == 현재 사용자` 필터 강제 (2단계 데모 = `lina.demo.fixed-user-id`). `CurrentUserProvider` 통해서만 조회 — 타 사용자 대화 노출 차단
+- [ ] soft delete 필터: `conversations.deletedAt == null` AND `messages.deletedAt == null`
+- [ ] 정렬: `lastMessageAt` DESC (관련도 점수 미적용 — PoC)
+- [ ] 응답 구조: `results[].matchedMessages` **대화당 최대 3개** + `matchCount` (총 매칭 수). `totalCount` 는 매칭 대화 총 수
+- [ ] snippet 추출 유틸: 첫 매칭 위치 기준 좌우 ~40자, 본문 잘림 시 `...` prefix/suffix 부착. `matchPositions` 는 추출된 `snippet` 기준 `[[start, end]]` (end exclusive, UTF-16). **HTML 미생성** — XSS 방지
+- [ ] `INVALID_SEARCH_QUERY` enum 값을 `common` 모듈 `ErrorCode` 에 추가 (도메인 특화 코드 최초 사례 — `docs/api-spec.md` Common 노트)
+- [ ] Repository 테스트: 본인 대화만 매칭, 다른 사용자 대화 미노출, deleted 미노출, case-insensitive, 메타문자 escape
+- [ ] Controller 테스트(MockMvc): `q` 미존재 / trim 길이 미달·초과 / `size` 초과 → 400 `INVALID_SEARCH_QUERY`
+
+### Feature 8. 검증
 
 #### 체크리스트
 - [ ] `./scripts/format.sh` 성공
@@ -471,7 +488,7 @@
 
 ## 2단계 완료 기준 (Done Definition)
 
-- [ ] 위 7개 외부 API가 `docs/api-spec.md` §1 명세대로 동작
+- [ ] 위 7개 도메인 Feature 의 외부 API 가 `docs/api-spec.md` §1 명세대로 동작 (대화 CRUD·메시지 이력·챗 SSE·피드백·대화 검색)
 - [ ] `docs/db-schema.md` 작성 완료, Entity와 일치
 - [ ] Service Unit / Controller MockMvc / Repository DataMongoTest / RagClient WireMock 테스트 통과
 - [ ] `Mono`/`Flux`/WebFlux 미사용, MongoDB RAG 파이프라인 데이터(`raw_pages`/`chunked_units` 등) 쓰기 없음, ACL 누락 호출 경로 없음 (`backend/CLAUDE.md` §7 체크리스트)
@@ -485,7 +502,7 @@
 1. **피드백 재등록** (2026-05-19): 메시지당 1건 — `uniq_feedbacks_message (messageId)` 유니크 인덱스. 같은 메시지 재요청 시 동일 문서 upsert. 응답 코드는 신규 201 / 갱신 200으로 구분.
 2. **삭제 방식** (2026-05-19): soft delete 확정. `conversations.deletedAt`, `messages.deletedAt` 사용. 조회는 모두 `deletedAt == null` 필터. 연결 피드백·QCA 데이터 보존.
 3. **데모 사용자/스페이스** (2026-05-19): 설정값으로 분리하고 기본값은 임의 지정. `application.yml`에 `lina.demo.fixed-user-id: user-001`, `lina.demo.fixed-groups: Cloud-Control-Center`, `lina.demo.fixed-space-key: CPC` (모두 `${...}` 환경변수 오버라이드 가능). `db-schema.md`/구현에 위 결정 명시.
-4. **데이터 저장소** (2026-05-20): 2단계 BFF 도메인(대화·메시지·피드백) 영속은 **MongoDB** 사용. `message_sources`는 별도 컬렉션 없이 `messages.sources` 내장 배열로 단순화. MySQL 은 2단계에서는 미사용이며 3단계의 `users`/`user_tokens`/`user_space_acl`/`admins` 도입 시 재도입. `backend/CLAUDE.md` §2.2/§6/§7 의 MongoDB 쓰기 금지 규칙은 **RAG 파이프라인 데이터**(`raw_pages`/`raw_attachments`/`attachment_texts`/`chunked_units`/`import_jobs`/`sync_logs`)에 한정하도록 함께 갱신.
+4. **데이터 저장소** (2026-05-20): 2단계 BFF 도메인(대화·메시지·피드백) 영속은 **MongoDB** 사용. `message_sources`는 별도 컬렉션 없이 `messages.sources` 내장 배열로 단순화. MySQL 은 2단계에서는 미사용이며 3단계의 `users`(`role` 포함)/`user_tokens`/`user_space_acl` 도입 시 재도입(별도 `admins` 테이블 계획은 `users.role` 로 흡수 — 2026-06-02 갱신). `backend/CLAUDE.md` §2.2/§6/§7 의 MongoDB 쓰기 금지 규칙은 **RAG 파이프라인 데이터**(`raw_pages`/`raw_attachments`/`attachment_texts`/`chunked_units`/`import_jobs`/`sync_logs`)에 한정하도록 함께 갱신.
 5. **Confluence OAuth 토큰/cloudId 전달 모드** (2026-05-21, 2026-05-22 갱신): **PoC 모드 우선** — 3단계 auth-server 에서 access_token + cloudId 를 발급/조회한 뒤 BFF 가 **Data Ingestion Pipeline 요청 본문에 평문 첨부해 전달** (`docs/api-spec.md` §2-2). 운영 보호장치(로그·tracing 본문 마스킹, actuator 민감 endpoint 차단, NetworkPolicy, RabbitMQ payload 미포함) 동반 필수. **확장 모드(connectionId)** 는 후속 별도 라운드에서 수집 클라이언트 키 교체만으로 전환 가능하도록 인터페이스 경계 유지. 관련 설정 키: `lina.confluence.*` (토큰/cloudId 환경 변수 참조), `lina.data-ingestion.*` (Data Ingestion 호출 클라이언트 base-url/timeout). 상세는 `backend/auth-server/current-plans.md` §3단계 Feature A~D 참조.
    - **2026-05-22 갱신**: 토큰 전달 대상을 RAG 질의(`/ml/query`, §2-1) → 데이터 수집(`/ml/ingest`, §2-2) 로 변경. **근거**: 권한은 수집 시 Qdrant payload(`allowed_groups`/`allowed_users`) 에 ACL 저장 + 질의 시 JWT 의 `userId`/`groups` 로 필터링 (기획서 §6.4/§6.6). 따라서 `/ml/query` 는 라이브 Confluence 호출이 없어 토큰 불필요, 토큰은 크롤하는 수집 단계에만 필요. **전제**: "`/ml/query` 가 실시간 Confluence 호출을 일절 안 함" 을 가정 (※ ML 확인 대기 — 확인 후 본 결정 확정).
 6. **시간 표기 정책** (2026-05-21): 저장은 UTC(`Instant`), **응답 JSON 의 모든 timestamp 는 KST(`+09:00`)** 로 절대 전환 — `instant.atZone(ZoneId.of("Asia/Seoul"))`. Feature 3/4/5(`done` 페이로드 및 출처)/6 응답 DTO 변환에 동일 정책 적용. `docs/api-spec.md` 모든 응답 예시도 이 표기로 일괄 갱신 완료.

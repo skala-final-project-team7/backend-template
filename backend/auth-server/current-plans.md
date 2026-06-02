@@ -55,7 +55,8 @@
 
 ### Feature A. Atlassian OAuth Authorization Code Flow
 - [ ] `GET /api/auth/login` — Atlassian authorize 리다이렉트 (`state` 발급·검증)
-- [ ] `GET /api/auth/callback` — code → access_token 교환
+- [ ] `GET /api/auth/callback` — code → access_token 교환 + **MySQL `users` upsert** (accountId 로 lookup, 없으면 `role='USER'` INSERT, 있으면 `last_login_at` 갱신). JWT `role` claim 은 `users.role` 값 사용 — config 분기 없이 DB 단일 source (`docs/db-schema.md` §6.1)
+- [ ] **최초 admin seed**: 첫 배포 마이그레이션(`V001__seed_initial_admin.sql`)에 admin accountId 를 **하드코딩 INSERT** (`role='ADMIN'`). 추가 admin 권한 부여는 DB UPDATE 또는 향후 admin 관리 API.
 - [ ] 토큰 발급 응답(access/refresh token + cloudId)을 **사용자 단위로 MySQL 에 암호화 저장** — admin-only ingest 흐름에서 세션·재시작 무관하게 토큰 사용 가능해야 함. 키 형식·알고리즘은 본 Feature 착수 시 확정 (`backend/rules/auth.md` §2 / `backend/auth-server/CLAUDE.md` §3.1)
 - [ ] `GET /api/auth/accessible-resources` 호출로 cloudId 목록 조회
 - [ ] 사용자가 선택한 cloudId 를 위 토큰 레코드와 함께 **MySQL 에 영속 저장** (`accessible-resources` 가 여러 사이트 반환 시 선택 UI 또는 단일 선택 규칙)
@@ -73,7 +74,7 @@
 - [ ] 응답에 만료 시각 포함, BFF 가 만료 임박 시 별도 갱신 호출
 
 ### Feature C. JWT 발급 계약 (확장 단계 기반 작업, 본 라운드는 인터페이스만)
-- [ ] JWT Claim 셋 정의: `userId`, `groups`, `iss`, `exp`, `iat` (`backend/rules/auth.md` §2)
+- [ ] JWT Claim 셋 정의: `userId`(Confluence accountId), `groups`, `role`(`USER`/`ADMIN`, MySQL `users.role` 단일 source — `docs/db-schema.md` §6.1), `iss`, `exp`, `iat` (`backend/rules/auth.md` §2)
 - [ ] 서명 알고리즘·키 형식 확정(서명 알고리즘/공개키·개인키 PEM 위치) — `backend/rules/auth.md` 참조
 - [ ] 세션 JWT `Authorization: Bearer` 발급 — 로그인/갱신 응답 `data` 로 access+refresh 전달, FE 보관(HttpOnly 쿠키 미사용, `backend/rules/auth.md` §3 / `docs/api-spec.md` §4-1)
 - [ ] BFF JWT 검증 필터와 계약 동기 (현재 bff-server Feature 2 가 `CurrentUserProvider` 인터페이스로 격리됨)
@@ -94,4 +95,5 @@
 | (예정) JWT 서명 알고리즘 | TBD (Feature C 착수 시 확정) | — |
 | Confluence 토큰 저장 정책 | **PoC 부터 MySQL 암호화 저장**(access/refresh + cloudId, 사용자 단위) — admin-only ingest 가 세션 무관하게 동작하기 위해 callback 시 즉시 영속. 암호화 알고리즘·키 형식은 Feature A 착수 시 확정 | 2026-06-02 |
 | admin Confluence access 패턴 | **OAuth Bearer + `Atl-Confluence-With-Admin-Key: true` 헤더**(Admin Key 활성화 후) — admin 도 일반 사용자와 동일하게 Confluence OAuth 3LO 로 로그인하며, ingestion 도 같은 OAuth 토큰 사용(별도 API Token 미보관). 사용자 → "Admin Key 발급" 버튼 → BFF `POST /api/admin/key/activate` → auth-server 가 admin OAuth 토큰으로 Atlassian 활성화. **3단계 구현 시 OAuth Bearer + Admin Key 헤더 동작 검증 게이트**. (`docs/adr/0001-page-level-acl-source.md` §2.1) | 2026-06-02 |
+| role 결정 정책 | **MySQL `users.role` DB 단일 source** — OAuth callback 시 accountId lookup, 행 없으면 `role='USER'` INSERT, 행 있으면 그 값 사용. JWT `role` claim 은 그 값을 그대로 발급. 별도 YAML bootstrap config 미사용. **최초 admin** 은 첫 배포 마이그레이션(`V001__seed_initial_admin.sql`) 하드코딩 INSERT. 별도 `admins` 테이블 미사용(흡수). (`docs/db-schema.md` §6.1) | 2026-06-02 |
 | (예정) Refresh Token 갱신 정책 | TBD (Feature C/확장 단계 시점) | — |
