@@ -39,8 +39,8 @@ RAG 검색 파이프라인의 ACL 모델을 **스페이스 단위 → 페이지/
 **역할 분리**:
 
 - BE(auth-server): admin OAuth 토큰 영속(MySQL 암호화), Admin Key 활성화 내부 API 제공, BFF 가 `GET /api/auth/confluence-token` 으로 토큰 조회
-- BFF: `POST /api/admin/key/activate` 외부 endpoint 노출(ADMIN 전용), `POST /api/admin/ingest` 가 `/ml/ingest` 호출 시 admin OAuth token + cloudId 전달
-- ML(Data Ingestion): Atlassian REST 호출 시 `Atl-Confluence-With-Admin-Key: true` 헤더 부여, 페이지별 restriction API 호출해 Qdrant payload 작성
+- BFF: `POST /api/admin/key/activate` 외부 endpoint 노출(**수동/테스트용**, ADMIN 전용). **일반 동선**은 `POST /api/admin/ingest` 가 내부적으로 key 활성 미확인 시 자동 activate 후 `/ml/ingest` 호출(2026-06-02 회의 결정 — admin "데이터 인제스천 파이프라인" 버튼 하나로 일괄 처리)
+- ML(Data Ingestion): Atlassian REST 호출 시 `Atl-Confluence-With-Admin-Key: true` 헤더 부여, 페이지별 restriction API 호출해 Qdrant payload 작성. **ingestion 완료 직후 Atlassian admin-key deactivate API 호출**(보안 — 키 사용 후 즉시 폐기, 60분 TTL 은 fallback. 2026-06-02 회의 결정)
 
 **검증 게이트 (3단계 구현 시)**: OAuth Bearer + Admin Key 헤더가 Atlassian 측에서 동작하는지 첫 admin OAuth 토큰 확보 직후 curl 로 검증. 실패 시 admin API Token 별도 보관 모델로 전환(plan 한 행 정정만 필요).
 

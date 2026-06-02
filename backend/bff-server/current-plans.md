@@ -536,8 +536,8 @@
 
 | 엔드포인트 | 응답 핵심 | 대상 | 비고 |
 |---|---|---|---|
-| `POST /api/admin/key/activate` | `activatedUntil` (60분 후) | auth-server 내부 API → Atlassian `POST /api/v2/admin-key` | admin 의 저장 OAuth access_token 으로 활성화. 수집 트리거 전 사전 호출 필요. 만료 시 재활성화. (`docs/api-spec.md` §1-4 / `docs/adr/0001-page-level-acl-source.md` §2.1) |
-| `POST /api/admin/ingest` | `jobId`/`status`(`STARTED`)/`startedAt` | ML 서버 `POST /ml/ingest` | body `{ spaceKey }`. BFF가 auth-server `GET /api/auth/confluence-token` 로 admin 의 `accessToken`+`cloudId` 조회 후 `/ml/ingest` 본문에 첨부. Data Ingestion 이 Atlassian REST 호출 시 `Atl-Confluence-With-Admin-Key: true` 헤더 부여(Admin Key 활성화 전제). 2단계 demo 데이터 셋업도 본 endpoint 사용. (`docs/api-spec.md` §1-4·§2-2) |
+| `POST /api/admin/key/activate` | `activatedUntil` (60분 후) | auth-server 내부 API → Atlassian `POST /api/v2/admin-key` | **수동/테스트용** — 일반 사용 경로는 `/api/admin/ingest` 가 자동 처리(아래). 검증·디버깅·운영 점검 때만 호출. (`docs/api-spec.md` §1-4 / `docs/adr/0001-page-level-acl-source.md` §2.1) |
+| `POST /api/admin/ingest` | `jobId`/`status`(`STARTED`)/`startedAt` | ML 서버 `POST /ml/ingest` | body `{ spaceKey }`. **내부 처리**: ① BFF 가 admin 의 Admin Key 활성 상태 확인 → 만료/미활성이면 auth-server 통해 자동 activate (회의 결정 2026-06-02) ② auth-server `GET /api/auth/confluence-token` 로 admin 의 `accessToken`+`cloudId` 조회 ③ `/ml/ingest` 본문에 첨부해 호출. Data Ingestion 이 Atlassian REST 호출 시 `Atl-Confluence-With-Admin-Key: true` 헤더 부여. **Admin Key 말소는 ML 측 책임** — ingestion 완료 직후 ML 이 Atlassian admin-key deactivate 호출(60분 TTL fallback). 2단계 demo 데이터 셋업도 본 endpoint 사용. (`docs/api-spec.md` §1-4·§2-2) |
 | `GET /api/admin/ingest/status/{jobId}` | `jobId`/`status`/`totalPages`/`processedPages`/`failedPages`/`startedAt` | ML 서버 `GET /ml/ingest/status/{jobId}` | passthrough. `status`: `STARTED`/`IN_PROGRESS`/`COMPLETED`/`FAILED` |
 
 공통: `/api/admin/*` ADMIN 전용(미인증 401·일반 403). PoC 토큰 보안(평문 노출 금지·로그 마스킹·RabbitMQ 미포함·NetworkPolicy) — `docs/api-spec.md` §2-2 보안 주의 참조. **검증 게이트**: OAuth Bearer + Admin Key 헤더 동작은 3단계 auth-server 구현 직후 curl 로 확인(`backend/auth-server/current-plans.md` Feature A 게이트 항목).

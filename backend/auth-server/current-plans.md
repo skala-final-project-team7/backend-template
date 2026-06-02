@@ -54,8 +54,8 @@
 ## 구현 Feature 및 체크리스트 (PoC)
 
 ### Feature A. Atlassian OAuth Authorization Code Flow
-- [ ] `GET /api/auth/login` — Atlassian authorize 리다이렉트 (`state` 발급·검증)
-- [ ] `GET /api/auth/callback` — code → access_token 교환 + **MySQL `users` upsert** (accountId 로 lookup, 없으면 `role='USER'` INSERT, 있으면 `last_login_at` 갱신). JWT `role` claim 은 `users.role` 값 사용 — config 분기 없이 DB 단일 source (`docs/db-schema.md` §6.1)
+- [ ] `GET /api/auth/login` — Atlassian authorize 리다이렉트. **`mode=admin` 쿼리 파라미터 처리**: 값이 있으면 `state` 토큰에 함께 직렬화(서버 측 세션 또는 서명된 state)해 callback 까지 전달. 클라이언트가 callback URL 만 조작해 admin 으로 우회하는 것을 방지 (`docs/api-spec.md` §4-1, 2026-06-02 회의 결정).
+- [ ] `GET /api/auth/callback` — code → access_token 교환 + **MySQL `users` upsert** (accountId 로 lookup, 없으면 `role='USER'` INSERT, 있으면 `last_login_at` 갱신). JWT `role` claim 은 `users.role` 값 사용 — config 분기 없이 DB 단일 source (`docs/db-schema.md` §6.1). **`mode=admin` 게이트**: state 에 보관된 mode 가 `admin` 인데 `users.role != ADMIN` 이면 `403 FORBIDDEN` 반환, 토큰 미발급 (`docs/api-spec.md` §4-1).
 - [ ] **최초 admin seed**: 첫 배포 마이그레이션(`V001__seed_initial_admin.sql`)에 admin accountId 를 **하드코딩 INSERT** (`role='ADMIN'`). 추가 admin 권한 부여는 DB UPDATE 또는 향후 admin 관리 API.
 - [ ] 토큰 발급 응답(access/refresh token + cloudId)을 **사용자 단위로 MySQL 에 암호화 저장** — admin-only ingest 흐름에서 세션·재시작 무관하게 토큰 사용 가능해야 함. 키 형식·알고리즘은 본 Feature 착수 시 확정 (`backend/rules/auth.md` §2 / `backend/auth-server/CLAUDE.md` §3.1)
 - [ ] `GET /api/auth/accessible-resources` 호출로 cloudId 목록 조회
