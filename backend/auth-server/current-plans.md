@@ -62,6 +62,8 @@
 - [ ] `POST /api/auth/refresh` — `refresh_token` 으로 access token 재발급(AUTH-03). **Rotating Refresh**: 새 refresh 로 저장소 덮어쓰기, 만료/무효(`invalid_grant`) 시 재로그인 유도
 - [ ] `POST /api/auth/logout` — refresh token 무효화 + 세션 정리. `Authorization: Bearer {accessToken}` 로 식별. 응답 `data: null` (`docs/api-spec.md` §4-1)
 - [ ] `GET /api/users/me` — 현재 로그인 사용자 정보 조회(`userId`/`name`/`email`/`role`/`profileImageUrl`/`lastLoginAt`). Bearer 검증 필수, 미인증 `401(UNAUTHORIZED)` (`docs/api-spec.md` §4-1)
+- [ ] **Admin Key 활성화 내부 API** — BFF 의 `POST /api/admin/key/activate`(`docs/api-spec.md` §1-4)가 호출하는 내부 endpoint. admin 의 저장 OAuth access_token 으로 Atlassian `POST /api/v2/admin-key` 호출(만료 시각 응답). admin-only ingestion 시 page-level restriction 우회를 위해 필요. ADR 0001 §2.1 참조.
+- [ ] **검증 게이트 (Feature A 착수 시 첫 실행)**: 첫 admin OAuth 토큰 확보 직후 OAuth Bearer + `Atl-Confluence-With-Admin-Key: true` 헤더로 restricted page 호출 검증(curl). 200 이면 단일 OAuth 자격증명 모델 그대로 진행, 401/403/404 이면 admin API Token 별도 보관 모델로 전환(plan 한 행 정정 + Feature B 보강).
 
 > 위 4개 호출의 외부 계약·파라미터·주의사항은 본 파일 **§외부 OAuth 계약 참조 (Atlassian 3LO)** 참고.
 
@@ -91,4 +93,5 @@
 | OAuth 도입 단계 | PoC 우선(accessToken/cloudId 직접 전달) → 후속 라운드에서 connectionId 로 확장 | 2026-05-21 |
 | (예정) JWT 서명 알고리즘 | TBD (Feature C 착수 시 확정) | — |
 | Confluence 토큰 저장 정책 | **PoC 부터 MySQL 암호화 저장**(access/refresh + cloudId, 사용자 단위) — admin-only ingest 가 세션 무관하게 동작하기 위해 callback 시 즉시 영속. 암호화 알고리즘·키 형식은 Feature A 착수 시 확정 | 2026-06-02 |
+| admin Confluence access 패턴 | **OAuth Bearer + `Atl-Confluence-With-Admin-Key: true` 헤더**(Admin Key 활성화 후) — admin 도 일반 사용자와 동일하게 Confluence OAuth 3LO 로 로그인하며, ingestion 도 같은 OAuth 토큰 사용(별도 API Token 미보관). 사용자 → "Admin Key 발급" 버튼 → BFF `POST /api/admin/key/activate` → auth-server 가 admin OAuth 토큰으로 Atlassian 활성화. **3단계 구현 시 OAuth Bearer + Admin Key 헤더 동작 검증 게이트**. (`docs/adr/0001-page-level-acl-source.md` §2.1) | 2026-06-02 |
 | (예정) Refresh Token 갱신 정책 | TBD (Feature C/확장 단계 시점) | — |

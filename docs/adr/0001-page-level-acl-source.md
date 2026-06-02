@@ -1,8 +1,8 @@
 # ADR 0001 — 페이지 단위 ACL 권한 데이터 소스
 
-> 상태: **Proposed (협의 중)** — RAG/ML 팀 합의 후 Accepted 로 전환하고 `docs/api-spec.md`·`docs/architecture.md` 본문을 갱신한다.
-> 일자: 2026-05-29
-> 관련: `docs/architecture.md` §2·§6.3·§13, `docs/api-spec.md` §2-1·§2-2, `backend/rules/auth.md` §2, `backend/rules/domains.md` §3, `docs/db-schema.md` §1, 기획서 §6.4/§6.6
+> 상태: **Accepted (2026-06-02)** — admin-only ingestion + Confluence Admin Key 테스트 결과(`/Users/.../confluence_admin_key_test_summary.md`, 2026-06-02) 로 구현 경로 확정. 본 ADR 의 §2.1 데이터 소스가 구체화됨.
+> 일자: 2026-05-29 (초안) / 2026-06-02 (Accepted)
+> 관련: `docs/architecture.md` §2·§6.3·§13, `docs/api-spec.md` §1-4·§2-1·§2-2, `backend/rules/auth.md` §2, `backend/rules/domains.md` §3, `docs/db-schema.md` §1, 기획서 §6.4/§6.6
 
 ---
 
@@ -29,9 +29,20 @@ RAG 검색 파이프라인의 ACL 모델을 **스페이스 단위 → 페이지/
 
 페이지 단위 권한의 원천을 **Confluence** 로 둔다. 권한 정보는 **수집(Ingestion)/동기화(Sync) 단계**에서 Confluence content restrictions REST API 로 읽어 Qdrant payload(`allowed_users` / `allowed_groups`)에 적재한다.
 
-- 읽기 권한 조회 엔드포인트(예): `GET /wiki/rest/api/content/{id}/restriction/byOperation/read` — 해당 페이지의 read restriction(users/groups) 반환.
-- 권한 적재 주체는 RAG 측 Ingestion/Sync Worker. **BE(auth-server)의 역할은 (a) 수집 단계 Confluence 호출용 OAuth 토큰 제공, (b) 질의 시점 JWT 에 일관된 식별자 체계로 `userId`/`groups` claim 발급** 두 가지로 한정한다. BE 는 별도 페이지 권한 테이블을 운영하지 않는다(이중 관리 회피).
-- 토큰 전달 경로는 기존 결정 유지: `/ml/ingest` 본문의 `accessToken`/`cloudId`(PoC) → 후속 `connectionId`(`docs/api-spec.md` §2-2).
+**구체 구현 경로 (2026-06-02 Admin Key 테스트로 확정)**:
+
+1. **수집 자격증명**: admin 의 Confluence OAuth access_token + `Atl-Confluence-With-Admin-Key: true` 헤더 (admin-only ingestion 모델). Admin Key 활성화는 admin 이 LINA UI 에서 `POST /api/admin/key/activate` 로 60분 활성화. Atlassian `POST /api/v2/admin-key` 가 호출됨. 테스트 결과: page-level read restriction 을 우회해 admin 이 접근 가능한 모든 페이지 수집 가능(일반 호출 232건 → Admin Key 호출 237건, 5개 restricted page 차이 확인).
+2. **본문 수집**: `GET /api/v2/pages/{id}?body-format=storage` — `body.storage.value` 가 페이지 본문(HTML/storage format), `spaceId`/`parentId`/`ownerId`/`authorId`/`version` 등 메타데이터 포함.
+3. **권한 추출**: 페이지별로 `GET /rest/api/content/{pageId}/restriction/byOperation/read` 호출 → 응답의 `restrictions.user.results[].accountId` 와 `restrictions.group.results[].name` 을 추출해 Qdrant payload `allowed_users` / `allowed_groups` 로 변환.
+4. **계층 권한 (open)**: 일부 페이지는 page-level restriction 이 비어 있어도 parent folder/page 또는 space permission 으로 차단된다 (테스트 §11.2). 정확한 effective ACL 산출은 §4 미해결 항목 참조.
+
+**역할 분리**:
+
+- BE(auth-server): admin OAuth 토큰 영속(MySQL 암호화), Admin Key 활성화 내부 API 제공, BFF 가 `GET /api/auth/confluence-token` 으로 토큰 조회
+- BFF: `POST /api/admin/key/activate` 외부 endpoint 노출(ADMIN 전용), `POST /api/admin/ingest` 가 `/ml/ingest` 호출 시 admin OAuth token + cloudId 전달
+- ML(Data Ingestion): Atlassian REST 호출 시 `Atl-Confluence-With-Admin-Key: true` 헤더 부여, 페이지별 restriction API 호출해 Qdrant payload 작성
+
+**검증 게이트 (3단계 구현 시)**: OAuth Bearer + Admin Key 헤더가 Atlassian 측에서 동작하는지 첫 admin OAuth 토큰 확보 직후 curl 로 검증. 실패 시 admin API Token 별도 보관 모델로 전환(plan 한 행 정정만 필요).
 
 ### 2.2 권한 데이터 형식 / 식별자 체계
 
@@ -81,7 +92,9 @@ RAG 검색 파이프라인의 ACL 모델을 **스페이스 단위 → 페이지/
 
 ## 4. 미해결 / 확인 필요 (Open Questions)
 
-1. **JWT `userId`/`groups` 의 vocabulary 확정** (pass-through 의 전제) — auth-server 의 Confluence OAuth 가 산출하는 값이 accountId / group name / groupId 중 무엇인지. 색인 측 payload 가 이 값에 그대로 맞춰져야 하므로 가장 먼저 고정해야 한다. 더불어 content restrictions 응답이 같은 식별자(특히 groupId)를 제공하는지 ML 확인 — 불일치 시 색인 단계에서 매핑 필요.
-2. inherited 권한(부모/스페이스 상속)을 effective 로 산출하는 책임 위치 — Ingestion 내부 vs Confluence API 조합.
-3. 첨부파일(`raw_attachments`) 권한이 부모 페이지 권한을 따르는지.
+1. **JWT `userId`/`groups` 의 vocabulary 확정** — auth-server 의 Confluence OAuth 가 산출하는 값이 accountId / group name / groupId 중 무엇인지. 테스트 결과 restriction API 는 user 측 `accountId`(예: `712020:...`)와 group 측 `name` 을 반환하므로 JWT `userId` 는 `accountId`, `groups` 는 group `name` 으로 정합 가능성 큼. 첫 OAuth 토큰 확보 시 `/me` 응답 형식과 함께 최종 확정.
+2. **inherited 권한 산출 책임** — Admin Key 테스트(§11.2) 에서 page-level restriction 비어 있어도 일반 호출에서 안 보이는 페이지 2건 확인. parent folder/page restriction 또는 space permission 계층 영향. PoC 결정 필요: (a) page-level restriction 만 반영하고 누락 감수 vs (b) 상위 계층까지 조회해 effective 산출. (a) 가 단순하지만 일부 페이지 권한 누설 위험.
+3. 첨부파일(`raw_attachments`) 권한이 부모 페이지 권한을 따르는지 — 테스트 미실시. 첨부 API 응답에 별도 restriction 이 있는지 확인 필요.
 4. `/ml/query` 가 실시간 Confluence 호출을 일절 하지 않는다는 전제(§2-1) 재확인 — 본 ADR 도 이 전제에 의존.
+5. **OAuth Bearer + Admin Key 헤더 동작 검증** (구현 게이트) — 팀 MD 테스트는 API Token (Basic auth) 으로만 검증. admin OAuth Bearer 와 Admin Key 헤더 조합이 Atlassian 측에서 동일하게 동작하는지 3단계 구현 시 첫 검증. 실패 시 admin API Token 별도 보관 모델로 전환(plan 한 행 정정).
+6. ~~scope 충분성~~ (이전 미해결) — Admin Key 가 admin 권한 그대로 부여하므로 OAuth scope 충분성 검증 불필요(2026-06-02 해소).
