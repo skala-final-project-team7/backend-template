@@ -25,7 +25,7 @@ RAG Pipeline 호출 시 다음 정보를 전달한다 (상세 계약: `docs/api-
 - 대화 이력 (`history`, 최근 N턴) — `history[].role` 은 lowercase(`user`/`assistant`, LLM/OpenAI 표준, 저장값과 동일)
 - ACL 필터 정보 (`userId`, `groups`) — 빈 값이면 BFF 가 호출을 **차단**(fail-closed)
 - 대화방 ID (`conversationId`)
-- 검색 스코프 (`spaceKey`) — 빈 문자열 금지(fail-closed)
+- 검색 스코프 (`spaceKey`) — **선택**. 누락 시 사용자 접근 가능 모든 스페이스 cross-space 검색(`userId`/`groups` ACL 만 적용), 지정 시 해당 스페이스로 좁힘. ACL 이 아닌 스코프 필드이므로 fail-closed 대상 아님 (2026-06-02 결정, `docs/api-spec.md` §2-1)
 - `stream: true` — 토큰 스트리밍 명시 (BFF 는 항상 `true` 로 호출)
 
 ---
