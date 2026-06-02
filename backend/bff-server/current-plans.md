@@ -385,7 +385,7 @@
 
 #### 체크리스트
 - [ ] `GET /api/conversations/{conversationId}/messages` — 멀티턴 복원용 전체 이력
-- [ ] Entity→DTO 변환 (Entity 직접 반환 금지), 인용 출처·`confidenceScore`·`verificationResult` 포함
+- [ ] Entity→DTO 변환 (Entity 직접 반환 금지), `role`(`user`/`assistant`, **lowercase** — LLM/OpenAI 표준)·인용 출처·`confidenceScore`·`verificationResult` 포함
 - [ ] `created_at ASC` 순서 보장, 삭제 메시지 제외
 - [ ] 없는/삭제 대화 시 404
 - [ ] **`createdAt`·출처 `sourceUpdatedAt` 모두 KST(`+09:00`) 표기로 직렬화** (확정된 결정 #6)
@@ -430,7 +430,7 @@
 - `feedback/service/FeedbackServiceTest.java`, `feedback/controller/FeedbackControllerTest.java`
 
 #### 체크리스트
-- [ ] `POST /api/messages/{messageId}/feedback` — `rating`(like/dislike) 검증, `comment` 선택
+- [ ] `POST /api/messages/{messageId}/feedback` — `rating`(`LIKE`/`DISLIKE`, UPPER) 검증, `comment` 선택
 - [ ] 메시지당 1건 unique + upsert: 신규 201 / 갱신 200
 - [ ] 잘못된 `rating`/필수 누락 시 400, 없는 메시지 시 404
 - [ ] **`createdAt` 응답을 KST(`+09:00`)로 직렬화** (확정된 결정 #6)
@@ -514,6 +514,15 @@
 - 공통 쿼리 파라미터(제안 — 6주차 확정): `period`(daily/hourly), `from`/`to`(KST), `page`/`size`.
 - 응답은 공통 Wrapper(`ApiResponse`), 시간은 **KST 직렬화**.
 - QCA 매핑: assistant `messageId` → 직전 `user` 메시지 (`backend/rules/domains.md` §2).
+
+### 데이터 수집 트리거 (관리자용, ADMIN 전용)
+
+| 엔드포인트 | 응답 핵심 | 대상 | 비고 |
+|---|---|---|---|
+| `POST /api/admin/ingest` | `jobId`/`status`(`STARTED`)/`startedAt` | ML 서버 `POST /ml/ingest` | body `{ spaceKey }`. BFF가 auth-server `GET /api/auth/confluence-token` 로 admin 의 `accessToken`+`cloudId` 조회 후 `/ml/ingest` 본문에 첨부 (`docs/api-spec.md` §1-4·§2-2). 2단계 demo 데이터 셋업도 본 endpoint 사용. |
+| `GET /api/admin/ingest/status/{jobId}` | `jobId`/`status`/`totalPages`/`processedPages`/`failedPages`/`startedAt` | ML 서버 `GET /ml/ingest/status/{jobId}` | passthrough. `status`: `STARTED`/`IN_PROGRESS`/`COMPLETED`/`FAILED` |
+
+공통: `/api/admin/*` ADMIN 전용(미인증 401·일반 403). PoC 토큰 보안(평문 노출 금지·로그 마스킹·RabbitMQ 미포함·NetworkPolicy) — `docs/api-spec.md` §2-2 보안 주의 참조.
 
 ### Confluence 페이지 미리보기 (5주차 이후 — 인증 의존)
 

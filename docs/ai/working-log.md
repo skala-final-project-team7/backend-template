@@ -8,6 +8,7 @@
 ## 2026-06-02
 
 - **데이터 수집 모델 확정: admin-only**: 사용자 onboarding 모델(per-user OAuth → 본인 ingest) vs admin-only 시스템 ingest(query-time ACL) 사이에서 **admin-only 확정**. 근거: 기획서 §6.6 의 "단일 인덱스 + 사용자 단위 검색"(query-time ACL) 디자인과 정합, 중복 수집 회피, PoC 구현 단순. 결과적으로 (1) `docs/api-spec.md` §1-4 `POST /api/admin/ingest` 의 ADMIN 권한이 그대로 유지, (2) 별도 endpoint(`/api/ingest/request`) 도입 안 함, (3) 팀에서 받은 **ONBOARDING-01(상태) / ONBOARDING-02(취소) PDF 는 폐기/out-of-scope**(필요 시 admin 대시보드 모니터링 화면으로 재해석은 FE 디자인 영역).
+- **bff-server/current-plans 정합화 3건**: (1) Feature 6 피드백 `rating(like/dislike)` 오타 → `LIKE`/`DISLIKE` UPPER (api-spec §1-3·Enum 정책 정합). (2) 4단계 placeholder 에 누락돼 있던 `POST /api/admin/ingest`·`GET /api/admin/ingest/status/{jobId}` 를 "데이터 수집 트리거 (관리자용)" sub-section 으로 추가(api-spec §1-4·§2-2 정합, 2단계 demo 데이터 셋업 용도도 명시). (3) Feature 4 메시지 이력 응답 필드에 `role(user/assistant, lowercase)` 명시 보강.
 - **Confluence OAuth 토큰 DB 저장 시점 확정: callback 즉시 영속**: `backend/auth-server/current-plans.md` Feature A 와 작업 요약 모드 표 갱신. 기존엔 "PoC=메모리/세션, 확장=MySQL 암호화"로 저장 시점이 모드별로 갈렸으나, admin-only ingest 가 admin 의 세션·서버 재시작 무관하게 토큰을 써야 하므로 **PoC 부터 MySQL 암호화 저장으로 일원화**. 모드 구분은 이제 **전송 방식**(PoC=accessToken/cloudId 직접 전달 / 확장=connectionId+cloudId)로만 남음. 확정된 결정 표의 "Token 암호화 방식 TBD" 행을 "PoC 부터 MySQL 암호화 저장" 으로 갱신, Rotating Refresh 노트의 저장소 분기 표현도 단일화.
 
 ---
