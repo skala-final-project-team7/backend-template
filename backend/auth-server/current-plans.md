@@ -24,8 +24,8 @@
 
 | 모드 | 흐름 | 적용 시점 |
 |---|---|---|
-| **PoC** | BFF/Auth → Atlassian OAuth callback → access_token 발급 → `accessible-resources` 호출로 cloudId 조회 → 사용자가 선택한 cloudId 저장 → AI Agent 호출 시 `accessToken + cloudId` 본문 직접 전달 | **3단계 (현재)** |
-| 확장 | 위 흐름에서 OAuth 연동 정보를 DB 에 암호화 저장 → `connectionId` 발급 → AI Agent 에는 `connectionId + cloudId` 만 전달, AI Agent 가 필요 시 connectionId 로 토큰 재요청 | **3단계 이후 별도 라운드** (cutover 시점 사전 합의) |
+| **PoC** | BFF/Auth → Atlassian OAuth callback → access_token 발급 → `accessible-resources` 호출로 cloudId 조회 → **사용자 단위로 MySQL 에 암호화 저장**(access/refresh token + cloudId) → Data Ingestion(`/ml/ingest`) 호출 시 `accessToken + cloudId` 본문 직접 전달 | **3단계 (현재)** |
+| 확장 | 위와 동일 저장. 단 **Data Ingestion 본문에 토큰 평문 노출 제거** → `connectionId` 발급 → Data Ingestion 에는 `connectionId + cloudId` 만 전달, Data Ingestion 이 필요 시 connectionId 로 토큰 재요청 | **3단계 이후 별도 라운드** (cutover 시점 사전 합의) |
 
 ## 외부 OAuth 계약 참조 (Atlassian 3LO)
 
@@ -47,7 +47,7 @@
 ### 구현 시 주의 (노트 기반 — 검증 필요)
 
 - **`offline_access` scope 필수** — refresh_token 발급 조건. authorize 의 `scope` 에 포함한다.
-- **Rotating Refresh Token** — 갱신 시 기존 refresh 가 무효화되고 새 값이 발급된다 → 저장소(PoC: 세션/임시, 확장: MySQL 암호화)에 **반드시 덮어쓰기**하고 이전 값은 재사용 금지.
+- **Rotating Refresh Token** — 갱신 시 기존 refresh 가 무효화되고 새 값이 발급된다 → **MySQL 암호화 저장소에 반드시 덮어쓰기**하고 이전 값은 재사용 금지.
 - **scope 충분성 (※ 검증 TODO)** — 노트의 `read:confluence-content.summary` / `...-space.summary` 는 요약 수준이라 **RAG 본문·첨부 수집에 부족할 수 있다**. 실제 필요한 content/attachment 읽기 scope 를 공식 문서로 확정한다.
 - `client_secret` 등은 평문 노출 금지(환경변수/Secret), 토큰 로그 마스킹(Feature D).
 
@@ -56,9 +56,9 @@
 ### Feature A. Atlassian OAuth Authorization Code Flow
 - [ ] `GET /api/auth/login` — Atlassian authorize 리다이렉트 (`state` 발급·검증)
 - [ ] `GET /api/auth/callback` — code → access_token 교환
-- [ ] 토큰 발급 응답을 메모리/세션 스토어에 보관 (PoC: 영속 미사용, 확장 단계에서 MySQL 암호화 저장으로 전환)
+- [ ] 토큰 발급 응답(access/refresh token + cloudId)을 **사용자 단위로 MySQL 에 암호화 저장** — admin-only ingest 흐름에서 세션·재시작 무관하게 토큰 사용 가능해야 함. 키 형식·알고리즘은 본 Feature 착수 시 확정 (`backend/rules/auth.md` §2 / `backend/auth-server/CLAUDE.md` §3.1)
 - [ ] `GET /api/auth/accessible-resources` 호출로 cloudId 목록 조회
-- [ ] 사용자가 선택한 cloudId 저장 (세션 또는 임시 스토어)
+- [ ] 사용자가 선택한 cloudId 를 위 토큰 레코드와 함께 **MySQL 에 영속 저장** (`accessible-resources` 가 여러 사이트 반환 시 선택 UI 또는 단일 선택 규칙)
 - [ ] `POST /api/auth/refresh` — `refresh_token` 으로 access token 재발급(AUTH-03). **Rotating Refresh**: 새 refresh 로 저장소 덮어쓰기, 만료/무효(`invalid_grant`) 시 재로그인 유도
 - [ ] `POST /api/auth/logout` — refresh token 무효화 + 세션 정리. `Authorization: Bearer {accessToken}` 로 식별. 응답 `data: null` (`docs/api-spec.md` §4-1)
 - [ ] `GET /api/users/me` — 현재 로그인 사용자 정보 조회(`userId`/`name`/`email`/`role`/`profileImageUrl`/`lastLoginAt`). Bearer 검증 필수, 미인증 `401(UNAUTHORIZED)` (`docs/api-spec.md` §4-1)
@@ -79,7 +79,7 @@
 ### Feature D. 보안 운영 규칙 (전 라운드 적용)
 - [ ] 토큰 로그/tracing 본문 마스킹 (Access/Refresh 모두)
 - [ ] actuator `env`/`heapdump`/`threaddump` 비노출
-- [ ] AI Agent Pod NetworkPolicy 적용 (호출자 화이트리스트)
+- [ ] Data Ingestion Pipeline Pod NetworkPolicy 적용 (호출자 화이트리스트) — `docs/api-spec.md` §2-2 보안 주의와 정합
 - [ ] RabbitMQ 메시지·이벤트 페이로드에 토큰 미포함
 
 ---
@@ -90,5 +90,5 @@
 |---|---|---|
 | OAuth 도입 단계 | PoC 우선(accessToken/cloudId 직접 전달) → 후속 라운드에서 connectionId 로 확장 | 2026-05-21 |
 | (예정) JWT 서명 알고리즘 | TBD (Feature C 착수 시 확정) | — |
-| (예정) Token 암호화 방식 | TBD (확장 단계 — DB 저장 도입 시 확정) | — |
+| Confluence 토큰 저장 정책 | **PoC 부터 MySQL 암호화 저장**(access/refresh + cloudId, 사용자 단위) — admin-only ingest 가 세션 무관하게 동작하기 위해 callback 시 즉시 영속. 암호화 알고리즘·키 형식은 Feature A 착수 시 확정 | 2026-06-02 |
 | (예정) Refresh Token 갱신 정책 | TBD (Feature C/확장 단계 시점) | — |
