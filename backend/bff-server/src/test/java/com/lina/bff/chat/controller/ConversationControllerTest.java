@@ -1,6 +1,8 @@
 package com.lina.bff.chat.controller;
 
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -151,6 +153,35 @@ class ConversationControllerTest {
         .andExpect(jsonPath("$.code").value(400))
         .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
         .andExpect(jsonPath("$.message").value("title 또는 isPinned 중 하나는 필요합니다."))
+        .andExpect(jsonPath("$.data").doesNotExist());
+  }
+
+  @Test
+  @DisplayName("DELETE /api/conversations/{id} 는 soft delete 후 data null Wrapper 를 반환한다")
+  void shouldDeleteConversation() throws Exception {
+    mockMvc
+        .perform(delete("/api/conversations/conv-1"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.isSuccess").value(true))
+        .andExpect(jsonPath("$.code").value(200))
+        .andExpect(jsonPath("$.message").value("대화 삭제 성공"))
+        .andExpect(jsonPath("$.data").isEmpty());
+  }
+
+  @Test
+  @DisplayName("DELETE /api/conversations/{id} 삭제 실패 시 공통 ErrorResponse 를 반환한다")
+  void shouldReturnErrorResponseWhenDeleteConversationFails() throws Exception {
+    doThrow(new BizException(ErrorCode.RESOURCE_NOT_FOUND, "해당 대화를 찾을 수 없습니다."))
+        .when(conversationService)
+        .deleteConversation("conv-1");
+
+    mockMvc
+        .perform(delete("/api/conversations/conv-1"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.isSuccess").value(false))
+        .andExpect(jsonPath("$.code").value(404))
+        .andExpect(jsonPath("$.errorCode").value("RESOURCE_NOT_FOUND"))
+        .andExpect(jsonPath("$.message").value("해당 대화를 찾을 수 없습니다."))
         .andExpect(jsonPath("$.data").doesNotExist());
   }
 }

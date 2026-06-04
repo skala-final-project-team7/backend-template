@@ -8,6 +8,7 @@ import com.lina.bff.chat.service.ConversationService;
 import com.lina.common.response.ApiResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -47,5 +48,11 @@ public class ConversationController {
     UpdateConversationResponse response =
         conversationService.updateConversation(conversationId, request);
     return ResponseEntity.ok(ApiResponse.success(response, "대화 수정 성공"));
+  }
+
+  @DeleteMapping("/{conversationId}")
+  public ResponseEntity<ApiResponse<Void>> deleteConversation(@PathVariable String conversationId) {
+    conversationService.deleteConversation(conversationId);
+    return ResponseEntity.ok(ApiResponse.success(null, "대화 삭제 성공"));
   }
 }

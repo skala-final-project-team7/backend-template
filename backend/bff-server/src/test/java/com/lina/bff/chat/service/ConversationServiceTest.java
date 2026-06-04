@@ -150,4 +150,21 @@ class ConversationServiceTest {
 
     verify(conversationRepository, never()).save(any(Conversation.class));
   }
+
+  @Test
+  @DisplayName("대화를 soft delete 하고 deletedAt 이 채워진 문서를 저장한다")
+  void shouldSoftDeleteConversation() {
+    Conversation conversation =
+        Conversation.builder().conversationId("conv-1").userId("user-001").title("삭제할 대화").build();
+    when(conversationRepository.findByConversationIdAndDeletedAtIsNull("conv-1"))
+        .thenReturn(Optional.of(conversation));
+    when(conversationRepository.save(any(Conversation.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    conversationService.deleteConversation("conv-1");
+
+    ArgumentCaptor<Conversation> captor = ArgumentCaptor.forClass(Conversation.class);
+    verify(conversationRepository).save(captor.capture());
+    assertThat(captor.getValue().getDeletedAt()).isNotNull();
+  }
 }

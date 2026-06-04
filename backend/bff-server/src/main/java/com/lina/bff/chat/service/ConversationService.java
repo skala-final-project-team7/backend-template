@@ -84,6 +84,16 @@ public class ConversationService {
         saved.getConversationId(), saved.getTitle(), saved.isPinned(), toKst(saved.getUpdatedAt()));
   }
 
+  @Transactional
+  public void deleteConversation(String conversationId) {
+    Conversation conversation =
+        conversationRepository
+            .findByConversationIdAndDeletedAtIsNull(conversationId)
+            .orElseThrow(() -> new BizException(ErrorCode.RESOURCE_NOT_FOUND, "해당 대화를 찾을 수 없습니다."));
+    conversation.markDeleted();
+    conversationRepository.save(conversation);
+  }
+
   private ZonedDateTime toKst(java.time.Instant instant) {
     return instant.atZone(KST);
   }
