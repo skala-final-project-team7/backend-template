@@ -365,7 +365,7 @@
 - `chat/service/ConversationServiceTest.java`, `chat/controller/ConversationControllerTest.java`
 
 #### 체크리스트
-- [ ] `POST /api/conversations` — `conversationId`/`title`/`isPinned`(기본 false)/`createdAt` 반환, `ApiResponse` code 201
+- [x] `POST /api/conversations` — `conversationId`/`title`/`isPinned`(기본 false)/`createdAt` 반환, `ApiResponse` code 201
 - [ ] `GET /api/conversations` — 고정 데모 사용자 기준 고정 우선(`isPinned DESC`) → `last_message_at DESC` 페이징(page/size), 삭제 대화 제외
 - [ ] `PATCH /api/conversations/{conversationId}` — `title`/`isPinned` 부분 수정(둘 중 하나 이상 필수), `title`/`isPinned`/`updatedAt` 반환
 - [ ] `DELETE /api/conversations/{conversationId}` — soft delete, `data: null` 반환

@@ -33,7 +33,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @Document(collection = "conversations")
 @CompoundIndex(
     name = "idx_conversations_user_active_recent",
-    def = "{'userId': 1, 'deletedAt': 1, 'lastMessageAt': -1}")
+    def = "{'userId': 1, 'deletedAt': 1, 'isPinned': -1, 'lastMessageAt': -1}")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Conversation {
@@ -56,6 +56,9 @@ public class Conversation {
   /** 가장 최근 메시지가 추가된 시각(UTC). 대화 목록 정렬 키로 사용된다. */
   private Instant lastMessageAt;
 
+  /** 채팅방 고정 여부. 새 대화는 기본 false 로 생성된다. */
+  private boolean isPinned;
+
   /** soft delete 시각(UTC). null 이면 활성 대화. 모든 조회는 `deletedAt == null` 필터 적용. */
   private Instant deletedAt;
 
@@ -67,6 +70,7 @@ public class Conversation {
       Instant createdAt,
       Instant updatedAt,
       Instant lastMessageAt,
+      Boolean isPinned,
       Instant deletedAt) {
     Instant now = Instant.now();
     this.conversationId = conversationId != null ? conversationId : UUID.randomUUID().toString();
@@ -75,6 +79,7 @@ public class Conversation {
     this.createdAt = createdAt != null ? createdAt : now;
     this.updatedAt = updatedAt != null ? updatedAt : this.createdAt;
     this.lastMessageAt = lastMessageAt != null ? lastMessageAt : this.createdAt;
+    this.isPinned = isPinned != null ? isPinned : false;
     this.deletedAt = deletedAt;
   }
 

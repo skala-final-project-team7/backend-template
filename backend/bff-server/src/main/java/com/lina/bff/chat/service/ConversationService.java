@@ -1,0 +1,45 @@
+package com.lina.bff.chat.service;
+
+import com.lina.bff.chat.dto.CreateConversationResponse;
+import com.lina.bff.chat.entity.Conversation;
+import com.lina.bff.chat.repository.ConversationRepository;
+import com.lina.bff.config.CurrentUserProvider;
+import com.lina.common.exception.BizException;
+import com.lina.common.exception.ErrorCode;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class ConversationService {
+
+  private static final String DEFAULT_TITLE = "새 대화";
+  private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+
+  private final ConversationRepository conversationRepository;
+  private final CurrentUserProvider currentUserProvider;
+
+  public ConversationService(
+      ConversationRepository conversationRepository, CurrentUserProvider currentUserProvider) {
+    this.conversationRepository = conversationRepository;
+    this.currentUserProvider = currentUserProvider;
+  }
+
+  @Transactional
+  public CreateConversationResponse createConversation() {
+    String userId = currentUserProvider.getUserId();
+    if (userId == null || userId.isBlank()) {
+      throw new BizException(ErrorCode.INVALID_REQUEST, "현재 사용자 식별자가 없습니다.");
+    }
+    Conversation conversation =
+        Conversation.builder().userId(userId).title(DEFAULT_TITLE).build();
+    Conversation saved = conversationRepository.save(conversation);
+    return new CreateConversationResponse(
+        saved.getConversationId(), saved.getTitle(), saved.isPinned(), toKst(saved.getCreatedAt()));
+  }
+
+  private ZonedDateTime toKst(java.time.Instant instant) {
+    return instant.atZone(KST);
+  }
+}

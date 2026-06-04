@@ -1,0 +1,70 @@
+package com.lina.bff.chat.controller;
+
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.lina.bff.chat.dto.CreateConversationResponse;
+import com.lina.bff.chat.service.ConversationService;
+import com.lina.common.exception.BizException;
+import com.lina.common.exception.ErrorCode;
+import com.lina.common.exception.GlobalExceptionHandler;
+import java.time.Instant;
+import java.time.ZoneId;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.web.servlet.MockMvc;
+
+@WebMvcTest(ConversationController.class)
+@AutoConfigureMockMvc(addFilters = false)
+@Import(GlobalExceptionHandler.class)
+class ConversationControllerTest {
+
+  private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+
+  @Autowired private MockMvc mockMvc;
+
+  @MockBean private ConversationService conversationService;
+
+  @Test
+  @DisplayName("POST /api/conversations 는 201 Wrapper 와 KST createdAt 을 반환한다")
+  void shouldCreateConversation() throws Exception {
+    when(conversationService.createConversation())
+        .thenReturn(
+            new CreateConversationResponse(
+                "conv-1", "새 대화", false, Instant.parse("2026-05-06T10:00:00Z").atZone(KST)));
+
+    mockMvc
+        .perform(post("/api/conversations"))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.isSuccess").value(true))
+        .andExpect(jsonPath("$.code").value(201))
+        .andExpect(jsonPath("$.message").value("새 대화 생성 성공"))
+        .andExpect(jsonPath("$.data.conversationId").value("conv-1"))
+        .andExpect(jsonPath("$.data.title").value("새 대화"))
+        .andExpect(jsonPath("$.data.isPinned").value(false))
+        .andExpect(jsonPath("$.data.createdAt").value("2026-05-06T19:00:00+09:00"));
+  }
+
+  @Test
+  @DisplayName("POST /api/conversations 생성 실패 시 공통 ErrorResponse 를 반환한다")
+  void shouldReturnErrorResponseWhenCreateConversationFails() throws Exception {
+    when(conversationService.createConversation())
+        .thenThrow(new BizException(ErrorCode.INVALID_REQUEST, "현재 사용자 식별자가 없습니다."));
+
+    mockMvc
+        .perform(post("/api/conversations"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.isSuccess").value(false))
+        .andExpect(jsonPath("$.code").value(400))
+        .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
+        .andExpect(jsonPath("$.message").value("현재 사용자 식별자가 없습니다."))
+        .andExpect(jsonPath("$.data").doesNotExist());
+  }
+}
