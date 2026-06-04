@@ -372,7 +372,7 @@
 - [x] `Conversation` 엔티티에 `isPinned`(기본 false) 필드 추가 + Repository 정렬 메서드를 `findByUserIdAndDeletedAtIsNullOrderByIsPinnedDescLastMessageAtDesc` 로 변경 + 인덱스 `{userId,deletedAt,isPinned:-1,lastMessageAt:-1}` 갱신 (Feature 1 산출물 보강)
 - [x] 존재하지 않거나 삭제된 대화 접근 시 `RESOURCE_NOT_FOUND`(404)
 - [x] 필수 필드 누락/형식 오류는 공통 `ErrorResponse`(400)
-- [ ] **DTO 변환 시 모든 timestamp 를 KST(`Asia/Seoul`) `ZonedDateTime` 으로 직렬화** (확정된 결정 #6)
+- [x] **DTO 변환 시 모든 timestamp 를 KST(`Asia/Seoul`) `ZonedDateTime` 으로 직렬화** (확정된 결정 #6)
 - [ ] Service Unit Test (Repository Mock) + Controller MockMvc(정상/검증실패/404, Wrapper 구조·KST 표기 검증)
 
 ---

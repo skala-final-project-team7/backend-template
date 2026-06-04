@@ -8,13 +8,18 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.lina.bff.chat.dto.ConversationListResponse;
+import com.lina.bff.chat.dto.ConversationSummaryResponse;
+import com.lina.bff.chat.dto.CreateConversationResponse;
 import com.lina.bff.chat.dto.UpdateConversationRequest;
+import com.lina.bff.chat.dto.UpdateConversationResponse;
 import com.lina.bff.chat.entity.Conversation;
 import com.lina.bff.chat.repository.ConversationRepository;
 import com.lina.bff.config.CurrentUserProvider;
 import com.lina.common.exception.BizException;
 import com.lina.common.exception.ErrorCode;
+import java.lang.reflect.RecordComponent;
 import java.time.Instant;
+import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
@@ -35,6 +40,17 @@ class ConversationServiceTest {
   @Mock private CurrentUserProvider currentUserProvider;
 
   @InjectMocks private ConversationService conversationService;
+
+  @Test
+  @DisplayName("대화 CRUD 응답 DTO timestamp 필드는 ZonedDateTime 으로 노출한다")
+  void shouldExposeConversationTimestampsAsZonedDateTimeFields() {
+    assertThat(recordComponentType(CreateConversationResponse.class, "createdAt"))
+        .isEqualTo(ZonedDateTime.class);
+    assertThat(recordComponentType(ConversationSummaryResponse.class, "lastMessageAt"))
+        .isEqualTo(ZonedDateTime.class);
+    assertThat(recordComponentType(UpdateConversationResponse.class, "updatedAt"))
+        .isEqualTo(ZonedDateTime.class);
+  }
 
   @Test
   @DisplayName("새 대화는 현재 사용자 기준 기본 제목과 isPinned=false 로 생성한다")
@@ -102,8 +118,9 @@ class ConversationServiceTest {
     assertThat(response.conversations())
         .extracting("conversationId")
         .containsExactly("conv-pinned", "conv-recent");
-    assertThat(response.conversations().getFirst().lastMessageAt().getZone().getId())
-        .isEqualTo("Asia/Seoul");
+    ZonedDateTime firstLastMessageAt = response.conversations().getFirst().lastMessageAt();
+    assertThat(firstLastMessageAt.getZone().getId()).isEqualTo("Asia/Seoul");
+    assertThat(firstLastMessageAt.toInstant()).isEqualTo(base.minus(1, ChronoUnit.HOURS));
   }
 
   @Test
@@ -197,5 +214,15 @@ class ConversationServiceTest {
         .isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
 
     verify(conversationRepository, never()).save(any(Conversation.class));
+  }
+
+  private Class<?> recordComponentType(Class<?> recordType, String componentName) {
+    for (RecordComponent component : recordType.getRecordComponents()) {
+      if (component.getName().equals(componentName)) {
+        return component.getType();
+      }
+    }
+    throw new IllegalArgumentException(
+        recordType.getSimpleName() + "." + componentName + " component not found");
   }
 }
