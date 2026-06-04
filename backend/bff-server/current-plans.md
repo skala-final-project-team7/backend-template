@@ -373,7 +373,7 @@
 - [x] 존재하지 않거나 삭제된 대화 접근 시 `RESOURCE_NOT_FOUND`(404)
 - [x] 필수 필드 누락/형식 오류는 공통 `ErrorResponse`(400)
 - [x] **DTO 변환 시 모든 timestamp 를 KST(`Asia/Seoul`) `ZonedDateTime` 으로 직렬화** (확정된 결정 #6)
-- [ ] Service Unit Test (Repository Mock) + Controller MockMvc(정상/검증실패/404, Wrapper 구조·KST 표기 검증)
+- [x] Service Unit Test (Repository Mock) + Controller MockMvc(정상/검증실패/404, Wrapper 구조·KST 표기 검증)
 
 ---
 

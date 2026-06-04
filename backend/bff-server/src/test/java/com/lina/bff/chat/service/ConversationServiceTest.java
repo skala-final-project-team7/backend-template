@@ -124,6 +124,20 @@ class ConversationServiceTest {
   }
 
   @Test
+  @DisplayName("현재 사용자 식별자가 비어 있으면 대화 목록을 조회하지 않는다")
+  void shouldRejectListConversationsWhenCurrentUserIdBlank() {
+    when(currentUserProvider.getUserId()).thenReturn("");
+
+    assertThatThrownBy(() -> conversationService.listConversations(0, 20))
+        .isInstanceOf(BizException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.INVALID_REQUEST);
+
+    verify(conversationRepository, never())
+        .findByUserIdAndDeletedAtIsNullOrderByIsPinnedDescLastMessageAtDesc(any(), any());
+  }
+
+  @Test
   @DisplayName("대화 제목과 고정 여부를 부분 수정하고 updatedAt 을 KST 로 반환한다")
   void shouldUpdateConversationPartially() {
     Conversation conversation =

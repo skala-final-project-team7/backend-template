@@ -114,6 +114,22 @@ class ConversationControllerTest {
   }
 
   @Test
+  @DisplayName("GET /api/conversations 조회 실패 시 공통 ErrorResponse 를 반환한다")
+  void shouldReturnErrorResponseWhenListConversationsFails() throws Exception {
+    when(conversationService.listConversations(0, 20))
+        .thenThrow(new BizException(ErrorCode.INVALID_REQUEST, "현재 사용자 식별자가 없습니다."));
+
+    mockMvc
+        .perform(get("/api/conversations"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.isSuccess").value(false))
+        .andExpect(jsonPath("$.code").value(400))
+        .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
+        .andExpect(jsonPath("$.message").value("현재 사용자 식별자가 없습니다."))
+        .andExpect(jsonPath("$.data").doesNotExist());
+  }
+
+  @Test
   @DisplayName("PATCH /api/conversations/{id} 는 제목과 고정 여부를 부분 수정한다")
   void shouldUpdateConversation() throws Exception {
     when(conversationService.updateConversation(
