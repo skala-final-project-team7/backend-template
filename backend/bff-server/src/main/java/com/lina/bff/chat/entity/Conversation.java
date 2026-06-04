@@ -87,4 +87,15 @@ public class Conversation {
   public void markDeleted() {
     this.deletedAt = Instant.now();
   }
+
+  /** 제목/고정 여부를 부분 수정하고 updatedAt 을 갱신한다. null 값은 기존 값을 유지한다. */
+  public void update(String title, Boolean isPinned) {
+    if (title != null) {
+      this.title = title;
+    }
+    if (isPinned != null) {
+      this.isPinned = isPinned;
+    }
+    this.updatedAt = Instant.now();
+  }
 }

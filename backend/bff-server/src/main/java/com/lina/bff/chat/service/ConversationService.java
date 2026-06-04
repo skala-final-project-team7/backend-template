@@ -3,6 +3,8 @@ package com.lina.bff.chat.service;
 import com.lina.bff.chat.dto.ConversationListResponse;
 import com.lina.bff.chat.dto.ConversationSummaryResponse;
 import com.lina.bff.chat.dto.CreateConversationResponse;
+import com.lina.bff.chat.dto.UpdateConversationRequest;
+import com.lina.bff.chat.dto.UpdateConversationResponse;
 import com.lina.bff.chat.entity.Conversation;
 import com.lina.bff.chat.repository.ConversationRepository;
 import com.lina.bff.config.CurrentUserProvider;
@@ -64,6 +66,22 @@ public class ConversationService {
                         conversation.isPinned()))
             .toList();
     return new ConversationListResponse(summaries, conversations.getTotalElements(), page, size);
+  }
+
+  @Transactional
+  public UpdateConversationResponse updateConversation(
+      String conversationId, UpdateConversationRequest request) {
+    if (request.title() == null && request.isPinned() == null) {
+      throw new BizException(ErrorCode.INVALID_REQUEST, "title 또는 isPinned 중 하나는 필요합니다.");
+    }
+    Conversation conversation =
+        conversationRepository
+            .findByConversationIdAndDeletedAtIsNull(conversationId)
+            .orElseThrow(() -> new BizException(ErrorCode.RESOURCE_NOT_FOUND, "해당 대화를 찾을 수 없습니다."));
+    conversation.update(request.title(), request.isPinned());
+    Conversation saved = conversationRepository.save(conversation);
+    return new UpdateConversationResponse(
+        saved.getConversationId(), saved.getTitle(), saved.isPinned(), toKst(saved.getUpdatedAt()));
   }
 
   private ZonedDateTime toKst(java.time.Instant instant) {

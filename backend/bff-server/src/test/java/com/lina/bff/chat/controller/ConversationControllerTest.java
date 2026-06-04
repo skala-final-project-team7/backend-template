@@ -2,6 +2,7 @@ package com.lina.bff.chat.controller;
 
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -9,6 +10,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.lina.bff.chat.dto.ConversationListResponse;
 import com.lina.bff.chat.dto.ConversationSummaryResponse;
 import com.lina.bff.chat.dto.CreateConversationResponse;
+import com.lina.bff.chat.dto.UpdateConversationRequest;
+import com.lina.bff.chat.dto.UpdateConversationResponse;
 import com.lina.bff.chat.service.ConversationService;
 import com.lina.common.exception.BizException;
 import com.lina.common.exception.ErrorCode;
@@ -23,6 +26,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(ConversationController.class)
@@ -104,5 +108,49 @@ class ConversationControllerTest {
         .andExpect(jsonPath("$.data.conversations[0].isPinned").value(true))
         .andExpect(
             jsonPath("$.data.conversations[0].lastMessageAt").value("2026-05-06T18:00:00+09:00"));
+  }
+
+  @Test
+  @DisplayName("PATCH /api/conversations/{id} 는 제목과 고정 여부를 부분 수정한다")
+  void shouldUpdateConversation() throws Exception {
+    when(conversationService.updateConversation(
+            "conv-1", new UpdateConversationRequest("수정된 대화 제목", true)))
+        .thenReturn(
+            new UpdateConversationResponse(
+                "conv-1", "수정된 대화 제목", true, Instant.parse("2026-05-06T10:10:00Z").atZone(KST)));
+
+    mockMvc
+        .perform(
+            patch("/api/conversations/conv-1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"title\":\"수정된 대화 제목\",\"isPinned\":true}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.isSuccess").value(true))
+        .andExpect(jsonPath("$.code").value(200))
+        .andExpect(jsonPath("$.message").value("대화 수정 성공"))
+        .andExpect(jsonPath("$.data.conversationId").value("conv-1"))
+        .andExpect(jsonPath("$.data.title").value("수정된 대화 제목"))
+        .andExpect(jsonPath("$.data.isPinned").value(true))
+        .andExpect(jsonPath("$.data.updatedAt").value("2026-05-06T19:10:00+09:00"));
+  }
+
+  @Test
+  @DisplayName("PATCH /api/conversations/{id} 수정 실패 시 공통 ErrorResponse 를 반환한다")
+  void shouldReturnErrorResponseWhenUpdateConversationFails() throws Exception {
+    when(conversationService.updateConversation(
+            "conv-1", new UpdateConversationRequest(null, null)))
+        .thenThrow(new BizException(ErrorCode.INVALID_REQUEST, "title 또는 isPinned 중 하나는 필요합니다."));
+
+    mockMvc
+        .perform(
+            patch("/api/conversations/conv-1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.isSuccess").value(false))
+        .andExpect(jsonPath("$.code").value(400))
+        .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
+        .andExpect(jsonPath("$.message").value("title 또는 isPinned 중 하나는 필요합니다."))
+        .andExpect(jsonPath("$.data").doesNotExist());
   }
 }
