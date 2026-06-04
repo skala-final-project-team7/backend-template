@@ -1,6 +1,7 @@
 package com.lina.bff.chat.controller;
 
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -154,6 +155,54 @@ class ConversationControllerTest {
         .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
         .andExpect(jsonPath("$.message").value("title 또는 isPinned 중 하나는 필요합니다."))
         .andExpect(jsonPath("$.data").doesNotExist());
+  }
+
+  @Test
+  @DisplayName("PATCH /api/conversations/{id} 요청 본문이 없으면 400 ErrorResponse 를 반환한다")
+  void shouldReturnBadRequestWhenUpdateRequestBodyMissing() throws Exception {
+    mockMvc
+        .perform(patch("/api/conversations/conv-1").contentType(MediaType.APPLICATION_JSON))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.isSuccess").value(false))
+        .andExpect(jsonPath("$.code").value(400))
+        .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
+        .andExpect(jsonPath("$.message").value("요청 값이 유효하지 않습니다."))
+        .andExpect(jsonPath("$.data").doesNotExist());
+
+    verifyNoInteractions(conversationService);
+  }
+
+  @Test
+  @DisplayName("PATCH /api/conversations/{id} JSON 형식이 잘못되면 400 ErrorResponse 를 반환한다")
+  void shouldReturnBadRequestWhenUpdateRequestBodyMalformed() throws Exception {
+    mockMvc
+        .perform(
+            patch("/api/conversations/conv-1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"title\":"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.isSuccess").value(false))
+        .andExpect(jsonPath("$.code").value(400))
+        .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
+        .andExpect(jsonPath("$.message").value("요청 값이 유효하지 않습니다."))
+        .andExpect(jsonPath("$.data").doesNotExist());
+
+    verifyNoInteractions(conversationService);
+  }
+
+  @Test
+  @DisplayName("GET /api/conversations page 형식이 잘못되면 400 ErrorResponse 를 반환한다")
+  void shouldReturnBadRequestWhenListPageFormatInvalid() throws Exception {
+    mockMvc
+        .perform(get("/api/conversations").param("page", "abc"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.isSuccess").value(false))
+        .andExpect(jsonPath("$.code").value(400))
+        .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
+        .andExpect(jsonPath("$.message").value("요청 값이 유효하지 않습니다."))
+        .andExpect(jsonPath("$.data").doesNotExist());
+
+    verifyNoInteractions(conversationService);
   }
 
   @Test
