@@ -38,9 +38,9 @@ RAG 검색 파이프라인의 ACL 모델을 **스페이스 단위 → 페이지/
 
 **역할 분리**:
 
-- BE(auth-server): admin OAuth 토큰 영속(MySQL 암호화), Admin Key 활성화 내부 API 제공, BFF 가 `GET /api/auth/confluence-token` 으로 토큰 조회
-- BFF: `POST /api/admin/key/activate` 외부 endpoint 노출(**수동/테스트용**, ADMIN 전용). **일반 동선**은 `POST /api/admin/ingest` 가 내부적으로 key 활성 미확인 시 자동 activate 후 `/ml/ingest` 호출(2026-06-02 회의 결정 — admin "데이터 인제스천 파이프라인" 버튼 하나로 일괄 처리)
-- ML(Data Ingestion): Atlassian REST 호출 시 `Atl-Confluence-With-Admin-Key: true` 헤더 부여, 페이지별 restriction API 호출해 Qdrant payload 작성. **ingestion 완료 직후 Atlassian admin-key deactivate API 호출**(보안 — 키 사용 후 즉시 폐기, 60분 TTL 은 fallback. 2026-06-02 회의 결정)
+- BE(auth-server): admin OAuth 토큰 영속(MySQL 암호화), **Admin Key activate/deactivate 내부 API** 제공 (`POST /internal/admin/key/activate`·`/deactivate`), BFF 가 `GET /api/auth/confluence-token` 으로 토큰 조회
+- BFF: `POST /api/admin/key/activate` 외부 endpoint 노출(**수동/테스트용**, ADMIN 전용). **일반 동선**은 `POST /api/admin/ingest` 가 내부적으로 key 활성 미확인 시 자동 activate 후 `/ml/ingest` 호출(2026-06-02 회의 결정 — admin "데이터 인제스천 파이프라인" 버튼 하나로 일괄 처리). **ingest 트리거 직후 Virtual Thread watcher 가 `/ml/ingest/status/{jobId}` 를 폴링하다가 terminal status 감지 시 auth-server 의 deactivate 내부 API 호출 → Atlassian admin-key 폐기**(2026-06-04 결정 — 책임을 ML 에서 BE 로 이동, 깔끔한 분리. BFF 재시작 시 watcher 손실은 60분 TTL fallback)
+- ML(Data Ingestion): Atlassian REST 호출 시 `Atl-Confluence-With-Admin-Key: true` 헤더 부여, 페이지별 restriction API 호출해 Qdrant payload 작성. **deactivate 책임 없음 (2026-06-04 변경)** — BE 가 외부에서 watcher 로 처리. ML 인터페이스 변경 불필요.
 
 **검증 게이트 (3단계 구현 시)**: OAuth Bearer + Admin Key 헤더가 Atlassian 측에서 동작하는지 첫 admin OAuth 토큰 확보 직후 curl 로 검증. 실패 시 admin API Token 별도 보관 모델로 전환(plan 한 행 정정만 필요).
 
@@ -54,7 +54,7 @@ RAG 검색 파이프라인의 ACL 모델을 **스페이스 단위 → 페이지/
 | `allowed_groups[]` | JWT `groups` 와 동일 식별자 | content restriction 의 group 을 JWT vocabulary 로 표기 |
 
 - JWT `userId`/`groups` 가 실제로 어떤 값 체계인지(예: Confluence accountId / group name / groupId)는 **auth-server 의 Confluence OAuth 매핑이 결정**한다 → §4 확인. 색인은 그 체계를 그대로 따른다.
-- 합성 토큰 `space:{spaceKey}` 는 JWT `groups` 에 동일 토큰이 실제로 실릴 때만 유효하다. JWT 가 Confluence group 식별자만 담는다면, 색인은 `space:{key}` 합성 대신 해당 스페이스 read 권한을 가진 **실제 group 식별자**로 적재한다(§2.5).
+- 과거 PoC 의 합성 토큰 `space:{spaceKey}` 모델은 폐기(2026-06-04, api-spec v2.4.0 spaceKey 제거 결정과 함께). 색인은 Confluence content restrictions API 응답의 **실제 group 식별자**(`restrictions.group.results[].name`)를 그대로 `allowed_groups` 에 적재한다 — JWT vocabulary 와 동일 체계(§4.1 확인 항목).
 
 ### 2.3 질의 시점 매칭 (JWT ↔ payload)
 
@@ -75,7 +75,7 @@ RAG 검색 파이프라인의 ACL 모델을 **스페이스 단위 → 페이지/
 
 | 상황 | 정책 |
 |---|---|
-| 명시적 restriction 없음 (= 스페이스 상속/스페이스 멤버 공개) | 해당 스페이스 read 권한 group 을 **JWT vocabulary 와 동일한 식별자**로 `allowed_groups` 에 적재 (공개=스페이스 멤버 취급). JWT 가 `space:{key}` 토큰을 싣는 경우에 한해 그 토큰을 그대로 사용 |
+| 명시적 restriction 없음 (= 스페이스 상속/스페이스 멤버 공개) | 해당 스페이스 read 권한 group 을 **JWT vocabulary 와 동일한 식별자**로 `allowed_groups` 에 적재 (공개=스페이스 멤버 취급). 과거 PoC 가 사용하던 `space:{spaceKey}` 합성 토큰 모델은 v2.4.0(2026-06-04) `spaceKey` 전면 제거와 함께 폐기 — 색인은 Confluence content restrictions 기반 실제 group 식별자만 적재 |
 | effective 권한 산출 실패 (API 오류·타임아웃) | **해당 페이지 색인 보류(차단)**, `sync_logs` 실패 기록 후 재시도 — "불확실하면 차단" |
 | 질의 시점 `groups`/`userId` 부재 | 질의 거부 (ACL 누락 호출 금지, `backend/CLAUDE.md` §6) |
 
