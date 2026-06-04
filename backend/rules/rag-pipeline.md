@@ -19,21 +19,25 @@ BFF Server → (HTTP/SSE) → FastAPI ML Server
 
 ## 2. 요청 시 전달 항목
 
-RAG Pipeline 호출 시 다음 정보를 전달한다.
+RAG Pipeline 호출 시 다음 정보를 전달한다 (상세 계약: `docs/api-spec.md` §2-1).
 
-- 사용자 질문 텍스트
-- 대화 이력 (최근 N턴)
-- ACL 필터 정보 (`user_id`, `groups`)
-- 대화방 ID
+- 사용자 질문 텍스트 (`question`)
+- 대화 이력 (`history`, 최근 N턴) — `history[].role` 은 lowercase(`user`/`assistant`, LLM/OpenAI 표준, 저장값과 동일)
+- ACL 필터 정보 (`userId`, `groups`) — 빈 값이면 BFF 가 호출을 **차단**(fail-closed)
+- 대화방 ID (`conversationId`)
+- `stream: true` — 토큰 스트리밍 명시 (BFF 는 항상 `true` 로 호출)
 
 ---
 
 ## 3. 응답 처리
 
 - ML 서버의 SSE 스트림을 수신하여 프론트엔드로 중계한다.
-- 답변 완료 후 메시지(질문 + 답변 + 인용 출처 + 검증 결과)를 MySQL에 저장한다.
+- user 메시지는 질의 시작 시 **선저장**, assistant 메시지(+`sources`+`verification`)는 **`done` 수신 시** MongoDB `messages` 컬렉션(`docs/db-schema.md` §3.2)에 저장한다. `error` 종료 시 assistant 는 미저장 (`docs/api-spec.md` §1-1 "스트림 종료·영속 규칙").
+- **Boundary 가공 (RAG → BFF → FE)**:
+  - `error` 이벤트: RAG·BFF·FE 모두 `{ "errorCode": ..., "message": ... }` 동일 키 — passthrough, `errorCode` 값이 SSE 에러 코드 enum 표(`docs/api-spec.md` §1-1)와 일치하는지만 검증
+  - `done` 이벤트: RAG `{}` → BFF 가 저장한 assistant 의 `messageId` 를 채워 FE 로 `done: { "messageId": ... }` 중계 (가공 필요)
 - ML 서버 호출 실패 시 재시도하지 않고, 에러 이벤트를 프론트엔드에 전달한다.
-- ML 서버 응답 타임아웃은 설정값으로 관리한다.
+- ML 서버 응답 타임아웃은 설정값으로 관리한다 (§4 SSE 스트리밍 규칙 참조).
 
 ---
 
@@ -42,6 +46,6 @@ RAG Pipeline 호출 시 다음 정보를 전달한다.
 ML Pipeline의 응답을 프론트엔드로 중계할 때 SSE(Server-Sent Events) 스트리밍을 사용한다.
 
 - 반환 타입은 `SseEmitter`를 사용한다.
-- SSE 연결 타임아웃을 설정한다 (기본 60초).
-- SSE 이벤트 타입을 구분한다: `token`(답변 토큰), `sources`(인용 출처), `verification`(검증 결과), `done`(완료), `error`(ML 서버 오류).
+- SSE 타임아웃은 **idle 기준**으로 설정한다(기본 60초, `lina.rag.sse-timeout-ms`). 장시간 phase 동안 `status` 이벤트로 keep-alive 하고, idle 초과 시 `error`(`ML_TIMEOUT`) 전송 후 정리한다 (계약: `docs/api-spec.md` §1-1).
+- SSE 이벤트 타입(집합 정본은 `docs/api-spec.md` §1-1): `status`(진행 상태), `token`(답변 토큰), `sources`(인용 출처), `verification`(검증 결과), `meta`(현재 ML 구현 호환용·제거 예정), `done`(완료·`messageId`), `error`(오류 종료·`errorCode`). 스트림은 `done` / `error` 중 하나로 종료한다.
 - 연결 실패, ML Pipeline 타임아웃 시 적절한 에러 이벤트를 전송하고 연결을 정리한다.

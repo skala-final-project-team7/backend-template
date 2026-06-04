@@ -41,9 +41,9 @@ class MessageRepositoryTest {
   void shouldReturnMessageHistoryOrderedByCreatedAtAsc() {
     Instant base = Instant.now();
     messageRepository.save(
-        message("conv-1", MessageRole.ASSISTANT, "답변", base.plus(1, ChronoUnit.SECONDS)));
-    messageRepository.save(message("conv-1", MessageRole.USER, "질문", base));
-    messageRepository.save(message("conv-2", MessageRole.USER, "다른 대화 질문", base));
+        message("conv-1", MessageRole.assistant, "답변", base.plus(1, ChronoUnit.SECONDS)));
+    messageRepository.save(message("conv-1", MessageRole.user, "질문", base));
+    messageRepository.save(message("conv-2", MessageRole.user, "다른 대화 질문", base));
 
     List<Message> history =
         messageRepository.findByConversationIdAndDeletedAtIsNullOrderByCreatedAtAsc("conv-1");
@@ -54,9 +54,9 @@ class MessageRepositoryTest {
   @Test
   @DisplayName("soft delete 된 메시지는 이력에서 제외된다")
   void shouldExcludeSoftDeletedMessages() {
-    messageRepository.save(message("conv-1", MessageRole.USER, "남는 질문", Instant.now()));
+    messageRepository.save(message("conv-1", MessageRole.user, "남는 질문", Instant.now()));
     Message deleted =
-        messageRepository.save(message("conv-1", MessageRole.ASSISTANT, "삭제될 답변", Instant.now()));
+        messageRepository.save(message("conv-1", MessageRole.assistant, "삭제될 답변", Instant.now()));
     deleted.markDeleted();
     messageRepository.save(deleted);
 
@@ -82,7 +82,7 @@ class MessageRepositoryTest {
         messageRepository.save(
             Message.builder()
                 .conversationId("conv-1")
-                .role(MessageRole.ASSISTANT)
+                .role(MessageRole.assistant)
                 .content("S3 권한 오류는 IAM 정책을 수정하여 해결합니다")
                 .sources(List.of(source))
                 .createdAt(Instant.now())

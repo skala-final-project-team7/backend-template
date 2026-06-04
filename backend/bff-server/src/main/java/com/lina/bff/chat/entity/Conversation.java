@@ -41,7 +41,7 @@ public class Conversation {
   /** 대화방 식별자. 애플리케이션이 생성한 UUID 문자열이며 MongoDB `_id`로 매핑된다. */
   @Id private String conversationId;
 
-  /** 대화 소유자(사용자) 식별자. 2단계에서는 고정 데모 사용자, 3단계 이후 JWT Claim `user_id` 값. */
+  /** 대화 소유자(사용자) 식별자. 2단계에서는 고정 데모 사용자, 3단계 이후 JWT Claim `userId` 값. */
   private String userId;
 
   /** 대화 제목. 생성 시 기본 제목으로 시작하며 사용자가 수정할 수 있다. */

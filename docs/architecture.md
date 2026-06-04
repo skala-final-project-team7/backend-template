@@ -34,7 +34,7 @@
 | AI Agent | 질의 분석, 라우팅, 답변 생성, 답변 검증 등 Agent Workflow |
 | Ingestion Worker | Confluence 문서 수집 |
 | Sync Worker | 변경 문서 감지 및 델타 업데이트 |
-| MySQL | 사용자, OAuth 토큰, 권한(ACL), 관리자 등 인증/인가 정형 데이터 저장 (3단계에서 사용) |
+| MySQL | 사용자(`role` 컬럼으로 USER/ADMIN 구분), OAuth 토큰, 권한(ACL) 등 인증/인가 정형 데이터 저장 (3단계에서 사용) |
 | MongoDB | 대화/메시지/피드백 등 BFF 도메인 데이터와 원본 문서·청크 등 RAG 파이프라인 데이터 저장 |
 | Vector DB | Embedding Vector 저장 및 유사도 검색 |
 | RabbitMQ | 비동기 작업 큐 |
@@ -145,10 +145,9 @@ MySQL은 인증/인가 관련 정형 데이터 저장에 사용한다. 3단계(A
 
 저장 대상:
 
-- 사용자 계정 (`users`)
+- 사용자 계정 및 역할 (`users` — `role` 컬럼이 USER/ADMIN, JWT `role` claim 의 source of truth; `docs/db-schema.md` §6.1)
 - OAuth Access/Refresh Token (암호화 저장, `user_tokens`)
 - 사용자 스페이스 접근 권한 (`user_space_acl`)
-- 관리자 (`admins`)
 - 서비스 설정
 
 ---

@@ -14,7 +14,7 @@
 |---|---|---|
 | 1단계 | 프로젝트 초기 셋업 (패키지 구조, 설정, 공통 예외/응답) | ✅ 완료 (2026-05-15, `auth-server` 와 공동) |
 | 2단계 | BFF Server 핵심 API (대화 CRUD, RAG 호출 + SSE 중계, 메시지 이력, 피드백, DB 스키마) | 🚧 Feature 1 완료, Feature 2~ 미착수 |
-| 4단계 | 부가 API (관리자 대시보드) | 미착수 |
+| 4단계 | 부가 API (관리자 대시보드 · Confluence 미리보기) | 미착수 |
 
 > **2026-05-19 범위 조정:** 중간발표를 인증 없이 시연하기 위해 2단계에서 **JWT 검증 필터를 제외**하고 3단계로 이동한다. 대신 **피드백 API**를 4단계에서 2단계로 당긴다. 근거: 사용자 지시 + `docs/api-spec.md` 전제("중간 발표 시 인증 하드코딩, 로그인 제외"). 상세는 아래 **2단계** 섹션 참조.
 
@@ -232,7 +232,7 @@
 | 새 대화 생성 | POST | `/api/conversations` |
 | 대화 목록 조회 | GET | `/api/conversations` |
 | 대화 메시지 이력 조회 | GET | `/api/conversations/{conversationId}/messages` |
-| 대화 제목 수정 | PATCH | `/api/conversations/{conversationId}` |
+| 대화 수정(제목/고정) | PATCH | `/api/conversations/{conversationId}` |
 | 대화 삭제 | DELETE | `/api/conversations/{conversationId}` |
 | 챗봇 질의 (SSE 중계) | POST | `/api/conversations/{conversationId}/chat` |
 | 피드백 등록 | POST | `/api/messages/{messageId}/feedback` |
@@ -298,14 +298,14 @@
 
 | 컬렉션 | 핵심 필드 | 비고 |
 |---|---|---|
-| `conversations` | `_id`(=`conversationId` UUID), `userId`, `title`, `createdAt`, `updatedAt`, `lastMessageAt`, `deletedAt`(soft delete) | `userId`는 2단계에서 고정 데모 사용자 |
-| `messages` | `_id`(=`messageId` UUID), `conversationId`, `role`(USER/ASSISTANT), `content`, `sources[]`(내장 배열), `confidenceScore`(nullable), `verificationResult`(nullable), `createdAt`, `deletedAt` | 질문·답변 모두 저장. 인용 출처는 별도 컬렉션 없이 `sources` 내장 (`domains.md` §1) |
+| `conversations` | `_id`(=`conversationId` UUID), `userId`, `title`, `createdAt`, `updatedAt`, `lastMessageAt`, `isPinned`(기본 false), `deletedAt`(soft delete) | `userId`는 2단계에서 고정 데모 사용자. `isPinned`=채팅방 고정 |
+| `messages` | `_id`(=`messageId` UUID), `conversationId`, `role`(user/assistant — lowercase, LLM/OpenAI 표준), `content`, `sources[]`(내장 배열), `confidenceScore`(nullable), `verificationResult`(nullable), `createdAt`, `deletedAt` | 질문·답변 모두 저장. 인용 출처는 별도 컬렉션 없이 `sources` 내장 (`domains.md` §1) |
 | `feedbacks` | `_id`(=`feedbackId` UUID), `messageId`(UNIQUE), `rating`(LIKE/DISLIKE), `comment`(nullable), `createdAt` | 메시지 단위 피드백. QCA 연결은 `messageId`→assistant→직전 user 메시지로 추적 (`domains.md` §2) |
 
-> MySQL 기반 4테이블 설계(`message_sources` 별도 컬렉션 포함)는 2026-05-20 자로 폐기. MySQL 은 3단계의 `users`/`user_tokens`/`user_space_acl`/`admins` 도입 시 재도입한다.
+> MySQL 기반 4테이블 설계(`message_sources` 별도 컬렉션 포함)는 2026-05-20 자로 폐기. MySQL 은 3단계의 `users`(`role` 포함, §6.1)/`user_tokens`/`user_space_acl` 도입 시 재도입한다. 별도 `admins` 테이블 계획은 `users.role` 로 흡수(2026-06-02, `docs/db-schema.md` §6.1).
 
 인덱스 (목적 함께 기록):
-- `idx_conversations_user_active_recent { userId:1, deletedAt:1, lastMessageAt:-1 }` — 사용자별 활성 대화 최신순 페이징
+- `idx_conversations_user_active_recent { userId:1, deletedAt:1, isPinned:-1, lastMessageAt:-1 }` — 사용자별 활성 대화 고정 우선·최신순 페이징
 - `idx_messages_conversation_active_created { conversationId:1, deletedAt:1, createdAt:1 }` — 메시지 이력 멀티턴 복원
 - `uniq_feedbacks_message { messageId:1 } UNIQUE` — 메시지당 피드백 1건 강제 (재등록은 동일 문서 upsert)
 
@@ -361,14 +361,15 @@
 
 #### 변경 대상 파일
 - `chat/controller/ConversationController.java`, `chat/service/ConversationService.java`
-- `chat/dto/{CreateConversationResponse,ConversationListResponse,ConversationSummaryResponse,UpdateConversationTitleRequest,UpdateConversationResponse}.java`
+- `chat/dto/{CreateConversationResponse,ConversationListResponse,ConversationSummaryResponse,UpdateConversationRequest,UpdateConversationResponse}.java`
 - `chat/service/ConversationServiceTest.java`, `chat/controller/ConversationControllerTest.java`
 
 #### 체크리스트
-- [ ] `POST /api/conversations` — `conversationId`/`title`/`createdAt` 반환, `ApiResponse` code 201
-- [ ] `GET /api/conversations` — 고정 데모 사용자 기준 `last_message_at DESC` 페이징(page/size), 삭제 대화 제외
-- [ ] `PATCH /api/conversations/{conversationId}` — 제목 수정, `updatedAt` 반환
+- [ ] `POST /api/conversations` — `conversationId`/`title`/`isPinned`(기본 false)/`createdAt` 반환, `ApiResponse` code 201
+- [ ] `GET /api/conversations` — 고정 데모 사용자 기준 고정 우선(`isPinned DESC`) → `last_message_at DESC` 페이징(page/size), 삭제 대화 제외
+- [ ] `PATCH /api/conversations/{conversationId}` — `title`/`isPinned` 부분 수정(둘 중 하나 이상 필수), `title`/`isPinned`/`updatedAt` 반환
 - [ ] `DELETE /api/conversations/{conversationId}` — soft delete, `data: null` 반환
+- [ ] `Conversation` 엔티티에 `isPinned`(기본 false) 필드 추가 + Repository 정렬 메서드를 `findByUserIdAndDeletedAtIsNullOrderByIsPinnedDescLastMessageAtDesc` 로 변경 + 인덱스 `{userId,deletedAt,isPinned:-1,lastMessageAt:-1}` 갱신 (Feature 1 산출물 보강)
 - [ ] 존재하지 않거나 삭제된 대화 접근 시 `RESOURCE_NOT_FOUND`(404)
 - [ ] 필수 필드 누락/형식 오류는 공통 `ErrorResponse`(400)
 - [ ] **DTO 변환 시 모든 timestamp 를 KST(`Asia/Seoul`) `ZonedDateTime` 으로 직렬화** (확정된 결정 #6)
@@ -384,7 +385,7 @@
 
 #### 체크리스트
 - [ ] `GET /api/conversations/{conversationId}/messages` — 멀티턴 복원용 전체 이력
-- [ ] Entity→DTO 변환 (Entity 직접 반환 금지), 인용 출처·`confidenceScore`·`verificationResult` 포함
+- [ ] Entity→DTO 변환 (Entity 직접 반환 금지), `role`(`user`/`assistant`, **lowercase** — LLM/OpenAI 표준)·인용 출처·`confidenceScore`·`verificationResult` 포함
 - [ ] `created_at ASC` 순서 보장, 삭제 메시지 제외
 - [ ] 없는/삭제 대화 시 404
 - [ ] **`createdAt`·출처 `sourceUpdatedAt` 모두 KST(`+09:00`) 표기로 직렬화** (확정된 결정 #6)
@@ -402,15 +403,19 @@
 
 #### 체크리스트
 - [ ] `RagClient` — `rag/client/`에서만 ML/AI Agent 호출, 동기 `RestClient`/`HttpClient` InputStream으로 SSE 파싱 (`Mono`/`Flux`/WebFlux 미사용)
-- [ ] ML 호출 시 다음을 전달 (ACL 누락 경로 없음):
-  - 질문(`question`), `conversationId`, 대화이력(최근 N턴 — `lina.rag.history-turns` 기본 10)
+- [ ] ML 호출 시 다음을 전달 (`docs/api-spec.md` §2-1):
+  - 질문(`question`), `conversationId`, 대화이력(`history`, 최근 N턴 — `lina.rag.history-turns` 기본 10). **`history[].role` 은 저장값 그대로**(`user`/`assistant` lowercase, LLM/OpenAI 표준 — boundary 변환 없음)
   - ACL: `userId`/`groups` (2단계 데모 고정값)
-  - 검색 컨텍스트: `spaceKey` (`lina.demo.fixed-space-key`)
+  - **spaceKey 등 스페이스 스코프 파라미터 미전달** (2026-06-04 결정 — LINA API 표면에서 spaceKey 제거). cross-space 검색이 유일한 모드, ACL(`userId`/`groups`) 만 적용. `lina.demo.fixed-space-key` 설정 deprecation 대상. (`api-spec.md` §2-1)
+  - **`stream: true`** — BFF 는 항상 명시(토큰 스트리밍 ON, RAG 기본은 `false`)
   - **`/ml/query` 본문에 `accessToken`/`cloudId` 미포함** (확정된 결정 #5, 2026-05-22 갱신). PoC 토큰은 Data Ingestion 호출(`/ml/ingest`, `api-spec.md` §2-2) 시에만 전달 — `lina.confluence.*` 설정값 또는 auth-server `/api/auth/confluence-token` 조회 결과 (3단계 도입 후, 4단계 `/api/admin/ingest` 경로에서 사용)
+- [ ] **ACL fail-closed 게이트**: `userId` 가 비어 있거나 `groups` 가 빈 배열(`[]`)이면 `/ml/query` 호출을 **차단**하고 SSE `error`(`errorCode: UNAUTHORIZED`)로 종료 (`backend/CLAUDE.md` §6 "ACL 필터 없이 RAG 호출 금지" / `docs/api-spec.md` §2-1)
 - [ ] `POST /api/conversations/{conversationId}/chat` — `SseEmitter` 반환, Wrapper 미적용
-- [ ] `token`/`sources`/`verification`/`done` 이벤트 순서대로 중계 (출처 `sourceUpdatedAt`·`done` 페이로드 timestamp 는 **KST 직렬화**)
+- [ ] `status`/`token`/`sources`/`verification`/`meta`/`done`/`error` 이벤트 중계 (집합 정본 `docs/api-spec.md` §1-1). `status`=진행표시, `meta`=호환용(제거 예정), 스트림은 `done`/`error`로 종료. 출처 `sourceUpdatedAt`·`done` 페이로드 timestamp 는 **KST 직렬화**
+- [ ] **Boundary 가공 (RAG → BFF → FE)**: (a) `error` 이벤트는 RAG·BFF·FE 모두 `{ "errorCode": ..., "message": ... }` 동일 키 — passthrough, `errorCode` 값이 §1-1 표 일치 여부만 검증; (b) `done` 은 RAG `{}` → BFF 가 저장한 assistant `messageId` 를 채워 `done: { "messageId": ... }` 로 중계 (`docs/api-spec.md` §2-1 / `backend/rules/rag-pipeline.md` §3)
 - [ ] user 메시지 선저장 → `done` 수신 시 assistant 메시지+출처+검증 저장 → `last_message_at` 갱신
-- [ ] ML 실패/타임아웃 시 재시도 없이 `error` 이벤트 전송 후 연결 정리 (SSE 타임아웃 `lina.rag.sse-timeout-ms`)
+- [ ] 첫 assistant 응답의 `meta.title` 로 대화 제목 **1회 자동 설정** (현재 `title` 이 기본 `"새 대화"` 일 때만; 이후·사용자 PATCH 수정 시 무시) — `docs/api-spec.md` §1-1 "대화 제목 자동 설정 규칙"
+- [ ] ML 실패/타임아웃 시 재시도 없이 `error` 이벤트 전송 후 연결 정리 — SSE 타임아웃은 **idle 기준** `lina.rag.sse-timeout-ms`(기본 60s), 장시간 phase 는 `status` keep-alive, idle 초과 시 `error`(`ML_TIMEOUT`). 응답 헤더 `text/event-stream`/`no-cache`/`X-Accel-Buffering: no` (`docs/api-spec.md` §1-1)
 - [ ] **PoC 토큰 보안 (Data Ingestion 호출 경로 한정)**: `accessToken` 을 로그·tracing 본문에 노출하지 않음 (마스킹), RabbitMQ 페이로드 미포함, actuator 민감 endpoint 비노출 — `docs/api-spec.md` §2-2 보안 주의 준수 (RAG 질의 경로엔 토큰 자체가 없으므로 본 규칙 적용 대상은 ingestion 호출)
 - [ ] WireMock 테스트: SSE 정상 스트림 / ML 5xx / 타임아웃 → `error` 이벤트·연결 정리, **요청 body 에 `accessToken`/`cloudId` 미포함** 검증 (`/ml/query` 본문에 토큰 누출 없음). 토큰 포함 검증은 4단계 `/ml/ingest` 호출 WireMock 테스트에서 수행. 실제 ML 호출 금지.
 - [ ] `ChatService` Service Unit Test (RagClient·Repository Mock), Controller 이벤트 시퀀스 검증
@@ -425,7 +430,7 @@
 - `feedback/service/FeedbackServiceTest.java`, `feedback/controller/FeedbackControllerTest.java`
 
 #### 체크리스트
-- [ ] `POST /api/messages/{messageId}/feedback` — `rating`(like/dislike) 검증, `comment` 선택
+- [ ] `POST /api/messages/{messageId}/feedback` — `rating`(`LIKE`/`DISLIKE`, UPPER) 검증, `comment` 선택
 - [ ] 메시지당 1건 unique + upsert: 신규 201 / 갱신 200
 - [ ] 잘못된 `rating`/필수 누락 시 400, 없는 메시지 시 404
 - [ ] **`createdAt` 응답을 KST(`+09:00`)로 직렬화** (확정된 결정 #6)
@@ -433,7 +438,24 @@
 
 ---
 
-### Feature 7. 검증
+### Feature 7. 대화 검색 (`GET /api/conversations/search`)
+
+본인 대화의 메시지 본문(`messages.content`)에서 검색어 매칭. 결과는 대화 단위로 묶고 매칭 메시지 샘플 + 카운트 동반. (`docs/api-spec.md` §1-2 「대화 검색」, `docs/db-schema.md` §3.2)
+
+#### 체크리스트
+- [ ] `ConversationSearchController` — `GET /api/conversations/search` 진입점
+- [ ] `q` 검증: **trim 후 길이 2~50 자**. 위반 시 `400` (`errorCode: INVALID_SEARCH_QUERY`). `size` 최대 50.
+- [ ] `q` 의 정규식 메타문자 escape 후 `$regex` (case-insensitive) on `messages.content`. text index 는 후속 라운드 (`db-schema.md` §3.2 인덱스 표 후속 행)
+- [ ] 권한 격리: `conversations.userId == 현재 사용자` 필터 강제 (2단계 데모 = `lina.demo.fixed-user-id`). `CurrentUserProvider` 통해서만 조회 — 타 사용자 대화 노출 차단
+- [ ] soft delete 필터: `conversations.deletedAt == null` AND `messages.deletedAt == null`
+- [ ] 정렬: `lastMessageAt` DESC (관련도 점수 미적용 — PoC)
+- [ ] 응답 구조: `results[].matchedMessages` **대화당 최대 3개** + `matchCount` (총 매칭 수). `totalCount` 는 매칭 대화 총 수
+- [ ] snippet 추출 유틸: 첫 매칭 위치 기준 좌우 ~40자, 본문 잘림 시 `...` prefix/suffix 부착. `matchPositions` 는 추출된 `snippet` 기준 `[[start, end]]` (end exclusive, UTF-16). **HTML 미생성** — XSS 방지
+- [ ] `INVALID_SEARCH_QUERY` enum 값을 `common` 모듈 `ErrorCode` 에 추가 (도메인 특화 코드 최초 사례 — `docs/api-spec.md` Common 노트)
+- [ ] Repository 테스트: 본인 대화만 매칭, 다른 사용자 대화 미노출, deleted 미노출, case-insensitive, 메타문자 escape
+- [ ] Controller 테스트(MockMvc): `q` 미존재 / trim 길이 미달·초과 / `size` 초과 → 400 `INVALID_SEARCH_QUERY`
+
+### Feature 8. 검증
 
 #### 체크리스트
 - [ ] `./scripts/format.sh` 성공
@@ -466,7 +488,7 @@
 
 ## 2단계 완료 기준 (Done Definition)
 
-- [ ] 위 7개 외부 API가 `docs/api-spec.md` §1 명세대로 동작
+- [ ] 위 7개 도메인 Feature 의 외부 API 가 `docs/api-spec.md` §1 명세대로 동작 (대화 CRUD·메시지 이력·챗 SSE·피드백·대화 검색)
 - [ ] `docs/db-schema.md` 작성 완료, Entity와 일치
 - [ ] Service Unit / Controller MockMvc / Repository DataMongoTest / RagClient WireMock 테스트 통과
 - [ ] `Mono`/`Flux`/WebFlux 미사용, MongoDB RAG 파이프라인 데이터(`raw_pages`/`chunked_units` 등) 쓰기 없음, ACL 누락 호출 경로 없음 (`backend/CLAUDE.md` §7 체크리스트)
@@ -479,8 +501,62 @@
 
 1. **피드백 재등록** (2026-05-19): 메시지당 1건 — `uniq_feedbacks_message (messageId)` 유니크 인덱스. 같은 메시지 재요청 시 동일 문서 upsert. 응답 코드는 신규 201 / 갱신 200으로 구분.
 2. **삭제 방식** (2026-05-19): soft delete 확정. `conversations.deletedAt`, `messages.deletedAt` 사용. 조회는 모두 `deletedAt == null` 필터. 연결 피드백·QCA 데이터 보존.
-3. **데모 사용자/스페이스** (2026-05-19): 설정값으로 분리하고 기본값은 임의 지정. `application.yml`에 `lina.demo.fixed-user-id: user-001`, `lina.demo.fixed-groups: Cloud-Control-Center`, `lina.demo.fixed-space-key: CPC` (모두 `${...}` 환경변수 오버라이드 가능). `db-schema.md`/구현에 위 결정 명시.
-4. **데이터 저장소** (2026-05-20): 2단계 BFF 도메인(대화·메시지·피드백) 영속은 **MongoDB** 사용. `message_sources`는 별도 컬렉션 없이 `messages.sources` 내장 배열로 단순화. MySQL 은 2단계에서는 미사용이며 3단계의 `users`/`user_tokens`/`user_space_acl`/`admins` 도입 시 재도입. `backend/CLAUDE.md` §2.2/§6/§7 의 MongoDB 쓰기 금지 규칙은 **RAG 파이프라인 데이터**(`raw_pages`/`raw_attachments`/`attachment_texts`/`chunked_units`/`import_jobs`/`sync_logs`)에 한정하도록 함께 갱신.
+3. **데모 사용자/스페이스** (2026-05-19): 설정값으로 분리하고 기본값은 임의 지정. `application.yml`에 `lina.demo.fixed-user-id: user-001`, `lina.demo.fixed-groups: Cloud-Control-Center`, `lina.demo.fixed-space-key: CPC` (모두 `${...}` 환경변수 오버라이드 가능). `db-schema.md`/구현에 위 결정 명시. **2026-06-04 갱신**: `fixed-space-key` 는 spaceKey API 표면 제거(api-spec v2.4.0)로 **deprecation 대상**. `FixedDemoUserProvider.getSpaceKey()`/주입 제거는 Feature 5 구현 시 일괄 정리(`CurrentUserProvider` 인터페이스에서도 제거).
+4. **데이터 저장소** (2026-05-20): 2단계 BFF 도메인(대화·메시지·피드백) 영속은 **MongoDB** 사용. `message_sources`는 별도 컬렉션 없이 `messages.sources` 내장 배열로 단순화. MySQL 은 2단계에서는 미사용이며 3단계의 `users`(`role` 포함)/`user_tokens`/`user_space_acl` 도입 시 재도입(별도 `admins` 테이블 계획은 `users.role` 로 흡수 — 2026-06-02 갱신). `backend/CLAUDE.md` §2.2/§6/§7 의 MongoDB 쓰기 금지 규칙은 **RAG 파이프라인 데이터**(`raw_pages`/`raw_attachments`/`attachment_texts`/`chunked_units`/`import_jobs`/`sync_logs`)에 한정하도록 함께 갱신.
 5. **Confluence OAuth 토큰/cloudId 전달 모드** (2026-05-21, 2026-05-22 갱신): **PoC 모드 우선** — 3단계 auth-server 에서 access_token + cloudId 를 발급/조회한 뒤 BFF 가 **Data Ingestion Pipeline 요청 본문에 평문 첨부해 전달** (`docs/api-spec.md` §2-2). 운영 보호장치(로그·tracing 본문 마스킹, actuator 민감 endpoint 차단, NetworkPolicy, RabbitMQ payload 미포함) 동반 필수. **확장 모드(connectionId)** 는 후속 별도 라운드에서 수집 클라이언트 키 교체만으로 전환 가능하도록 인터페이스 경계 유지. 관련 설정 키: `lina.confluence.*` (토큰/cloudId 환경 변수 참조), `lina.data-ingestion.*` (Data Ingestion 호출 클라이언트 base-url/timeout). 상세는 `backend/auth-server/current-plans.md` §3단계 Feature A~D 참조.
-   - **2026-05-22 갱신**: 토큰 전달 대상을 RAG 질의(`/ml/query`, §2-1) → 데이터 수집(`/ml/ingest`, §2-2) 로 변경. **근거**: 권한은 수집 시 Qdrant payload(`allowed_groups`/`allowed_users`) 에 ACL 저장 + 질의 시 JWT 의 `user_id`/`groups` 로 필터링 (기획서 §6.4/§6.6). 따라서 `/ml/query` 는 라이브 Confluence 호출이 없어 토큰 불필요, 토큰은 크롤하는 수집 단계에만 필요. **전제**: "`/ml/query` 가 실시간 Confluence 호출을 일절 안 함" 을 가정 (※ ML 확인 대기 — 확인 후 본 결정 확정).
+   - **2026-05-22 갱신**: 토큰 전달 대상을 RAG 질의(`/ml/query`, §2-1) → 데이터 수집(`/ml/ingest`, §2-2) 로 변경. **근거**: 권한은 수집 시 Qdrant payload(`allowed_groups`/`allowed_users`) 에 ACL 저장 + 질의 시 JWT 의 `userId`/`groups` 로 필터링 (기획서 §6.4/§6.6). 따라서 `/ml/query` 는 라이브 Confluence 호출이 없어 토큰 불필요, 토큰은 크롤하는 수집 단계에만 필요. **전제**: "`/ml/query` 가 실시간 Confluence 호출을 일절 안 함" 을 가정 (※ ML 확인 대기 — 확인 후 본 결정 확정).
 6. **시간 표기 정책** (2026-05-21): 저장은 UTC(`Instant`), **응답 JSON 의 모든 timestamp 는 KST(`+09:00`)** 로 절대 전환 — `instant.atZone(ZoneId.of("Asia/Seoul"))`. Feature 3/4/5(`done` 페이로드 및 출처)/6 응답 DTO 변환에 동일 정책 적용. `docs/api-spec.md` 모든 응답 예시도 이 표기로 일괄 갱신 완료.
+
+---
+
+# 4단계 — 부가 API (관리자 대시보드 · Confluence 미리보기)
+
+> 진행 상태: 미착수. 6주차(관리자 대시보드)·5주차 이후(미리보기) 진입 시 본 섹션을 풀세트 Feature(체크리스트·변경 대상 파일·테스트)로 확장한다.
+> 상세 계약: `docs/api-spec.md` §4-2 / §4-3, 데이터 소스: `backend/rules/domains.md` §4, 화면: 기획서 §5.2 ADMIN-01.
+
+## 추적 대상 엔드포인트
+
+### 관리자 대시보드 (6주차, ADMIN 전용)
+
+| 엔드포인트 | 응답 핵심 | 데이터 소스 | 기획서 |
+|---|---|---|---|
+| `GET /api/admin/stats` | 일간 질의 수·평균 응답 시간·시간대별 접속 추이 | MySQL | §6.7 사용 추이 |
+| `GET /api/admin/users` | 일일/전체 사용자 + 사용자별 ACL 카운트(접근 스페이스/페이지/첨부) | MySQL | §6.7 인원 관리 |
+| `GET /api/admin/data` | 스페이스/페이지/`vectorDbSize`·`lastSyncAt` | MongoDB (읽기) | §6.7 데이터 관리 |
+| `GET /api/admin/feedback` | 긍정/부정 비율·추이·부정 원문(QCA 매핑) | MySQL | §6.7 피드백 관리 |
+| `GET /api/admin/sync` | 동기화 이력(`syncId`/`status`/`updatedPages`/...) | MongoDB (읽기) | §6.7 데이터 관리 |
+
+공통:
+- `/api/admin/*` **ADMIN 전용** — 미인증 `401(UNAUTHORIZED)`, 일반 사용자 `403(FORBIDDEN)` (`docs/api-spec.md` §4-2 / §1-4).
+- 공통 쿼리 파라미터(제안 — 6주차 확정): `period`(daily/hourly), `from`/`to`(KST), `page`/`size`.
+- 응답은 공통 Wrapper(`ApiResponse`), 시간은 **KST 직렬화**.
+- QCA 매핑: assistant `messageId` → 직전 `user` 메시지 (`backend/rules/domains.md` §2).
+
+### 데이터 수집 트리거 (관리자용, ADMIN 전용)
+
+| 엔드포인트 | 응답 핵심 | 대상 | 비고 |
+|---|---|---|---|
+| `POST /api/admin/key/activate` | `activatedUntil` (60분 후) | auth-server 내부 API → Atlassian `POST /api/v2/admin-key` | **수동/테스트용** — 일반 사용 경로는 `/api/admin/ingest` 가 자동 처리(아래). 검증·디버깅·운영 점검 때만 호출. (`docs/api-spec.md` §1-4 / `docs/adr/0001-page-level-acl-source.md` §2.1) |
+| `POST /api/admin/ingest` | `jobId`/`status`(`STARTED`)/`startedAt` | ML 서버 `POST /ml/ingest` | body `{ mode }` (생략 시 `"full"`). **스페이스 스코프 없음** — admin Key 로 admin 이 접근 가능한 모든 스페이스 일괄 크롤(2026-06-04 결정). **내부 처리**: ① BFF 가 admin 의 Admin Key 활성 상태 확인 → 만료/미활성이면 auth-server 통해 자동 activate (회의 결정 2026-06-02) ② auth-server `GET /api/auth/confluence-token` 로 admin 의 `accessToken`+`cloudId` 조회 ③ `/ml/ingest` 본문에 첨부해 호출 ④ **Virtual Thread watcher** 를 띄워 `/ml/ingest/status/{jobId}` 폴링(`lina.admin.ingest-watch-interval-ms`, 기본 30s) → `COMPLETED`/`FAILED` 감지 시 auth-server `POST /internal/admin/key/deactivate` 호출 → Atlassian admin-key 폐기(보안, 2026-06-04 결정 — 책임 ML→BE 이동). BFF 재시작 시 watcher 손실 → 60분 TTL fallback. Data Ingestion 이 Atlassian REST 호출 시 `Atl-Confluence-With-Admin-Key: true` 헤더 부여. 2단계 demo 데이터 셋업도 본 endpoint 사용. (`docs/api-spec.md` §1-4·§2-2) |
+| `GET /api/admin/ingest/status/{jobId}` | `jobId`/`status`/`totalPages`/`processedPages`/`failedPages`/`startedAt` | ML 서버 `GET /ml/ingest/status/{jobId}` | passthrough. `status`: `STARTED`/`IN_PROGRESS`/`COMPLETED`/`FAILED` |
+
+공통: `/api/admin/*` ADMIN 전용(미인증 401·일반 403). PoC 토큰 보안(평문 노출 금지·로그 마스킹·RabbitMQ 미포함·NetworkPolicy) — `docs/api-spec.md` §2-2 보안 주의 참조. **검증 게이트**: OAuth Bearer + Admin Key 헤더 동작은 3단계 auth-server 구현 직후 curl 로 확인(`backend/auth-server/current-plans.md` Feature A 게이트 항목).
+
+### Confluence 페이지 미리보기 (5주차 이후 — 인증 의존)
+
+| 엔드포인트 | 응답 핵심 | 데이터 소스 |
+|---|---|---|
+| `GET /api/confluence/pages/preview?pageId=...` | `bodyViewValue`(HTML)·`breadcrumbs`·`pageUrl`·메타데이터 | Confluence REST (서버 보관 OAuth 토큰) |
+
+공통:
+- 인증 필수(Bearer JWT). 미인증 `401`.
+- FE 는 `bodyViewValue` 를 DOMPurify 로 sanitize 후 `v-html` 렌더링.
+- **TBD (3단계 결정)**: 호출 주체 — (a) BFF 가 토큰 사용해 직접 Confluence 호출 vs (b) Authorization Server 프록시 (`docs/api-spec.md` §4-3 TBD, `backend/CLAUDE.md` §6).
+
+## 진입 주차에서 정의할 것
+
+- Feature 단위 분할(엔드포인트별 또는 영역별 — 관리자 통계/사용자/데이터/피드백/동기화, 미리보기 1건)
+- `admin/controller`·`admin/service` 또는 `dashboard/...` 등 패키지/파일 구조
+- ADMIN 권한 가드(`@PreAuthorize` 또는 Spring Security Filter) 설계
+- WireMock/MockMvc 테스트 시나리오(권한 분기·기간 필터·페이지네이션)
+- 6주차 쿼리 파라미터 확정 (제안값 `period`/`from`/`to`/`page`/`size` 검증)

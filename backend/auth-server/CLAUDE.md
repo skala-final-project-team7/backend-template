@@ -12,7 +12,7 @@
 - Confluence OAuth 2.0 Authorization Code Flow 처리
 - Access/Refresh Token MySQL **암호화 저장** (평문 저장 금지)
 - 사용자 스페이스 접근 권한(ACL) 조회·관리
-- JWT 발급 (Claim: `user_id`, `groups`, `iss`, `exp`, `iat`)
+- JWT 발급 (Claim: `userId`, `groups`, `role`, `iss`, `exp`, `iat`) — `role` 은 MySQL `users.role` 단일 source, `userId` 는 Confluence accountId (`docs/db-schema.md` §6.1)
 - Refresh Token 기반 자동 갱신
 
 세부 흐름은 `docs/architecture.md` §7, `backend/rules/auth.md` §1·§2 를 따른다.
@@ -30,7 +30,7 @@
 
 ### 3.1 토큰 보안
 - Access/Refresh Token 은 MySQL 에 **암호화 저장**한다. 평문 저장 금지.
-- Token 을 프론트엔드 응답 Body 에 포함하지 않는다 (HttpOnly Cookie 사용).
+- **Confluence OAuth Token(Atlassian)은 프론트엔드에 노출하지 않는다**(서버 MySQL 보관). LINA 세션 JWT 는 `Authorization: Bearer` 방식으로 발급한다(HttpOnly 쿠키 미사용, `docs/api-spec.md` §4-1).
 - 로그에 Token / Secret 원문을 남기지 않는다 (`docs/conventions.md` §6.4).
 
 ### 3.2 JWT 발급 계약
@@ -56,7 +56,7 @@
 ## 5. 모듈 체크리스트
 
 - [ ] OAuth Token 평문 저장 없음 (암호화 컬럼 + KMS/Vault 키 사용)
-- [ ] Token 이 응답 Body 에 포함되지 않음 (HttpOnly Cookie 만 사용)
+- [ ] Confluence OAuth Token 이 FE 응답에 포함되지 않음(서버 보관). 세션 JWT 는 `Authorization: Bearer` 발급(쿠키 미사용)
 - [ ] JWT Claim 셋이 BFF 검증 로직과 일치
 - [ ] 평문 secret 미포함 (OAuth client-id/secret 환경변수 참조)
 - [ ] 인증 흐름 우회 코드 없음 (테스트는 Test Security Config 사용)

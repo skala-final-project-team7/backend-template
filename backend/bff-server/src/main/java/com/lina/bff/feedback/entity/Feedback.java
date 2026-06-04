@@ -42,7 +42,7 @@ public class Feedback {
   @Indexed(unique = true, name = "uniq_feedbacks_message")
   private String messageId;
 
-  /** 사용자 평가(`LIKE` / `DISLIKE`). API 의 "like"/"dislike" 와 매핑된다. */
+  /** 사용자 평가(`LIKE` / `DISLIKE`). API 응답·DB 저장 모두 동일한 UPPER 표기를 사용한다(`docs/api-spec.md` §1-3). */
   private FeedbackRating rating;
 
   /** 사용자 코멘트(선택). 부정 피드백 원인 분석에 활용되며 입력하지 않을 수 있다. */

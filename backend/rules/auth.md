@@ -26,7 +26,7 @@
 
 - 별도의 회원가입 로직을 구현하지 않는다. 인증은 Confluence OAuth 2.0에 위임한다.
 - Access Token / Refresh Token 원본은 MySQL에 **암호화 저장**한다. 평문 저장 금지.
-- JWT에 포함할 Claim: `user_id`, `groups`(접근 가능 스페이스/페이지 권한 정보).
+- JWT에 포함할 Claim: `userId`(Confluence accountId), `groups`(접근 가능 스페이스/페이지 권한 정보), `role`(`USER`/`ADMIN` — MySQL `users.role` 단일 source, `docs/db-schema.md` §6.1). Claim 이름은 와이어 필드(`/ml/query`)·JSON 표면과 동일하게 **camelCase** 로 통일한다 (`docs/api-spec.md` §2-1, `docs/adr/0001-page-level-acl-source.md` §2.3).
 - Refresh Token 기반 자동 갱신을 구현한다. 토큰 만료 전 사전 감지 및 재인증 유도.
 - BFF Server는 Authorization Server가 발급한 JWT의 서명, 만료, 권한 Claim만 검증한다.
 - BFF Server가 직접 Confluence 토큰을 교환하지 않는다. 반드시 Authorization Server를 통한다.
@@ -37,4 +37,4 @@
 
 - 인증 흐름을 우회하는 코드를 작성하지 않는다.
 - 테스트 환경에서 인증을 비활성화할 때는 별도의 Test Security Config를 사용하고, production 코드에 조건 분기를 추가하지 않는다.
-- Token을 프론트엔드 응답 Body에 포함하지 않는다 (HttpOnly Cookie 또는 별도 전달 방식 사용).
+- **Confluence OAuth Access/Refresh Token(Atlassian 발급)은 프론트엔드에 노출하지 않는다** — 서버(MySQL)에만 암호화 보관한다. LINA 세션 JWT 는 `Authorization: Bearer` 방식으로 사용하며, 로그인/갱신 응답 `data` 로 access JWT + (LINA 발급) refresh token 을 FE 에 전달한다. **HttpOnly 쿠키는 사용하지 않는다**(`docs/api-spec.md` §4-1).

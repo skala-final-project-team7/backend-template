@@ -48,7 +48,7 @@ public class Message {
   /** 소속 대화방 식별자. `conversations._id`를 참조하는 키이며 FK 제약은 강제되지 않는다. */
   private String conversationId;
 
-  /** 메시지 작성 주체. 사용자 질문(`USER`) 또는 AI 답변(`ASSISTANT`). */
+  /** 메시지 작성 주체. 사용자 질문(`user`) 또는 AI 답변(`assistant`). lowercase — LLM/OpenAI 산업 표준. */
   private MessageRole role;
 
   /** 메시지 본문. user 질문의 자연어 또는 assistant 의 RAG 답변 텍스트. */
