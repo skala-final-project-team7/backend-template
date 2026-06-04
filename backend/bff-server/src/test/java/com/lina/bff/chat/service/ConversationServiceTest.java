@@ -7,11 +7,15 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.lina.bff.chat.dto.ConversationListResponse;
 import com.lina.bff.chat.entity.Conversation;
 import com.lina.bff.chat.repository.ConversationRepository;
 import com.lina.bff.config.CurrentUserProvider;
 import com.lina.common.exception.BizException;
 import com.lina.common.exception.ErrorCode;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,6 +23,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 
 @ExtendWith(MockitoExtension.class)
 class ConversationServiceTest {
@@ -58,5 +64,43 @@ class ConversationServiceTest {
         .isEqualTo(ErrorCode.INVALID_REQUEST);
 
     verify(conversationRepository, never()).save(any(Conversation.class));
+  }
+
+  @Test
+  @DisplayName("대화 목록은 현재 사용자 기준 고정 우선, 최신순으로 조회하고 KST timestamp 를 반환한다")
+  void shouldListConversationsForCurrentUser() {
+    Instant base = Instant.parse("2026-05-06T10:00:00Z");
+    Conversation pinned =
+        Conversation.builder()
+            .conversationId("conv-pinned")
+            .userId("user-001")
+            .title("고정 대화")
+            .isPinned(true)
+            .lastMessageAt(base.minus(1, ChronoUnit.HOURS))
+            .build();
+    Conversation recent =
+        Conversation.builder()
+            .conversationId("conv-recent")
+            .userId("user-001")
+            .title("최신 대화")
+            .isPinned(false)
+            .lastMessageAt(base)
+            .build();
+    PageRequest pageRequest = PageRequest.of(0, 20);
+    when(currentUserProvider.getUserId()).thenReturn("user-001");
+    when(conversationRepository.findByUserIdAndDeletedAtIsNullOrderByIsPinnedDescLastMessageAtDesc(
+            "user-001", pageRequest))
+        .thenReturn(new PageImpl<>(List.of(pinned, recent), pageRequest, 2));
+
+    ConversationListResponse response = conversationService.listConversations(0, 20);
+
+    assertThat(response.totalCount()).isEqualTo(2);
+    assertThat(response.page()).isZero();
+    assertThat(response.size()).isEqualTo(20);
+    assertThat(response.conversations())
+        .extracting("conversationId")
+        .containsExactly("conv-pinned", "conv-recent");
+    assertThat(response.conversations().getFirst().lastMessageAt().getZone().getId())
+        .isEqualTo("Asia/Seoul");
   }
 }

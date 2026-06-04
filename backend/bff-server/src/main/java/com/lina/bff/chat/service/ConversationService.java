@@ -1,5 +1,7 @@
 package com.lina.bff.chat.service;
 
+import com.lina.bff.chat.dto.ConversationListResponse;
+import com.lina.bff.chat.dto.ConversationSummaryResponse;
 import com.lina.bff.chat.dto.CreateConversationResponse;
 import com.lina.bff.chat.entity.Conversation;
 import com.lina.bff.chat.repository.ConversationRepository;
@@ -8,6 +10,9 @@ import com.lina.common.exception.BizException;
 import com.lina.common.exception.ErrorCode;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.List;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,11 +37,33 @@ public class ConversationService {
     if (userId == null || userId.isBlank()) {
       throw new BizException(ErrorCode.INVALID_REQUEST, "현재 사용자 식별자가 없습니다.");
     }
-    Conversation conversation =
-        Conversation.builder().userId(userId).title(DEFAULT_TITLE).build();
+    Conversation conversation = Conversation.builder().userId(userId).title(DEFAULT_TITLE).build();
     Conversation saved = conversationRepository.save(conversation);
     return new CreateConversationResponse(
         saved.getConversationId(), saved.getTitle(), saved.isPinned(), toKst(saved.getCreatedAt()));
+  }
+
+  @Transactional(readOnly = true)
+  public ConversationListResponse listConversations(int page, int size) {
+    String userId = currentUserProvider.getUserId();
+    if (userId == null || userId.isBlank()) {
+      throw new BizException(ErrorCode.INVALID_REQUEST, "현재 사용자 식별자가 없습니다.");
+    }
+    PageRequest pageRequest = PageRequest.of(page, size);
+    Page<Conversation> conversations =
+        conversationRepository.findByUserIdAndDeletedAtIsNullOrderByIsPinnedDescLastMessageAtDesc(
+            userId, pageRequest);
+    List<ConversationSummaryResponse> summaries =
+        conversations.stream()
+            .map(
+                conversation ->
+                    new ConversationSummaryResponse(
+                        conversation.getConversationId(),
+                        conversation.getTitle(),
+                        toKst(conversation.getLastMessageAt()),
+                        conversation.isPinned()))
+            .toList();
+    return new ConversationListResponse(summaries, conversations.getTotalElements(), page, size);
   }
 
   private ZonedDateTime toKst(java.time.Instant instant) {

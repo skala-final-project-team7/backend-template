@@ -366,7 +366,7 @@
 
 #### 체크리스트
 - [x] `POST /api/conversations` — `conversationId`/`title`/`isPinned`(기본 false)/`createdAt` 반환, `ApiResponse` code 201
-- [ ] `GET /api/conversations` — 고정 데모 사용자 기준 고정 우선(`isPinned DESC`) → `last_message_at DESC` 페이징(page/size), 삭제 대화 제외
+- [x] `GET /api/conversations` — 고정 데모 사용자 기준 고정 우선(`isPinned DESC`) → `last_message_at DESC` 페이징(page/size), 삭제 대화 제외
 - [ ] `PATCH /api/conversations/{conversationId}` — `title`/`isPinned` 부분 수정(둘 중 하나 이상 필수), `title`/`isPinned`/`updatedAt` 반환
 - [ ] `DELETE /api/conversations/{conversationId}` — soft delete, `data: null` 반환
 - [ ] `Conversation` 엔티티에 `isPinned`(기본 false) 필드 추가 + Repository 정렬 메서드를 `findByUserIdAndDeletedAtIsNullOrderByIsPinnedDescLastMessageAtDesc` 로 변경 + 인덱스 `{userId,deletedAt,isPinned:-1,lastMessageAt:-1}` 갱신 (Feature 1 산출물 보강)

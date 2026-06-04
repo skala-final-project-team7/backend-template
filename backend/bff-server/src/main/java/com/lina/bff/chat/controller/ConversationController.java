@@ -1,12 +1,15 @@
 package com.lina.bff.chat.controller;
 
+import com.lina.bff.chat.dto.ConversationListResponse;
 import com.lina.bff.chat.dto.CreateConversationResponse;
 import com.lina.bff.chat.service.ConversationService;
 import com.lina.common.response.ApiResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -24,5 +27,12 @@ public class ConversationController {
     CreateConversationResponse response = conversationService.createConversation();
     return ResponseEntity.status(HttpStatus.CREATED)
         .body(new ApiResponse<>(true, HttpStatus.CREATED.value(), response, "새 대화 생성 성공"));
+  }
+
+  @GetMapping
+  public ResponseEntity<ApiResponse<ConversationListResponse>> listConversations(
+      @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+    ConversationListResponse response = conversationService.listConversations(page, size);
+    return ResponseEntity.ok(ApiResponse.success(response, "대화 목록 조회 성공"));
   }
 }

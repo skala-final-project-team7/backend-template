@@ -39,7 +39,7 @@ public interface ConversationRepository extends MongoRepository<Conversation, St
    * @param pageable page/size 페이징 정보
    * @return 활성 대화 페이지 (없으면 빈 페이지)
    */
-  Page<Conversation> findByUserIdAndDeletedAtIsNullOrderByLastMessageAtDesc(
+  Page<Conversation> findByUserIdAndDeletedAtIsNullOrderByIsPinnedDescLastMessageAtDesc(
       String userId, Pageable pageable);
 
   /**

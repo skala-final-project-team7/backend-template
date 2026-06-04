@@ -1,10 +1,13 @@
 package com.lina.bff.chat.controller;
 
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.lina.bff.chat.dto.ConversationListResponse;
+import com.lina.bff.chat.dto.ConversationSummaryResponse;
 import com.lina.bff.chat.dto.CreateConversationResponse;
 import com.lina.bff.chat.service.ConversationService;
 import com.lina.common.exception.BizException;
@@ -12,6 +15,7 @@ import com.lina.common.exception.ErrorCode;
 import com.lina.common.exception.GlobalExceptionHandler;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -66,5 +70,39 @@ class ConversationControllerTest {
         .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
         .andExpect(jsonPath("$.message").value("현재 사용자 식별자가 없습니다."))
         .andExpect(jsonPath("$.data").doesNotExist());
+  }
+
+  @Test
+  @DisplayName("GET /api/conversations 는 200 Wrapper 와 KST lastMessageAt 목록을 반환한다")
+  void shouldListConversations() throws Exception {
+    when(conversationService.listConversations(0, 20))
+        .thenReturn(
+            new ConversationListResponse(
+                List.of(
+                    new ConversationSummaryResponse(
+                        "conv-1", "고정 대화", Instant.parse("2026-05-06T09:00:00Z").atZone(KST), true),
+                    new ConversationSummaryResponse(
+                        "conv-2",
+                        "최신 대화",
+                        Instant.parse("2026-05-06T10:00:00Z").atZone(KST),
+                        false)),
+                2,
+                0,
+                20));
+
+    mockMvc
+        .perform(get("/api/conversations"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.isSuccess").value(true))
+        .andExpect(jsonPath("$.code").value(200))
+        .andExpect(jsonPath("$.message").value("대화 목록 조회 성공"))
+        .andExpect(jsonPath("$.data.totalCount").value(2))
+        .andExpect(jsonPath("$.data.page").value(0))
+        .andExpect(jsonPath("$.data.size").value(20))
+        .andExpect(jsonPath("$.data.conversations[0].conversationId").value("conv-1"))
+        .andExpect(jsonPath("$.data.conversations[0].title").value("고정 대화"))
+        .andExpect(jsonPath("$.data.conversations[0].isPinned").value(true))
+        .andExpect(
+            jsonPath("$.data.conversations[0].lastMessageAt").value("2026-05-06T18:00:00+09:00"));
   }
 }
