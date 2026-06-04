@@ -39,6 +39,15 @@ class ConversationRepositoryTest {
   }
 
   @Test
+  @DisplayName("새 대화의 isPinned 기본값은 false 이다")
+  void shouldDefaultIsPinnedToFalse() {
+    Conversation saved =
+        conversationRepository.save(conversation("user-001", "기본 고정값 대화", Instant.now()));
+
+    assertThat(saved.isPinned()).isFalse();
+  }
+
+  @Test
   @DisplayName("사용자별 활성 대화를 고정 우선, lastMessageAt 내림차순으로 페이징 조회한다")
   void shouldPageActiveConversationsByPinnedAndLastMessageAtDesc() {
     Instant base = Instant.now();

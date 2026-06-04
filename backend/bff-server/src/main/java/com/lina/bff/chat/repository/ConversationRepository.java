@@ -26,13 +26,14 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 public interface ConversationRepository extends MongoRepository<Conversation, String> {
 
   /**
-   * 사용자별 활성 대화 목록을 lastMessageAt 내림차순으로 페이징 조회한다.
+   * 사용자별 활성 대화 목록을 고정 우선, lastMessageAt 내림차순으로 페이징 조회한다.
    *
    * <ul>
-   *   <li>사용 인덱스: idx_conversations_user_active_recent {userId:1, deletedAt:1, lastMessageAt:-1}
+   *   <li>사용 인덱스: idx_conversations_user_active_recent {userId:1, deletedAt:1, isPinned:-1,
+   *       lastMessageAt:-1}
    *   <li>필터: userId 일치 + deletedAt == null (soft delete 제외)
-   *   <li>정렬: lastMessageAt DESC
-   *   <li>호출 위치: ConversationService.selectConversationList (Feature 3)
+   *   <li>정렬: isPinned DESC, lastMessageAt DESC
+   *   <li>호출 위치: ConversationService.listConversations (Feature 3)
    * </ul>
    *
    * @param userId 조회 대상 사용자 식별자
