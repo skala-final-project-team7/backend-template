@@ -152,6 +152,23 @@ class ConversationServiceTest {
   }
 
   @Test
+  @DisplayName("존재하지 않거나 삭제된 대화는 수정할 수 없다")
+  void shouldRejectUpdateMissingOrDeletedConversation() {
+    when(conversationRepository.findByConversationIdAndDeletedAtIsNull("conv-missing"))
+        .thenReturn(Optional.empty());
+
+    assertThatThrownBy(
+            () ->
+                conversationService.updateConversation(
+                    "conv-missing", new UpdateConversationRequest("수정된 대화 제목", null)))
+        .isInstanceOf(BizException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
+
+    verify(conversationRepository, never()).save(any(Conversation.class));
+  }
+
+  @Test
   @DisplayName("대화를 soft delete 하고 deletedAt 이 채워진 문서를 저장한다")
   void shouldSoftDeleteConversation() {
     Conversation conversation =
@@ -166,5 +183,19 @@ class ConversationServiceTest {
     ArgumentCaptor<Conversation> captor = ArgumentCaptor.forClass(Conversation.class);
     verify(conversationRepository).save(captor.capture());
     assertThat(captor.getValue().getDeletedAt()).isNotNull();
+  }
+
+  @Test
+  @DisplayName("존재하지 않거나 삭제된 대화는 삭제할 수 없다")
+  void shouldRejectDeleteMissingOrDeletedConversation() {
+    when(conversationRepository.findByConversationIdAndDeletedAtIsNull("conv-missing"))
+        .thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> conversationService.deleteConversation("conv-missing"))
+        .isInstanceOf(BizException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
+
+    verify(conversationRepository, never()).save(any(Conversation.class));
   }
 }

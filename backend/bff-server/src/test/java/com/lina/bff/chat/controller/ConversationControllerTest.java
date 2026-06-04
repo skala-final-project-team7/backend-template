@@ -157,6 +157,26 @@ class ConversationControllerTest {
   }
 
   @Test
+  @DisplayName("PATCH /api/conversations/{id} 대화가 없거나 삭제된 경우 404 ErrorResponse 를 반환한다")
+  void shouldReturnNotFoundWhenUpdateMissingOrDeletedConversation() throws Exception {
+    when(conversationService.updateConversation(
+            "conv-missing", new UpdateConversationRequest("수정된 대화 제목", null)))
+        .thenThrow(new BizException(ErrorCode.RESOURCE_NOT_FOUND, "해당 대화를 찾을 수 없습니다."));
+
+    mockMvc
+        .perform(
+            patch("/api/conversations/conv-missing")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"title\":\"수정된 대화 제목\"}"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.isSuccess").value(false))
+        .andExpect(jsonPath("$.code").value(404))
+        .andExpect(jsonPath("$.errorCode").value("RESOURCE_NOT_FOUND"))
+        .andExpect(jsonPath("$.message").value("해당 대화를 찾을 수 없습니다."))
+        .andExpect(jsonPath("$.data").doesNotExist());
+  }
+
+  @Test
   @DisplayName("DELETE /api/conversations/{id} 는 soft delete 후 data null Wrapper 를 반환한다")
   void shouldDeleteConversation() throws Exception {
     mockMvc
