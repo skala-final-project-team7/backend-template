@@ -542,10 +542,20 @@
 
 공통: `/api/admin/*` ADMIN 전용(미인증 401·일반 403). PoC 토큰 보안(평문 로그 노출 금지·HTTP/RabbitMQ payload credential 미포함·NetworkPolicy) — `docs/api-spec.md` §2-2 보안 주의 참조. **검증 게이트**: OAuth Bearer + Admin Key 헤더 동작은 3단계 auth-server 구현 직후 curl 로 확인(`backend/auth-server/current-plans.md` Feature A 게이트 항목).
 
-### RabbitMQ completion event / Admin Key deactivate 체크리스트
+### Feature 1. RabbitMQ completion event / Admin Key deactivate
+
+목표: `/api/admin/ingest` 이후 Admin Key 말소를 polling watcher 가 아니라 RabbitMQ completion event consumer 로 처리한다. completion event 는 BFF consumer 가 담당하고, 실제 Atlassian Admin Key 말소는 auth-server 내부 deactivate API 로 위임한다.
+
+Credential 처리 원칙:
+- 기존 2026-06-04 흐름의 `/ml/ingest` 본문 직접 전달(`accessToken` + `cloudId`)은 사용하지 않는다. watcher polling 은 원래 credential 전달 수단이 아니라 완료 감지/deactivate 트리거였으며, 이 책임만 completion event 로 대체한다.
+- BFF 는 `/api/admin/ingest` 처리 중 `accessToken`/`refreshToken`/`cloudId` 를 조회하거나 Data Ingestion Pipeline/RabbitMQ payload 에 전달하지 않는다.
+- BFF 또는 Data Ingestion Pipeline 이 발행하는 ingest job payload 는 `jobId`, `adminUserId`, `mode`, `requestedAt` 등 식별 정보만 포함한다.
+- Data Ingestion Worker 는 job consume 후 `adminUserId` 로 auth-server 내부 credential 조회 API 를 호출해 admin OAuth `accessToken` + `cloudId` 를 함께 받는다.
+- Data Ingestion Worker 는 Confluence 호출 시 `Authorization: Bearer {admin accessToken}` + `Atl-Confluence-With-Admin-Key: true` 헤더를 사용한다.
 
 - [ ] BFF ingest 요청 처리에서 `jobId` 생성, Admin Key activate, RabbitMQ ingest job 발행 또는 Data Ingestion `/ml/ingest` 호출 위임 경계를 확정
 - [ ] ingest job payload schema 정의: `jobId`, `adminUserId`, `mode`, `requestedAt` 중심. `accessToken`/`refreshToken`/`cloudId` 포함 금지
+- [ ] Data Ingestion Worker 가 `adminUserId` 로 auth-server 내부 credential 조회 API 에서 `accessToken` + `cloudId` 를 함께 조회하는 계약 확인
 - [ ] completion event consumer 구현 계획 수립: `jobId`, `adminUserId`, `mode`, `status`, `completedAt`, `errorCode`, `message` 수신 후 auth-server Admin Key deactivate 내부 API 호출
 - [ ] `jobId` 기준 중복 completion event idempotency 정책 문서화 및 테스트 항목 추가
 - [ ] BFF 재시작/consumer 장애 시 RabbitMQ durable queue 에 남은 completion event 재처리 정책 문서화
@@ -567,7 +577,7 @@
 
 ## 진입 주차에서 정의할 것
 
-- Feature 단위 분할(엔드포인트별 또는 영역별 — 관리자 통계/사용자/데이터/피드백/동기화, 미리보기 1건)
+- Feature 단위 분할(엔드포인트별 또는 영역별 — 관리자 통계/사용자/데이터/피드백/동기화, 미리보기 1건). Admin Key completion event 처리는 4단계 Feature 1 로 우선 추적
 - `admin/controller`·`admin/service` 또는 `dashboard/...` 등 패키지/파일 구조
 - ADMIN 권한 가드(`@PreAuthorize` 또는 Spring Security Filter) 설계
 - WireMock/MockMvc 테스트 시나리오(권한 분기·기간 필터·페이지네이션)

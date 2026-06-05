@@ -70,7 +70,21 @@
 > 위 4개 호출의 외부 계약·파라미터·주의사항은 본 파일 **§외부 OAuth 계약 참조 (Atlassian 3LO)** 참고.
 
 ### Feature B. 내부 credential 조회 API
-- [ ] `GET /internal/auth/admin-confluence-credential?adminUserId={adminUserId}` (초안, 내부 API) — Data Ingestion Worker 가 RabbitMQ job consume 후 admin OAuth `accessToken` + `cloudId` 를 함께 조회. `cloudId` 는 MQ payload 가 아니라 이 내부 API 응답에서 token 과 함께 반환한다.
+- [ ] `GET /internal/auth/admin-confluence-credential?adminUserId={adminUserId}` (내부 API) — Data Ingestion Worker 가 RabbitMQ job consume 후 admin OAuth `accessToken` + `cloudId` 를 함께 조회. `cloudId` 는 MQ payload 가 아니라 이 내부 API 응답에서 token 과 함께 반환한다.
+- [ ] 호출 주체 제한: Data Ingestion Worker 전용. FE-facing API 아님. NetworkPolicy 또는 내부 service auth 로 BFF/FE/외부 호출 차단.
+- [ ] Request: query parameter `adminUserId` required. 값은 RabbitMQ ingest job payload 의 `adminUserId` 와 동일하며, credential 자체가 아니다.
+- [ ] Response `200 OK`: `accessToken`, `cloudId`, `expiresAt` 반환. `refreshToken` 은 반환하지 않는다.
+
+```json
+{
+  "accessToken": "<admin-oauth-access-token>",
+  "cloudId": "11111111-2222-3333-4444-555555555555",
+  "expiresAt": "2026-06-05T20:00:00+09:00"
+}
+```
+
+- [ ] 처리 순서: `adminUserId` 로 사용자/토큰 레코드 조회 → `users.role == ADMIN` 확인 → 저장된 `cloudId` 로드 → access token 만료/임박 여부 확인 → 필요 시 refresh token 으로 Atlassian token refresh → DB 에 최신 access/refresh token 저장 → 최신 `accessToken` + `cloudId` 반환
+- [ ] 에러 정책 초안: `adminUserId` 누락/blank = `400 INVALID_REQUEST`, 사용자 없음 또는 credential 없음 = `404 RESOURCE_NOT_FOUND`, `role != ADMIN` = `403 FORBIDDEN`, refresh 실패(`invalid_grant`) = `401 UNAUTHORIZED` 후 재로그인 필요 상태 기록, Atlassian refresh 일시 장애 = `502 EXTERNAL_SERVICE_ERROR`
 - [ ] 응답 본문에 access_token 평문 노출 — **내부 API 한정**, 로그·tracing 본문 마스킹 규칙과 NetworkPolicy 로 격리 (`docs/api-spec.md` §2-2 보안 주의 참고)
 - [ ] 응답에 만료 시각 포함, 만료 임박/만료 시 auth-server 가 refresh 후 최신 `accessToken` + `cloudId` 반환
 - [ ] BFF 용 사용자 token 조회가 별도로 필요하면 FE-facing API 와 혼동되지 않도록 `/internal/...` namespace 로 분리. `/api/admin/ingest` 경로에서는 BFF 가 credential set 을 조회하거나 payload 에 전달하지 않는다.
