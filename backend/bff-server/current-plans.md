@@ -408,7 +408,7 @@
   - ACL: `userId`/`groups` (2단계 데모 고정값)
   - **spaceKey 등 스페이스 스코프 파라미터 미전달** (2026-06-04 결정 — LINA API 표면에서 spaceKey 제거). cross-space 검색이 유일한 모드, ACL(`userId`/`groups`) 만 적용. `lina.demo.fixed-space-key` 설정 deprecation 대상. (`api-spec.md` §2-1)
   - **`stream: true`** — BFF 는 항상 명시(토큰 스트리밍 ON, RAG 기본은 `false`)
-  - **`/ml/query` 본문에 `accessToken`/`cloudId` 미포함** (확정된 결정 #5, 2026-05-22 갱신). PoC 토큰은 Data Ingestion 호출(`/ml/ingest`, `api-spec.md` §2-2) 시에만 전달 — `lina.confluence.*` 설정값 또는 auth-server `/api/auth/confluence-token` 조회 결과 (3단계 도입 후, 4단계 `/api/admin/ingest` 경로에서 사용)
+  - **`/ml/query` 본문에 `accessToken`/`cloudId` 미포함** (확정된 결정 #5, 2026-05-22 갱신). 2026-06-05 갱신: `/ml/ingest`/RabbitMQ job payload 에도 Confluence credential set 을 포함하지 않는다. Data Ingestion Worker 가 `adminUserId` 로 auth-server 내부 API 에서 admin OAuth `accessToken` + `cloudId` 를 함께 조회한다.
 - [ ] **ACL fail-closed 게이트**: `userId` 가 비어 있거나 `groups` 가 빈 배열(`[]`)이면 `/ml/query` 호출을 **차단**하고 SSE `error`(`errorCode: UNAUTHORIZED`)로 종료 (`backend/CLAUDE.md` §6 "ACL 필터 없이 RAG 호출 금지" / `docs/api-spec.md` §2-1)
 - [ ] `POST /api/conversations/{conversationId}/chat` — `SseEmitter` 반환, Wrapper 미적용
 - [ ] `status`/`token`/`sources`/`verification`/`meta`/`done`/`error` 이벤트 중계 (집합 정본 `docs/api-spec.md` §1-1). `status`=진행표시, `meta`=호환용(제거 예정), 스트림은 `done`/`error`로 종료. 출처 `sourceUpdatedAt`·`done` 페이로드 timestamp 는 **KST 직렬화**
@@ -416,8 +416,8 @@
 - [ ] user 메시지 선저장 → `done` 수신 시 assistant 메시지+출처+검증 저장 → `last_message_at` 갱신
 - [ ] 첫 assistant 응답의 `meta.title` 로 대화 제목 **1회 자동 설정** (현재 `title` 이 기본 `"새 대화"` 일 때만; 이후·사용자 PATCH 수정 시 무시) — `docs/api-spec.md` §1-1 "대화 제목 자동 설정 규칙"
 - [ ] ML 실패/타임아웃 시 재시도 없이 `error` 이벤트 전송 후 연결 정리 — SSE 타임아웃은 **idle 기준** `lina.rag.sse-timeout-ms`(기본 60s), 장시간 phase 는 `status` keep-alive, idle 초과 시 `error`(`ML_TIMEOUT`). 응답 헤더 `text/event-stream`/`no-cache`/`X-Accel-Buffering: no` (`docs/api-spec.md` §1-1)
-- [ ] **PoC 토큰 보안 (Data Ingestion 호출 경로 한정)**: `accessToken` 을 로그·tracing 본문에 노출하지 않음 (마스킹), RabbitMQ 페이로드 미포함, actuator 민감 endpoint 비노출 — `docs/api-spec.md` §2-2 보안 주의 준수 (RAG 질의 경로엔 토큰 자체가 없으므로 본 규칙 적용 대상은 ingestion 호출)
-- [ ] WireMock 테스트: SSE 정상 스트림 / ML 5xx / 타임아웃 → `error` 이벤트·연결 정리, **요청 body 에 `accessToken`/`cloudId` 미포함** 검증 (`/ml/query` 본문에 토큰 누출 없음). 토큰 포함 검증은 4단계 `/ml/ingest` 호출 WireMock 테스트에서 수행. 실제 ML 호출 금지.
+- [ ] **PoC 토큰 보안 (Data Ingestion 호출 경로 한정)**: `accessToken` 을 로그·tracing 본문에 노출하지 않음 (마스킹), HTTP/RabbitMQ job·event payload 에 `accessToken`/`refreshToken`/`cloudId` 미포함, actuator 민감 endpoint 비노출 — `docs/api-spec.md` §2-2 보안 주의 준수 (RAG 질의 경로엔 토큰 자체가 없으므로 본 규칙 적용 대상은 ingestion 호출)
+- [ ] WireMock 테스트: SSE 정상 스트림 / ML 5xx / 타임아웃 → `error` 이벤트·연결 정리, **요청 body 에 `accessToken`/`cloudId` 미포함** 검증 (`/ml/query` 본문에 토큰 누출 없음). 4단계 `/ml/ingest`/RabbitMQ job payload 테스트도 credential 미포함(`jobId`/`adminUserId`/`mode` 중심)으로 수행. 실제 ML 호출 금지.
 - [ ] `ChatService` Service Unit Test (RagClient·Repository Mock), Controller 이벤트 시퀀스 검증
 
 ---
@@ -503,8 +503,8 @@
 2. **삭제 방식** (2026-05-19): soft delete 확정. `conversations.deletedAt`, `messages.deletedAt` 사용. 조회는 모두 `deletedAt == null` 필터. 연결 피드백·QCA 데이터 보존.
 3. **데모 사용자/스페이스** (2026-05-19): 설정값으로 분리하고 기본값은 임의 지정. `application.yml`에 `lina.demo.fixed-user-id: user-001`, `lina.demo.fixed-groups: Cloud-Control-Center`, `lina.demo.fixed-space-key: CPC` (모두 `${...}` 환경변수 오버라이드 가능). `db-schema.md`/구현에 위 결정 명시. **2026-06-04 갱신**: `fixed-space-key` 는 spaceKey API 표면 제거(api-spec v2.4.0)로 **deprecation 대상**. `FixedDemoUserProvider.getSpaceKey()`/주입 제거는 Feature 5 구현 시 일괄 정리(`CurrentUserProvider` 인터페이스에서도 제거).
 4. **데이터 저장소** (2026-05-20): 2단계 BFF 도메인(대화·메시지·피드백) 영속은 **MongoDB** 사용. `message_sources`는 별도 컬렉션 없이 `messages.sources` 내장 배열로 단순화. MySQL 은 2단계에서는 미사용이며 3단계의 `users`(`role` 포함)/`user_tokens`/`user_space_acl` 도입 시 재도입(별도 `admins` 테이블 계획은 `users.role` 로 흡수 — 2026-06-02 갱신). `backend/CLAUDE.md` §2.2/§6/§7 의 MongoDB 쓰기 금지 규칙은 **RAG 파이프라인 데이터**(`raw_pages`/`raw_attachments`/`attachment_texts`/`chunked_units`/`import_jobs`/`sync_logs`)에 한정하도록 함께 갱신.
-5. **Confluence OAuth 토큰/cloudId 전달 모드** (2026-05-21, 2026-05-22 갱신): **PoC 모드 우선** — 3단계 auth-server 에서 access_token + cloudId 를 발급/조회한 뒤 BFF 가 **Data Ingestion Pipeline 요청 본문에 평문 첨부해 전달** (`docs/api-spec.md` §2-2). 운영 보호장치(로그·tracing 본문 마스킹, actuator 민감 endpoint 차단, NetworkPolicy, RabbitMQ payload 미포함) 동반 필수. **확장 모드(connectionId)** 는 후속 별도 라운드에서 수집 클라이언트 키 교체만으로 전환 가능하도록 인터페이스 경계 유지. 관련 설정 키: `lina.confluence.*` (토큰/cloudId 환경 변수 참조), `lina.data-ingestion.*` (Data Ingestion 호출 클라이언트 base-url/timeout). 상세는 `backend/auth-server/current-plans.md` §3단계 Feature A~D 참조.
-   - **2026-05-22 갱신**: 토큰 전달 대상을 RAG 질의(`/ml/query`, §2-1) → 데이터 수집(`/ml/ingest`, §2-2) 로 변경. **근거**: 권한은 수집 시 Qdrant payload(`allowed_groups`/`allowed_users`) 에 ACL 저장 + 질의 시 JWT 의 `userId`/`groups` 로 필터링 (기획서 §6.4/§6.6). 따라서 `/ml/query` 는 라이브 Confluence 호출이 없어 토큰 불필요, 토큰은 크롤하는 수집 단계에만 필요. **전제**: "`/ml/query` 가 실시간 Confluence 호출을 일절 안 함" 을 가정 (※ ML 확인 대기 — 확인 후 본 결정 확정).
+5. **Confluence OAuth 토큰/cloudId 조회 모드** (2026-05-21, 2026-05-22, 2026-06-05 갱신): **credential payload 미포함 모드로 정정** — BFF 는 Data Ingestion Pipeline 요청 본문 또는 RabbitMQ payload 에 `accessToken`/`refreshToken`/`cloudId` 를 첨부하지 않는다. Data Ingestion Worker 가 `adminUserId` 로 auth-server 내부 credential 조회 API 를 호출해 admin OAuth `accessToken` + `cloudId` 를 함께 조회한다(`docs/api-spec.md` §2-2). 운영 보호장치(로그·tracing 본문 마스킹, actuator 민감 endpoint 차단, NetworkPolicy, RabbitMQ payload credential 미포함) 동반 필수. 관련 설정 키: `lina.data-ingestion.*` (Data Ingestion 호출 클라이언트 base-url/timeout). 상세는 `backend/auth-server/current-plans.md` §3단계 Feature A~D 참조.
+   - **2026-05-22 갱신 / 2026-06-05 정정**: 토큰 사용 대상을 RAG 질의(`/ml/query`, §2-1) → 데이터 수집(`/ml/ingest`, §2-2) 로 변경하되, 전달 방식은 payload 첨부가 아니라 Data Ingestion Worker 의 auth-server 내부 credential 조회로 정정. **근거**: 권한은 수집 시 Qdrant payload(`allowed_groups`/`allowed_users`) 에 ACL 저장 + 질의 시 JWT 의 `userId`/`groups` 로 필터링 (기획서 §6.4/§6.6). 따라서 `/ml/query` 는 라이브 Confluence 호출이 없어 토큰 불필요, 토큰은 크롤하는 수집 단계에서만 내부 조회해 사용. **전제**: "`/ml/query` 가 실시간 Confluence 호출을 일절 안 함" 을 가정 (※ ML 확인 대기 — 확인 후 본 결정 확정).
 6. **시간 표기 정책** (2026-05-21): 저장은 UTC(`Instant`), **응답 JSON 의 모든 timestamp 는 KST(`+09:00`)** 로 절대 전환 — `instant.atZone(ZoneId.of("Asia/Seoul"))`. Feature 3/4/5(`done` 페이로드 및 출처)/6 응답 DTO 변환에 동일 정책 적용. `docs/api-spec.md` 모든 응답 예시도 이 표기로 일괄 갱신 완료.
 
 ---
@@ -537,10 +537,32 @@
 | 엔드포인트 | 응답 핵심 | 대상 | 비고 |
 |---|---|---|---|
 | `POST /api/admin/key/activate` | `activatedUntil` (60분 후) | auth-server 내부 API → Atlassian `POST /api/v2/admin-key` | **수동/테스트용** — 일반 사용 경로는 `/api/admin/ingest` 가 자동 처리(아래). 검증·디버깅·운영 점검 때만 호출. (`docs/api-spec.md` §1-4 / `docs/adr/0001-page-level-acl-source.md` §2.1) |
-| `POST /api/admin/ingest` | `jobId`/`status`(`STARTED`)/`startedAt` | ML 서버 `POST /ml/ingest` | body `{ mode }` (생략 시 `"full"`). **스페이스 스코프 없음** — admin Key 로 admin 이 접근 가능한 모든 스페이스 일괄 크롤(2026-06-04 결정). **내부 처리**: ① BFF 가 admin 의 Admin Key 활성 상태 확인 → 만료/미활성이면 auth-server 통해 자동 activate (회의 결정 2026-06-02) ② auth-server `GET /api/auth/confluence-token` 로 admin 의 `accessToken`+`cloudId` 조회 ③ `/ml/ingest` 본문에 첨부해 호출 ④ **Virtual Thread watcher** 를 띄워 `/ml/ingest/status/{jobId}` 폴링(`lina.admin.ingest-watch-interval-ms`, 기본 30s) → `COMPLETED`/`FAILED` 감지 시 auth-server `POST /internal/admin/key/deactivate` 호출 → Atlassian admin-key 폐기(보안, 2026-06-04 결정 — 책임 ML→BE 이동). BFF 재시작 시 watcher 손실 → 60분 TTL fallback. Data Ingestion 이 Atlassian REST 호출 시 `Atl-Confluence-With-Admin-Key: true` 헤더 부여. 2단계 demo 데이터 셋업도 본 endpoint 사용. (`docs/api-spec.md` §1-4·§2-2) |
+| `POST /api/admin/ingest` | `jobId`/`status`(`STARTED`)/`startedAt` | RabbitMQ ingest job 또는 ML 서버 `POST /ml/ingest` | body `{ mode }` (생략 시 `"full"`). **스페이스 스코프 없음** — admin Key 로 admin 이 접근 가능한 모든 스페이스 일괄 크롤(2026-06-04 결정). **내부 처리(2026-06-05 갱신 — watcher polling 대체)**: ① BFF 가 admin 의 Admin Key 활성 상태 확인 → 만료/미활성이면 auth-server 통해 자동 activate (회의 결정 2026-06-02) ② BFF 가 `jobId` 생성 후 RabbitMQ ingest job 을 직접 발행하거나 Data Ingestion Pipeline 의 `/ml/ingest` 를 호출해 job 발행 위임 ③ job payload 는 `jobId`/`adminUserId`/`mode` 등 식별·상태 정보만 포함, `accessToken`/`refreshToken`/`cloudId` 미포함 ④ Data Ingestion Worker 가 `adminUserId` 로 auth-server 내부 credential 조회 API 에서 `accessToken`+`cloudId` 를 함께 조회 ⑤ Data Ingestion 이 Atlassian REST 호출 시 `Authorization: Bearer {admin accessToken}` + `Atl-Confluence-With-Admin-Key: true` 헤더 부여 ⑥ Data Ingestion Pipeline 이 RabbitMQ completion event 발행 ⑦ BFF consumer 가 completion event 를 consume하고 auth-server `POST /internal/admin/key/deactivate` 호출 → Atlassian Admin Key 폐기. 2단계 demo 데이터 셋업도 본 endpoint 사용. (`docs/api-spec.md` §1-4·§2-2) |
 | `GET /api/admin/ingest/status/{jobId}` | `jobId`/`status`/`totalPages`/`processedPages`/`failedPages`/`startedAt` | ML 서버 `GET /ml/ingest/status/{jobId}` | passthrough. `status`: `STARTED`/`IN_PROGRESS`/`COMPLETED`/`FAILED` |
 
-공통: `/api/admin/*` ADMIN 전용(미인증 401·일반 403). PoC 토큰 보안(평문 노출 금지·로그 마스킹·RabbitMQ 미포함·NetworkPolicy) — `docs/api-spec.md` §2-2 보안 주의 참조. **검증 게이트**: OAuth Bearer + Admin Key 헤더 동작은 3단계 auth-server 구현 직후 curl 로 확인(`backend/auth-server/current-plans.md` Feature A 게이트 항목).
+공통: `/api/admin/*` ADMIN 전용(미인증 401·일반 403). PoC 토큰 보안(평문 로그 노출 금지·HTTP/RabbitMQ payload credential 미포함·NetworkPolicy) — `docs/api-spec.md` §2-2 보안 주의 참조. **검증 게이트**: OAuth Bearer + Admin Key 헤더 동작은 3단계 auth-server 구현 직후 curl 로 확인(`backend/auth-server/current-plans.md` Feature A 게이트 항목).
+
+### Feature 1. RabbitMQ completion event / Admin Key deactivate
+
+목표: `/api/admin/ingest` 이후 Admin Key 말소를 polling watcher 가 아니라 RabbitMQ completion event consumer 로 처리한다. completion event 는 BFF consumer 가 담당하고, 실제 Atlassian Admin Key 말소는 auth-server 내부 deactivate API 로 위임한다.
+
+Credential 처리 원칙:
+- 기존 2026-06-04 흐름의 `/ml/ingest` 본문 직접 전달(`accessToken` + `cloudId`)은 사용하지 않는다. watcher polling 은 원래 credential 전달 수단이 아니라 완료 감지/deactivate 트리거였으며, 이 책임만 completion event 로 대체한다.
+- BFF 는 `/api/admin/ingest` 처리 중 `accessToken`/`refreshToken`/`cloudId` 를 조회하거나 Data Ingestion Pipeline/RabbitMQ payload 에 전달하지 않는다.
+- BFF 또는 Data Ingestion Pipeline 이 발행하는 ingest job payload 는 `jobId`, `adminUserId`, `mode`, `requestedAt` 등 식별 정보만 포함한다.
+- Data Ingestion Worker 는 job consume 후 `adminUserId` 로 auth-server 내부 credential 조회 API 를 호출해 admin OAuth `accessToken` + `cloudId` 를 함께 받는다.
+- Data Ingestion Worker 는 Confluence 호출 시 `Authorization: Bearer {admin accessToken}` + `Atl-Confluence-With-Admin-Key: true` 헤더를 사용한다.
+
+- [ ] BFF ingest 요청 처리에서 `jobId` 생성, Admin Key activate, RabbitMQ ingest job 발행 또는 Data Ingestion `/ml/ingest` 호출 위임 경계를 확정
+- [ ] ingest job payload schema 정의: `jobId`, `adminUserId`, `mode`, `requestedAt` 중심. `accessToken`/`refreshToken`/`cloudId` 포함 금지
+- [ ] Data Ingestion Worker 가 `adminUserId` 로 auth-server 내부 credential 조회 API 에서 `accessToken` + `cloudId` 를 함께 조회하는 계약 확인
+- [ ] completion event consumer 구현 계획 수립: `jobId`, `adminUserId`, `mode`, `status`, `completedAt`, `errorCode`, `message` 수신 후 auth-server Admin Key deactivate 내부 API 호출
+- [ ] `jobId` 기준 중복 completion event idempotency 정책 문서화 및 테스트 항목 추가
+- [ ] BFF 재시작/consumer 장애 시 RabbitMQ durable queue 에 남은 completion event 재처리 정책 문서화
+- [ ] deactivate 실패 재시도 초안: backoff 적용, 최대 5회 재시도 후 DLQ 이동
+- [ ] DLQ 이동 조건 문서화: payload schema 오류, `jobId`/`adminUserId` 누락, deactivate 5회 실패, 복구 불가능한 auth-server 4xx
+- [ ] DLQ 수동 복구 절차 문서화: 원인 조치 → auth-server deactivate 수동 호출 또는 event 재발행 → 성공 확인 후 DLQ event 폐기
+- [ ] Admin Key 60분 TTL 은 consumer/DLQ 복구 실패 시 최종 fallback 임을 운영 문서에 명시
 
 ### Confluence 페이지 미리보기 (5주차 이후 — 인증 의존)
 
@@ -555,7 +577,7 @@
 
 ## 진입 주차에서 정의할 것
 
-- Feature 단위 분할(엔드포인트별 또는 영역별 — 관리자 통계/사용자/데이터/피드백/동기화, 미리보기 1건)
+- Feature 단위 분할(엔드포인트별 또는 영역별 — 관리자 통계/사용자/데이터/피드백/동기화, 미리보기 1건). Admin Key completion event 처리는 4단계 Feature 1 로 우선 추적
 - `admin/controller`·`admin/service` 또는 `dashboard/...` 등 패키지/파일 구조
 - ADMIN 권한 가드(`@PreAuthorize` 또는 Spring Security Filter) 설계
 - WireMock/MockMvc 테스트 시나리오(권한 분기·기간 필터·페이지네이션)

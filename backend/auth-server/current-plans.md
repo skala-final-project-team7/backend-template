@@ -18,14 +18,14 @@
 
 > 착수 전 상세 Plan 을 본 파일에 추가한다. 참조: `backend/rules/auth.md`, `docs/api-spec.md` §4-1, `docs/api-spec.md` §2-1(PoC 토큰 전달).
 
-## 작업 요약 (PoC 모드 우선, 2026-05-21 확정)
+## 작업 요약 (credential payload 미포함, 2026-06-05 갱신)
 
-3단계는 두 모드를 단계적으로 도입한다. **이번 라운드는 PoC 모드만 구현**한다.
+3단계는 admin OAuth token 을 MySQL 에 암호화 저장하되, Data Ingestion HTTP/RabbitMQ payload 에 Confluence credential set 을 싣지 않는 방식으로 정정한다. 기존 PoC 직접 전달 결정은 2026-06-05 RabbitMQ completion event 결정으로 대체한다.
 
 | 모드 | 흐름 | 적용 시점 |
 |---|---|---|
-| **PoC** | BFF/Auth → Atlassian OAuth callback → access_token 발급 → `accessible-resources` 호출로 cloudId 조회 → **사용자 단위로 MySQL 에 암호화 저장**(access/refresh token + cloudId) → Data Ingestion(`/ml/ingest`) 호출 시 `accessToken + cloudId` 본문 직접 전달 | **3단계 (현재)** |
-| 확장 | 위와 동일 저장. 단 **Data Ingestion 본문에 토큰 평문 노출 제거** → `connectionId` 발급 → Data Ingestion 에는 `connectionId + cloudId` 만 전달, Data Ingestion 이 필요 시 connectionId 로 토큰 재요청 | **3단계 이후 별도 라운드** (cutover 시점 사전 합의) |
+| **현재** | BFF/Auth → Atlassian OAuth callback → access_token 발급 → `accessible-resources` 호출로 cloudId 조회 → **사용자 단위로 MySQL 에 암호화 저장**(access/refresh token + cloudId) → Data Ingestion Worker 가 `adminUserId` 로 내부 credential 조회 API 호출 → `accessToken + cloudId` 를 함께 조회해 Confluence 호출에 사용 | **3단계 (현재)** |
+| 후속 확장 | 위와 동일 저장. 필요 시 credential 조회 응답을 `connectionId` 등 단기 참조 토큰으로 한 번 더 감싸 Data Ingestion Worker 의 token 보유 시간을 줄임 | **3단계 이후 별도 라운드** (cutover 시점 사전 합의) |
 
 ## 외부 OAuth 계약 참조 (Atlassian 3LO)
 
@@ -64,15 +64,30 @@
 - [ ] `POST /api/auth/logout` — refresh token 무효화 + 세션 정리. `Authorization: Bearer {accessToken}` 로 식별. 응답 `data: null` (`docs/api-spec.md` §4-1)
 - [ ] `GET /api/users/me` — 현재 로그인 사용자 정보 조회(`userId`/`name`/`email`/`role`/`profileImageUrl`/`lastLoginAt`). Bearer 검증 필수, 미인증 `401(UNAUTHORIZED)` (`docs/api-spec.md` §4-1)
 - [ ] **Admin Key 활성화 내부 API** (`POST /internal/admin/key/activate`) — BFF 의 `POST /api/admin/key/activate` 또는 `/api/admin/ingest` 의 내부 묶음 처리가 호출. admin 의 저장 OAuth access_token 으로 Atlassian `POST /api/v2/admin-key` 호출(만료 시각 응답). page-level restriction 우회를 위해 필요. ADR 0001 §2.1 참조.
-- [ ] **Admin Key 말소 내부 API** (`POST /internal/admin/key/deactivate`) — BFF 의 ingest watcher 가 `/ml/ingest/status/{jobId}` 폴링으로 `COMPLETED`/`FAILED` 감지 시 호출. admin 의 OAuth access_token 으로 Atlassian admin-key deactivate API 호출(보안 — 키 사용 후 즉시 폐기, 60분 TTL fallback). 2026-06-04 결정 — 책임 ML→BE 이동 (`docs/api-spec.md` §1-4 / ADR 0001 §2.1).
+- [ ] **Admin Key 말소 내부 API** (`POST /internal/admin/key/deactivate`) — BFF completion event consumer 가 RabbitMQ completion event(`COMPLETED`/`FAILED`) consume 후 호출. admin 의 OAuth access_token 으로 Atlassian admin-key deactivate API 호출(보안 — 키 사용 후 즉시 폐기, 60분 TTL fallback). 2026-06-05 결정으로 2026-06-04 BFF polling watcher 방식 대체. `jobId` 기준 중복 completion event 가 와도 안전하도록 idempotent 처리 (`docs/api-spec.md` §1-4 / ADR 0001 §2.1).
 - [ ] **검증 게이트 (Feature A 착수 시 첫 실행)**: 첫 admin OAuth 토큰 확보 직후 OAuth Bearer + `Atl-Confluence-With-Admin-Key: true` 헤더로 restricted page 호출 검증(curl). 200 이면 단일 OAuth 자격증명 모델 그대로 진행, 401/403/404 이면 admin API Token 별도 보관 모델로 전환(plan 한 행 정정 + Feature B 보강).
 
 > 위 4개 호출의 외부 계약·파라미터·주의사항은 본 파일 **§외부 OAuth 계약 참조 (Atlassian 3LO)** 참고.
 
-### Feature B. BFF 에 토큰/cloudId 전달
-- [ ] `GET /api/auth/confluence-token` (내부 API) — BFF 가 현재 사용자의 `accessToken`/`cloudId` 조회
-- [ ] 응답 본문에 access_token 평문 노출 — **PoC 한정**, 로그·tracing 본문 마스킹 규칙과 NetworkPolicy 로 격리 (`docs/api-spec.md` §2-1 보안 주의 참고)
-- [ ] 응답에 만료 시각 포함, BFF 가 만료 임박 시 별도 갱신 호출
+### Feature B. 내부 credential 조회 API
+- [ ] `GET /internal/auth/admin-confluence-credential?adminUserId={adminUserId}` (내부 API) — Data Ingestion Worker 가 RabbitMQ job consume 후 admin OAuth `accessToken` + `cloudId` 를 함께 조회. `cloudId` 는 MQ payload 가 아니라 이 내부 API 응답에서 token 과 함께 반환한다.
+- [ ] 호출 주체 제한: Data Ingestion Worker 전용. FE-facing API 아님. NetworkPolicy 또는 내부 service auth 로 BFF/FE/외부 호출 차단.
+- [ ] Request: query parameter `adminUserId` required. 값은 RabbitMQ ingest job payload 의 `adminUserId` 와 동일하며, credential 자체가 아니다.
+- [ ] Response `200 OK`: `accessToken`, `cloudId`, `expiresAt` 반환. `refreshToken` 은 반환하지 않는다.
+
+```json
+{
+  "accessToken": "<admin-oauth-access-token>",
+  "cloudId": "11111111-2222-3333-4444-555555555555",
+  "expiresAt": "2026-06-05T20:00:00+09:00"
+}
+```
+
+- [ ] 처리 순서: `adminUserId` 로 사용자/토큰 레코드 조회 → `users.role == ADMIN` 확인 → 저장된 `cloudId` 로드 → access token 만료/임박 여부 확인 → 필요 시 refresh token 으로 Atlassian token refresh → DB 에 최신 access/refresh token 저장 → 최신 `accessToken` + `cloudId` 반환
+- [ ] 에러 정책 초안: `adminUserId` 누락/blank = `400 INVALID_REQUEST`, 사용자 없음 또는 credential 없음 = `404 RESOURCE_NOT_FOUND`, `role != ADMIN` = `403 FORBIDDEN`, refresh 실패(`invalid_grant`) = `401 UNAUTHORIZED` 후 재로그인 필요 상태 기록, Atlassian refresh 일시 장애 = `502 EXTERNAL_SERVICE_ERROR`
+- [ ] 응답 본문에 access_token 평문 노출 — **내부 API 한정**, 로그·tracing 본문 마스킹 규칙과 NetworkPolicy 로 격리 (`docs/api-spec.md` §2-2 보안 주의 참고)
+- [ ] 응답에 만료 시각 포함, 만료 임박/만료 시 auth-server 가 refresh 후 최신 `accessToken` + `cloudId` 반환
+- [ ] BFF 용 사용자 token 조회가 별도로 필요하면 FE-facing API 와 혼동되지 않도록 `/internal/...` namespace 로 분리. `/api/admin/ingest` 경로에서는 BFF 가 credential set 을 조회하거나 payload 에 전달하지 않는다.
 
 ### Feature C. JWT 발급 계약 (확장 단계 기반 작업, 본 라운드는 인터페이스만)
 - [ ] JWT Claim 셋 정의: `userId`(Confluence accountId), `groups`, `role`(`USER`/`ADMIN`, MySQL `users.role` 단일 source — `docs/db-schema.md` §6.1), `iss`, `exp`, `iat` (`backend/rules/auth.md` §2)
@@ -84,7 +99,7 @@
 - [ ] 토큰 로그/tracing 본문 마스킹 (Access/Refresh 모두)
 - [ ] actuator `env`/`heapdump`/`threaddump` 비노출
 - [ ] Data Ingestion Pipeline Pod NetworkPolicy 적용 (호출자 화이트리스트) — `docs/api-spec.md` §2-2 보안 주의와 정합
-- [ ] RabbitMQ 메시지·이벤트 페이로드에 토큰 미포함
+- [ ] RabbitMQ 메시지·이벤트 페이로드에 `accessToken`/`refreshToken`/`cloudId` 미포함
 
 ---
 
@@ -92,9 +107,9 @@
 
 | 항목 | 결정 | 일자 |
 |---|---|---|
-| OAuth 도입 단계 | PoC 우선(accessToken/cloudId 직접 전달) → 후속 라운드에서 connectionId 로 확장 | 2026-05-21 |
+| OAuth 도입 단계 | PoC 초기 문서의 accessToken/cloudId 직접 전달 방식은 2026-06-05 결정으로 폐기. Data Ingestion Worker 가 `adminUserId` 로 auth-server 내부 credential 조회 API 에서 `accessToken` + `cloudId` 를 함께 조회하고, RabbitMQ payload 에 credential set 을 넣지 않는다 | 2026-05-21 (06-05 갱신) |
 | (예정) JWT 서명 알고리즘 | TBD (Feature C 착수 시 확정) | — |
 | Confluence 토큰 저장 정책 | **PoC 부터 MySQL 암호화 저장**(access/refresh + cloudId, 사용자 단위) — admin-only ingest 가 세션 무관하게 동작하기 위해 callback 시 즉시 영속. 암호화 알고리즘·키 형식은 Feature A 착수 시 확정 | 2026-06-02 |
-| admin Confluence access 패턴 | **OAuth Bearer + `Atl-Confluence-With-Admin-Key: true` 헤더**(Admin Key 활성화 후) — admin 도 일반 사용자와 동일하게 Confluence OAuth 3LO 로 로그인하며, ingestion 도 같은 OAuth 토큰 사용(별도 API Token 미보관). **UI 동선** (2026-06-02 회의 확정·06-04 갱신): admin 이 관리자 페이지의 "데이터 인제스천 파이프라인" 버튼 1회 클릭 → BFF `POST /api/admin/ingest` 가 내부적으로 key 활성 미확인 시 auth-server `POST /internal/admin/key/activate` 자동 호출 → `/ml/ingest` 트리거 → BFF Virtual Thread watcher 가 `/ml/ingest/status` 폴링 → terminal 시 auth-server `POST /internal/admin/key/deactivate` 호출(BE 책임, 2026-06-04 변경 — ML 책임에서 이동). `POST /api/admin/key/activate` 외부 endpoint 는 수동/테스트용으로 남김. **3단계 구현 시 OAuth Bearer + Admin Key 헤더 동작 검증 게이트**. (`docs/adr/0001-page-level-acl-source.md` §2.1) | 2026-06-02 (06-04 갱신) |
+| admin Confluence access 패턴 | **OAuth Bearer + `Atl-Confluence-With-Admin-Key: true` 헤더**(Admin Key 활성화 후) — admin 도 일반 사용자와 동일하게 Confluence OAuth 3LO 로 로그인하며, ingestion 도 같은 OAuth 토큰 사용(별도 API Token 미보관). **UI 동선** (2026-06-02 회의 확정·06-05 갱신): admin 이 관리자 페이지의 "데이터 인제스천 파이프라인" 버튼 1회 클릭 → BFF `POST /api/admin/ingest` 가 내부적으로 key 활성 미확인 시 auth-server `POST /internal/admin/key/activate` 자동 호출 → RabbitMQ ingest job 발행 또는 `/ml/ingest` 를 통한 job 발행 위임 → Data Ingestion Worker 가 auth-server 내부 credential 조회 API 로 `accessToken` + `cloudId` 조회 → Confluence 호출 → completion event 발행 → BFF consumer 가 auth-server `POST /internal/admin/key/deactivate` 호출(BE 책임). 2026-06-04 의 BFF watcher polling 방식은 2026-06-05 completion event 방식으로 대체. `POST /api/admin/key/activate` 외부 endpoint 는 수동/테스트용으로 남김. **3단계 구현 시 OAuth Bearer + Admin Key 헤더 동작 검증 게이트**. (`docs/adr/0001-page-level-acl-source.md` §2.1) | 2026-06-02 (06-05 갱신) |
 | role 결정 정책 | **MySQL `users.role` DB 단일 source** — OAuth callback 시 accountId lookup, 행 없으면 `role='USER'` INSERT, 행 있으면 그 값 사용. JWT `role` claim 은 그 값을 그대로 발급. 별도 YAML bootstrap config 미사용. **최초 admin** 은 첫 배포 마이그레이션(`V001__seed_initial_admin.sql`) 하드코딩 INSERT. 별도 `admins` 테이블 미사용(흡수). (`docs/db-schema.md` §6.1) | 2026-06-02 |
 | (예정) Refresh Token 갱신 정책 | TBD (Feature C/확장 단계 시점) | — |
