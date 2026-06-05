@@ -365,15 +365,15 @@
 - `chat/service/ConversationServiceTest.java`, `chat/controller/ConversationControllerTest.java`
 
 #### 체크리스트
-- [ ] `POST /api/conversations` — `conversationId`/`title`/`isPinned`(기본 false)/`createdAt` 반환, `ApiResponse` code 201
-- [ ] `GET /api/conversations` — 고정 데모 사용자 기준 고정 우선(`isPinned DESC`) → `last_message_at DESC` 페이징(page/size), 삭제 대화 제외
-- [ ] `PATCH /api/conversations/{conversationId}` — `title`/`isPinned` 부분 수정(둘 중 하나 이상 필수), `title`/`isPinned`/`updatedAt` 반환
-- [ ] `DELETE /api/conversations/{conversationId}` — soft delete, `data: null` 반환
-- [ ] `Conversation` 엔티티에 `isPinned`(기본 false) 필드 추가 + Repository 정렬 메서드를 `findByUserIdAndDeletedAtIsNullOrderByIsPinnedDescLastMessageAtDesc` 로 변경 + 인덱스 `{userId,deletedAt,isPinned:-1,lastMessageAt:-1}` 갱신 (Feature 1 산출물 보강)
-- [ ] 존재하지 않거나 삭제된 대화 접근 시 `RESOURCE_NOT_FOUND`(404)
-- [ ] 필수 필드 누락/형식 오류는 공통 `ErrorResponse`(400)
-- [ ] **DTO 변환 시 모든 timestamp 를 KST(`Asia/Seoul`) `ZonedDateTime` 으로 직렬화** (확정된 결정 #6)
-- [ ] Service Unit Test (Repository Mock) + Controller MockMvc(정상/검증실패/404, Wrapper 구조·KST 표기 검증)
+- [x] `POST /api/conversations` — `conversationId`/`title`/`isPinned`(기본 false)/`createdAt` 반환, `ApiResponse` code 201
+- [x] `GET /api/conversations` — 고정 데모 사용자 기준 고정 우선(`isPinned DESC`) → `last_message_at DESC` 페이징(page/size), 삭제 대화 제외
+- [x] `PATCH /api/conversations/{conversationId}` — `title`/`isPinned` 부분 수정(둘 중 하나 이상 필수), `title`/`isPinned`/`updatedAt` 반환
+- [x] `DELETE /api/conversations/{conversationId}` — soft delete, `data: null` 반환
+- [x] `Conversation` 엔티티에 `isPinned`(기본 false) 필드 추가 + Repository 정렬 메서드를 `findByUserIdAndDeletedAtIsNullOrderByIsPinnedDescLastMessageAtDesc` 로 변경 + 인덱스 `{userId,deletedAt,isPinned:-1,lastMessageAt:-1}` 갱신 (Feature 1 산출물 보강)
+- [x] 존재하지 않거나 삭제된 대화 접근 시 `RESOURCE_NOT_FOUND`(404)
+- [x] 필수 필드 누락/형식 오류는 공통 `ErrorResponse`(400)
+- [x] **DTO 변환 시 모든 timestamp 를 KST(`Asia/Seoul`) `ZonedDateTime` 으로 직렬화** (확정된 결정 #6)
+- [x] Service Unit Test (Repository Mock) + Controller MockMvc(정상/검증실패/404, Wrapper 구조·KST 표기 검증)
 
 ---
 
@@ -384,12 +384,12 @@
 - `chat/dto/{MessageHistoryResponse,MessageResponse,SourceResponse}.java`
 
 #### 체크리스트
-- [ ] `GET /api/conversations/{conversationId}/messages` — 멀티턴 복원용 전체 이력
-- [ ] Entity→DTO 변환 (Entity 직접 반환 금지), `role`(`user`/`assistant`, **lowercase** — LLM/OpenAI 표준)·인용 출처·`confidenceScore`·`verificationResult` 포함
-- [ ] `created_at ASC` 순서 보장, 삭제 메시지 제외
-- [ ] 없는/삭제 대화 시 404
-- [ ] **`createdAt`·출처 `sourceUpdatedAt` 모두 KST(`+09:00`) 표기로 직렬화** (확정된 결정 #6)
-- [ ] Service Unit Test + Controller MockMvc (출처 포함 응답 구조·KST 표기 검증)
+- [x] `GET /api/conversations/{conversationId}/messages` — 멀티턴 복원용 전체 이력
+- [x] Entity→DTO 변환 (Entity 직접 반환 금지), `role`(`user`/`assistant`, **lowercase** — LLM/OpenAI 표준)·인용 출처·`confidenceScore`·`verificationResult` 포함
+- [x] `created_at ASC` 순서 보장, 삭제 메시지 제외
+- [x] 없는/삭제 대화 시 404
+- [x] **`createdAt`·출처 `sourceUpdatedAt` 모두 KST(`+09:00`) 표기로 직렬화** (확정된 결정 #6)
+- [x] Service Unit Test + Controller MockMvc (출처 포함 응답 구조·KST 표기 검증)
 
 ---
 

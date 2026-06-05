@@ -5,12 +5,14 @@ import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /**
  *
@@ -69,6 +71,20 @@ public class GlobalExceptionHandler {
                 ErrorCode.INVALID_REQUEST.getHttpStatus(),
                 ErrorCode.INVALID_REQUEST.getCode(),
                 ex.getMessage()));
+  }
+
+  @ExceptionHandler({
+    HttpMessageNotReadableException.class,
+    MethodArgumentTypeMismatchException.class
+  })
+  public ResponseEntity<ErrorResponse> handleInvalidRequestFormat(Exception ex) {
+    log.warn("Invalid request format: {}", ex.getMessage());
+    return ResponseEntity.status(ErrorCode.INVALID_REQUEST.getHttpStatus())
+        .body(
+            ErrorResponse.of(
+                ErrorCode.INVALID_REQUEST.getHttpStatus(),
+                ErrorCode.INVALID_REQUEST.getCode(),
+                ErrorCode.INVALID_REQUEST.getDefaultMessage()));
   }
 
   @ExceptionHandler(AccessDeniedException.class)
