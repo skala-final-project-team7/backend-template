@@ -402,7 +402,7 @@
 - `rag/client/RagClientTest.java`, `chat/service/ChatServiceTest.java`, `chat/controller/ChatControllerTest.java`
 
 #### 체크리스트
-- [ ] `RagClient` — `rag/client/`에서만 ML/AI Agent 호출, 동기 `RestClient`/`HttpClient` InputStream으로 SSE 파싱 (`Mono`/`Flux`/WebFlux 미사용)
+- [x] `RagClient` — `rag/client/`에서만 ML/AI Agent 호출, 동기 `RestClient`/`HttpClient` InputStream으로 SSE 파싱 (`Mono`/`Flux`/WebFlux 미사용)
 - [ ] ML 호출 시 다음을 전달 (`docs/api-spec.md` §2-1):
   - 질문(`question`), `conversationId`, 대화이력(`history`, 최근 N턴 — `lina.rag.history-turns` 기본 10). **`history[].role` 은 저장값 그대로**(`user`/`assistant` lowercase, LLM/OpenAI 표준 — boundary 변환 없음)
   - ACL: `userId`/`groups` (2단계 데모 고정값)
