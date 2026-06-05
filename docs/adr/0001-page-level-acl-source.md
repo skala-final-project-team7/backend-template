@@ -1,7 +1,7 @@
 # ADR 0001 — 페이지 단위 ACL 권한 데이터 소스
 
 > 상태: **Accepted (2026-06-02)** — admin-only ingestion + Confluence Admin Key 테스트 결과(`/Users/.../confluence_admin_key_test_summary.md`, 2026-06-02) 로 구현 경로 확정. 본 ADR 의 §2.1 데이터 소스가 구체화됨.
-> 일자: 2026-05-29 (초안) / 2026-06-02 (Accepted)
+> 일자: 2026-05-29 (초안) / 2026-06-02 (Accepted) / 2026-06-05 (Admin Key deactivate 흐름 갱신)
 > 관련: `docs/architecture.md` §2·§6.3·§13, `docs/api-spec.md` §1-4·§2-1·§2-2, `backend/rules/auth.md` §2, `backend/rules/domains.md` §3, `docs/db-schema.md` §1, 기획서 §6.4/§6.6
 
 ---
@@ -31,16 +31,23 @@ RAG 검색 파이프라인의 ACL 모델을 **스페이스 단위 → 페이지/
 
 **구체 구현 경로 (2026-06-02 Admin Key 테스트로 확정)**:
 
-1. **수집 자격증명**: admin 의 Confluence OAuth access_token + `Atl-Confluence-With-Admin-Key: true` 헤더 (admin-only ingestion 모델). Admin Key 활성화는 admin 이 LINA UI 에서 `POST /api/admin/key/activate` 로 60분 활성화. Atlassian `POST /api/v2/admin-key` 가 호출됨. 테스트 결과: page-level read restriction 을 우회해 admin 이 접근 가능한 모든 페이지 수집 가능(일반 호출 232건 → Admin Key 호출 237건, 5개 restricted page 차이 확인).
+1. **수집 자격증명**: admin 의 Confluence OAuth access_token + `Atl-Confluence-With-Admin-Key: true` 헤더 (admin-only ingestion 모델). 일반 동선은 BFF `POST /api/admin/ingest` 가 auth-server 내부 API 를 통해 Admin Key 를 활성화하고, 수집 worker 는 auth-server 내부 credential 조회 API 로 admin OAuth `accessToken` + `cloudId` 를 함께 조회한다. RabbitMQ job/completion payload 에는 `accessToken`/`refreshToken`/`cloudId` 를 포함하지 않는다. 테스트 결과: page-level read restriction 을 우회해 admin 이 접근 가능한 모든 페이지 수집 가능(일반 호출 232건 → Admin Key 호출 237건, 5개 restricted page 차이 확인).
 2. **본문 수집**: `GET /api/v2/pages/{id}?body-format=storage` — `body.storage.value` 가 페이지 본문(HTML/storage format), `spaceId`/`parentId`/`ownerId`/`authorId`/`version` 등 메타데이터 포함.
 3. **권한 추출**: 페이지별로 `GET /rest/api/content/{pageId}/restriction/byOperation/read` 호출 → 응답의 `restrictions.user.results[].accountId` 와 `restrictions.group.results[].name` 을 추출해 Qdrant payload `allowed_users` / `allowed_groups` 로 변환.
 4. **계층 권한 (open)**: 일부 페이지는 page-level restriction 이 비어 있어도 parent folder/page 또는 space permission 으로 차단된다 (테스트 §11.2). 정확한 effective ACL 산출은 §4 미해결 항목 참조.
 
 **역할 분리**:
 
-- BE(auth-server): admin OAuth 토큰 영속(MySQL 암호화), **Admin Key activate/deactivate 내부 API** 제공 (`POST /internal/admin/key/activate`·`/deactivate`), BFF 가 `GET /api/auth/confluence-token` 으로 토큰 조회
-- BFF: `POST /api/admin/key/activate` 외부 endpoint 노출(**수동/테스트용**, ADMIN 전용). **일반 동선**은 `POST /api/admin/ingest` 가 내부적으로 key 활성 미확인 시 자동 activate 후 `/ml/ingest` 호출(2026-06-02 회의 결정 — admin "데이터 인제스천 파이프라인" 버튼 하나로 일괄 처리). **ingest 트리거 직후 Virtual Thread watcher 가 `/ml/ingest/status/{jobId}` 를 폴링하다가 terminal status 감지 시 auth-server 의 deactivate 내부 API 호출 → Atlassian admin-key 폐기**(2026-06-04 결정 — 책임을 ML 에서 BE 로 이동, 깔끔한 분리. BFF 재시작 시 watcher 손실은 60분 TTL fallback)
-- ML(Data Ingestion): Atlassian REST 호출 시 `Atl-Confluence-With-Admin-Key: true` 헤더 부여, 페이지별 restriction API 호출해 Qdrant payload 작성. **deactivate 책임 없음 (2026-06-04 변경)** — BE 가 외부에서 watcher 로 처리. ML 인터페이스 변경 불필요.
+- BE(auth-server): admin OAuth 토큰 영속(MySQL 암호화), **Admin Key activate/deactivate 내부 API** 제공 (`POST /internal/admin/key/activate`·`/deactivate`), Data Ingestion Worker 가 `adminUserId` 로 admin OAuth `accessToken` + `cloudId` 를 함께 조회할 내부 credential API 제공. Admin Key deactivate 는 OAuth token 말소가 아니라 Atlassian Admin Key 활성 상태 말소이며, `jobId` 기준 중복 completion event 에 대해 idempotent 해야 한다.
+- BFF: `POST /api/admin/key/activate` 외부 endpoint 노출(**수동/테스트용**, ADMIN 전용). **일반 동선**은 `POST /api/admin/ingest` 가 내부적으로 key 활성 미확인 시 자동 activate 후 RabbitMQ ingest job 을 발행하거나 Data Ingestion Pipeline 에 job 발행을 위임한다(2026-06-02 회의 결정의 버튼 1회 동선 유지). **2026-06-04 의 Virtual Thread watcher + `/ml/ingest/status/{jobId}` polling 방식은 2026-06-05 결정으로 RabbitMQ completion event 방식이 대체한다.** BFF consumer 가 completion event 를 consume한 뒤 auth-server deactivate 내부 API 를 호출해 Atlassian Admin Key 를 폐기한다. BFF 재시작·consumer 장애 시 RabbitMQ durable queue 의 event 재처리로 복구하며, 60분 TTL 은 최종 fallback 이다.
+- ML(Data Ingestion): RabbitMQ ingest job 을 consume하고, `adminUserId` 로 auth-server 내부 credential 조회 API 에서 admin OAuth `accessToken` + `cloudId` 를 함께 조회한다. Atlassian REST 호출 시 `Authorization: Bearer {admin accessToken}` + `Atl-Confluence-With-Admin-Key: true` 헤더를 부여하고, 페이지별 restriction API 호출해 Qdrant payload 작성. 작업 완료/실패 시 RabbitMQ completion event 를 발행한다. **deactivate 직접 호출 책임 없음** — BFF consumer + auth-server deactivate 내부 API 조합으로 처리.
+
+**RabbitMQ payload 원칙 (2026-06-05)**:
+
+- ingest job payload: `jobId`, `adminUserId`, `mode`, `requestedAt` 등 작업 식별/상태 정보만 포함.
+- completion event payload: `jobId`, `adminUserId`, `mode`, `status`, `completedAt`, `errorCode`, `message` 등 완료/실패 식별 정보만 포함.
+- `accessToken`, `refreshToken`, `cloudId` 등 Confluence credential set 은 RabbitMQ payload 에 포함하지 않는다. `cloudId` 는 auth-server 내부 credential 조회 응답에서 `accessToken` 과 함께 반환된다.
+- completion event 중복 수신은 정상 가능성으로 보고 `jobId` 기준 idempotent 처리한다. deactivate 실패는 재시도 후 DLQ 로 이동하며, 운영자는 원인 조치 후 event 재발행 또는 auth-server 내부 deactivate 수동 호출로 복구한다.
 
 **검증 게이트 (3단계 구현 시)**: OAuth Bearer + Admin Key 헤더가 Atlassian 측에서 동작하는지 첫 admin OAuth 토큰 확보 직후 curl 로 검증. 실패 시 admin API Token 별도 보관 모델로 전환(plan 한 행 정정만 필요).
 
