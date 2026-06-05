@@ -2,6 +2,7 @@ package com.lina.bff.chat.controller;
 
 import com.lina.bff.chat.dto.ConversationListResponse;
 import com.lina.bff.chat.dto.CreateConversationResponse;
+import com.lina.bff.chat.dto.MessageHistoryResponse;
 import com.lina.bff.chat.dto.UpdateConversationRequest;
 import com.lina.bff.chat.dto.UpdateConversationResponse;
 import com.lina.bff.chat.service.ConversationService;
@@ -40,6 +41,13 @@ public class ConversationController {
       @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
     ConversationListResponse response = conversationService.listConversations(page, size);
     return ResponseEntity.ok(ApiResponse.success(response, "대화 목록 조회 성공"));
+  }
+
+  @GetMapping("/{conversationId}/messages")
+  public ResponseEntity<ApiResponse<MessageHistoryResponse>> getMessageHistory(
+      @PathVariable String conversationId) {
+    MessageHistoryResponse response = conversationService.getMessageHistory(conversationId);
+    return ResponseEntity.ok(ApiResponse.success(response, "메시지 이력 조회 성공"));
   }
 
   @PatchMapping("/{conversationId}")

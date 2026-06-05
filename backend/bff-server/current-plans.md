@@ -384,12 +384,12 @@
 - `chat/dto/{MessageHistoryResponse,MessageResponse,SourceResponse}.java`
 
 #### 체크리스트
-- [ ] `GET /api/conversations/{conversationId}/messages` — 멀티턴 복원용 전체 이력
-- [ ] Entity→DTO 변환 (Entity 직접 반환 금지), `role`(`user`/`assistant`, **lowercase** — LLM/OpenAI 표준)·인용 출처·`confidenceScore`·`verificationResult` 포함
-- [ ] `created_at ASC` 순서 보장, 삭제 메시지 제외
-- [ ] 없는/삭제 대화 시 404
-- [ ] **`createdAt`·출처 `sourceUpdatedAt` 모두 KST(`+09:00`) 표기로 직렬화** (확정된 결정 #6)
-- [ ] Service Unit Test + Controller MockMvc (출처 포함 응답 구조·KST 표기 검증)
+- [x] `GET /api/conversations/{conversationId}/messages` — 멀티턴 복원용 전체 이력
+- [x] Entity→DTO 변환 (Entity 직접 반환 금지), `role`(`user`/`assistant`, **lowercase** — LLM/OpenAI 표준)·인용 출처·`confidenceScore`·`verificationResult` 포함
+- [x] `created_at ASC` 순서 보장, 삭제 메시지 제외
+- [x] 없는/삭제 대화 시 404
+- [x] **`createdAt`·출처 `sourceUpdatedAt` 모두 KST(`+09:00`) 표기로 직렬화** (확정된 결정 #6)
+- [x] Service Unit Test + Controller MockMvc (출처 포함 응답 구조·KST 표기 검증)
 
 ---
 

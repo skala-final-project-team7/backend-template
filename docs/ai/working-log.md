@@ -5,6 +5,10 @@
 
 ---
 
+## 2026-06-05
+
+- **bff-server 2단계 Feature 4 완료 — 메시지 이력 조회 API**: `GET /api/conversations/{conversationId}/messages` 를 `ConversationController`/`ConversationService` 에 추가했다. 활성 대화 존재를 `findByConversationIdAndDeletedAtIsNull` 로 확인하고, 메시지는 기존 Repository 쿼리 `findByConversationIdAndDeletedAtIsNullOrderByCreatedAtAsc` 로 `deletedAt == null` 필터와 `createdAt ASC` 순서를 보장한다. 응답은 `MessageHistoryResponse`/`MessageResponse`/`SourceResponse` DTO 로 변환해 Entity 직접 반환을 피했고, `role` lowercase(`user`/`assistant`), sources, `confidenceScore`, `verificationResult` 를 포함한다. `createdAt` 과 `sources[].sourceUpdatedAt` 은 KST(`Asia/Seoul`) `ZonedDateTime` 으로 변환한다. 검증: 실패 테스트 선작성 후 `./gradlew :bff-server:test --tests com.lina.bff.chat.service.ConversationServiceTest --tests com.lina.bff.chat.controller.ConversationControllerTest` 통과, `./gradlew :bff-server:test` 통과, `./gradlew :bff-server:spotlessApply` 통과, `./gradlew :bff-server:check` 통과. 참고: `./scripts/format.sh` 는 종료코드 0이었지만 sandbox 에서 `~/.gradle` lock 접근 실패 후 root `spotlessApply` 미탐지 메시지를 출력해, 실제 포맷은 `:bff-server:spotlessApply` 로 수행했다.
+
 ## 2026-06-04
 
 - **bff-server 2단계 Feature 3 아홉 번째 항목 완료 — Service/Controller 테스트 종합 검증**: 대화 CRUD API 의 Service Unit Test(Repository Mock) 와 Controller MockMvc 테스트가 정상/검증실패/404/Wrapper/KST 범위를 모두 고정하도록 보강했다. Service 에 `listConversations` 현재 사용자 식별자 누락 시 `INVALID_REQUEST` 및 Repository 미호출 검증을 추가했고, Controller 에 `GET /api/conversations` Service 검증 실패가 공통 `ErrorResponse(400)` 로 반환되는 케이스를 추가했다. 기존 테스트로 POST/GET/PATCH/DELETE 정상 Wrapper, PATCH/DELETE 404, 요청 본문·파라미터 형식 400, KST `+09:00` 직렬화를 함께 검증한다. 검증: `./gradlew :bff-server:test --tests 'com.lina.bff.chat.service.ConversationServiceTest' --tests 'com.lina.bff.chat.controller.ConversationControllerTest'` 통과, `./scripts/format.sh` 통과, `./scripts/lint.sh` 통과.

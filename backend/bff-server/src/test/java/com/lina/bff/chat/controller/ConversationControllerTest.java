@@ -13,8 +13,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.lina.bff.chat.dto.ConversationListResponse;
 import com.lina.bff.chat.dto.ConversationSummaryResponse;
 import com.lina.bff.chat.dto.CreateConversationResponse;
+import com.lina.bff.chat.dto.MessageHistoryResponse;
+import com.lina.bff.chat.dto.MessageResponse;
+import com.lina.bff.chat.dto.SourceResponse;
 import com.lina.bff.chat.dto.UpdateConversationRequest;
 import com.lina.bff.chat.dto.UpdateConversationResponse;
+import com.lina.bff.chat.entity.MessageRole;
+import com.lina.bff.chat.entity.VerificationResult;
 import com.lina.bff.chat.service.ConversationService;
 import com.lina.common.exception.BizException;
 import com.lina.common.exception.ErrorCode;
@@ -126,6 +131,84 @@ class ConversationControllerTest {
         .andExpect(jsonPath("$.code").value(400))
         .andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"))
         .andExpect(jsonPath("$.message").value("현재 사용자 식별자가 없습니다."))
+        .andExpect(jsonPath("$.data").doesNotExist());
+  }
+
+  @Test
+  @DisplayName("GET /api/conversations/{id}/messages 는 메시지 이력과 출처를 KST timestamp 로 반환한다")
+  void shouldGetMessageHistory() throws Exception {
+    when(conversationService.getMessageHistory("conv-1"))
+        .thenReturn(
+            new MessageHistoryResponse(
+                "conv-1",
+                List.of(
+                    new MessageResponse(
+                        "msg-user",
+                        MessageRole.user,
+                        "S3 권한 오류는?",
+                        List.of(),
+                        null,
+                        null,
+                        Instant.parse("2026-05-06T10:00:00Z").atZone(KST)),
+                    new MessageResponse(
+                        "msg-assistant",
+                        MessageRole.assistant,
+                        "IAM 정책을 수정했습니다.",
+                        List.of(
+                            new SourceResponse(
+                                "S3 트러블슈팅 가이드",
+                                "12345",
+                                "98310",
+                                "Cloud Control Center",
+                                "https://confluence.example.com/pages/12345",
+                                Instant.parse("2026-04-15T09:30:00Z").atZone(KST),
+                                0.92)),
+                        0.85,
+                        VerificationResult.SUPPORTED,
+                        Instant.parse("2026-05-06T10:00:05Z").atZone(KST)))));
+
+    mockMvc
+        .perform(get("/api/conversations/conv-1/messages"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.isSuccess").value(true))
+        .andExpect(jsonPath("$.code").value(200))
+        .andExpect(jsonPath("$.message").value("메시지 이력 조회 성공"))
+        .andExpect(jsonPath("$.data.conversationId").value("conv-1"))
+        .andExpect(jsonPath("$.data.messages[0].messageId").value("msg-user"))
+        .andExpect(jsonPath("$.data.messages[0].role").value("user"))
+        .andExpect(jsonPath("$.data.messages[0].createdAt").value("2026-05-06T19:00:00+09:00"))
+        .andExpect(jsonPath("$.data.messages[1].messageId").value("msg-assistant"))
+        .andExpect(jsonPath("$.data.messages[1].role").value("assistant"))
+        .andExpect(jsonPath("$.data.messages[1].confidenceScore").value(0.85))
+        .andExpect(jsonPath("$.data.messages[1].verificationResult").value("SUPPORTED"))
+        .andExpect(jsonPath("$.data.messages[1].createdAt").value("2026-05-06T19:00:05+09:00"))
+        .andExpect(jsonPath("$.data.messages[1].sources[0].title").value("S3 트러블슈팅 가이드"))
+        .andExpect(jsonPath("$.data.messages[1].sources[0].pageId").value("12345"))
+        .andExpect(jsonPath("$.data.messages[1].sources[0].spaceId").value("98310"))
+        .andExpect(
+            jsonPath("$.data.messages[1].sources[0].spaceName").value("Cloud Control Center"))
+        .andExpect(
+            jsonPath("$.data.messages[1].sources[0].url")
+                .value("https://confluence.example.com/pages/12345"))
+        .andExpect(
+            jsonPath("$.data.messages[1].sources[0].sourceUpdatedAt")
+                .value("2026-04-15T18:30:00+09:00"))
+        .andExpect(jsonPath("$.data.messages[1].sources[0].relevanceScore").value(0.92));
+  }
+
+  @Test
+  @DisplayName("GET /api/conversations/{id}/messages 대화가 없거나 삭제된 경우 404 ErrorResponse 를 반환한다")
+  void shouldReturnNotFoundWhenMessageHistoryConversationMissingOrDeleted() throws Exception {
+    when(conversationService.getMessageHistory("conv-missing"))
+        .thenThrow(new BizException(ErrorCode.RESOURCE_NOT_FOUND, "해당 대화를 찾을 수 없습니다."));
+
+    mockMvc
+        .perform(get("/api/conversations/conv-missing/messages"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.isSuccess").value(false))
+        .andExpect(jsonPath("$.code").value(404))
+        .andExpect(jsonPath("$.errorCode").value("RESOURCE_NOT_FOUND"))
+        .andExpect(jsonPath("$.message").value("해당 대화를 찾을 수 없습니다."))
         .andExpect(jsonPath("$.data").doesNotExist());
   }
 

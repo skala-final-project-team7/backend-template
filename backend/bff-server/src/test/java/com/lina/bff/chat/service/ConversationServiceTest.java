@@ -10,10 +10,18 @@ import static org.mockito.Mockito.when;
 import com.lina.bff.chat.dto.ConversationListResponse;
 import com.lina.bff.chat.dto.ConversationSummaryResponse;
 import com.lina.bff.chat.dto.CreateConversationResponse;
+import com.lina.bff.chat.dto.MessageHistoryResponse;
+import com.lina.bff.chat.dto.MessageResponse;
+import com.lina.bff.chat.dto.SourceResponse;
 import com.lina.bff.chat.dto.UpdateConversationRequest;
 import com.lina.bff.chat.dto.UpdateConversationResponse;
 import com.lina.bff.chat.entity.Conversation;
+import com.lina.bff.chat.entity.Message;
+import com.lina.bff.chat.entity.MessageRole;
+import com.lina.bff.chat.entity.MessageSource;
+import com.lina.bff.chat.entity.VerificationResult;
 import com.lina.bff.chat.repository.ConversationRepository;
+import com.lina.bff.chat.repository.MessageRepository;
 import com.lina.bff.config.CurrentUserProvider;
 import com.lina.common.exception.BizException;
 import com.lina.common.exception.ErrorCode;
@@ -37,6 +45,7 @@ import org.springframework.data.domain.PageRequest;
 class ConversationServiceTest {
 
   @Mock private ConversationRepository conversationRepository;
+  @Mock private MessageRepository messageRepository;
   @Mock private CurrentUserProvider currentUserProvider;
 
   @InjectMocks private ConversationService conversationService;
@@ -49,6 +58,15 @@ class ConversationServiceTest {
     assertThat(recordComponentType(ConversationSummaryResponse.class, "lastMessageAt"))
         .isEqualTo(ZonedDateTime.class);
     assertThat(recordComponentType(UpdateConversationResponse.class, "updatedAt"))
+        .isEqualTo(ZonedDateTime.class);
+  }
+
+  @Test
+  @DisplayName("메시지 이력 응답 DTO timestamp 필드는 ZonedDateTime 으로 노출한다")
+  void shouldExposeMessageHistoryTimestampsAsZonedDateTimeFields() {
+    assertThat(recordComponentType(MessageResponse.class, "createdAt"))
+        .isEqualTo(ZonedDateTime.class);
+    assertThat(recordComponentType(SourceResponse.class, "sourceUpdatedAt"))
         .isEqualTo(ZonedDateTime.class);
   }
 
@@ -228,6 +246,79 @@ class ConversationServiceTest {
         .isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
 
     verify(conversationRepository, never()).save(any(Conversation.class));
+  }
+
+  @Test
+  @DisplayName("메시지 이력은 대화 존재 확인 후 활성 메시지를 시간순 DTO 로 변환하고 timestamp 를 KST 로 반환한다")
+  void shouldGetMessageHistoryWithSources() {
+    Conversation conversation =
+        Conversation.builder().conversationId("conv-1").userId("user-001").title("S3 대화").build();
+    Message userMessage =
+        Message.builder()
+            .messageId("msg-user")
+            .conversationId("conv-1")
+            .role(MessageRole.user)
+            .content("S3 권한 오류는?")
+            .createdAt(Instant.parse("2026-05-06T10:00:00Z"))
+            .build();
+    Message assistantMessage =
+        Message.builder()
+            .messageId("msg-assistant")
+            .conversationId("conv-1")
+            .role(MessageRole.assistant)
+            .content("IAM 정책을 수정했습니다.")
+            .sources(
+                List.of(
+                    MessageSource.builder()
+                        .title("S3 트러블슈팅 가이드")
+                        .pageId("12345")
+                        .spaceId("98310")
+                        .spaceName("Cloud Control Center")
+                        .url("https://confluence.example.com/pages/12345")
+                        .sourceUpdatedAt(Instant.parse("2026-04-15T09:30:00Z"))
+                        .relevanceScore(0.92)
+                        .build()))
+            .confidenceScore(0.85)
+            .verificationResult(VerificationResult.SUPPORTED)
+            .createdAt(Instant.parse("2026-05-06T10:00:05Z"))
+            .build();
+    when(conversationRepository.findByConversationIdAndDeletedAtIsNull("conv-1"))
+        .thenReturn(Optional.of(conversation));
+    when(messageRepository.findByConversationIdAndDeletedAtIsNullOrderByCreatedAtAsc("conv-1"))
+        .thenReturn(List.of(userMessage, assistantMessage));
+
+    MessageHistoryResponse response = conversationService.getMessageHistory("conv-1");
+
+    assertThat(response.conversationId()).isEqualTo("conv-1");
+    assertThat(response.messages())
+        .extracting(MessageResponse::messageId)
+        .containsExactly("msg-user", "msg-assistant");
+    MessageResponse assistant = response.messages().get(1);
+    assertThat(assistant.role()).isEqualTo(MessageRole.assistant);
+    assertThat(assistant.confidenceScore()).isEqualTo(0.85);
+    assertThat(assistant.verificationResult()).isEqualTo(VerificationResult.SUPPORTED);
+    assertThat(assistant.createdAt().getZone().getId()).isEqualTo("Asia/Seoul");
+    assertThat(assistant.createdAt().toInstant()).isEqualTo(Instant.parse("2026-05-06T10:00:05Z"));
+    assertThat(assistant.sources()).hasSize(1);
+    assertThat(assistant.sources().getFirst().sourceUpdatedAt().getZone().getId())
+        .isEqualTo("Asia/Seoul");
+    assertThat(assistant.sources().getFirst().sourceUpdatedAt().toInstant())
+        .isEqualTo(Instant.parse("2026-04-15T09:30:00Z"));
+  }
+
+  @Test
+  @DisplayName("없는/삭제된 대화의 메시지 이력 조회는 RESOURCE_NOT_FOUND")
+  void shouldRejectMessageHistoryWhenConversationMissingOrDeleted() {
+    when(conversationRepository.findByConversationIdAndDeletedAtIsNull("conv-missing"))
+        .thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> conversationService.getMessageHistory("conv-missing"))
+        .isInstanceOf(BizException.class)
+        .extracting("errorCode")
+        .isEqualTo(ErrorCode.RESOURCE_NOT_FOUND);
+
+    verify(messageRepository, never())
+        .findByConversationIdAndDeletedAtIsNullOrderByCreatedAtAsc(any());
   }
 
   private Class<?> recordComponentType(Class<?> recordType, String componentName) {
