@@ -68,4 +68,39 @@ class ChatControllerTest {
 
     verify(chatService).streamChat("conv-1", "질문");
   }
+
+  @Test
+  @DisplayName("Controller 는 ChatService 가 보낸 SSE 이벤트 시퀀스를 그대로 응답한다")
+  void shouldWriteSseEventsInServiceSequence() throws Exception {
+    SseEmitter emitter = new SseEmitter(1000L);
+    when(chatService.streamChat("conv-1", "질문")).thenReturn(emitter);
+
+    MvcResult result =
+        mockMvc
+            .perform(
+                post("/api/conversations/conv-1/chat")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.TEXT_EVENT_STREAM)
+                    .content("{\"question\":\"질문\"}"))
+            .andExpect(request().asyncStarted())
+            .andReturn();
+
+    emitter.send(SseEmitter.event().name("status").data("{\"phase\":\"searching\"}"));
+    emitter.send(SseEmitter.event().name("token").data("{\"content\":\"답변\"}"));
+    emitter.send(SseEmitter.event().name("done").data("{\"messageId\":\"msg-1\"}"));
+    emitter.complete();
+
+    String responseBody =
+        mockMvc
+            .perform(MockMvcRequestBuilders.asyncDispatch(result))
+            .andExpect(status().isOk())
+            .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
+            .andReturn()
+            .getResponse()
+            .getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+
+    org.assertj.core.api.Assertions.assertThat(responseBody)
+        .containsSubsequence("event:status", "event:token", "event:done")
+        .contains("{\"phase\":\"searching\"}", "{\"content\":\"답변\"}", "\"messageId\":\"msg-1\"");
+  }
 }
