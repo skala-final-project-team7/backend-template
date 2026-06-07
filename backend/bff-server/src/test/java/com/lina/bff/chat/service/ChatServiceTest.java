@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.lina.bff.chat.controller.ChatController;
 import com.lina.bff.chat.entity.Conversation;
 import com.lina.bff.chat.entity.Message;
 import com.lina.bff.chat.entity.MessageRole;
@@ -18,8 +19,10 @@ import com.lina.bff.chat.entity.MessageSource;
 import com.lina.bff.chat.entity.VerificationResult;
 import com.lina.bff.config.CurrentUserProvider;
 import com.lina.bff.rag.client.RagClient;
+import com.lina.bff.rag.client.RagClient.RagClientException;
 import com.lina.bff.rag.client.dto.RagQueryCommand;
 import com.lina.bff.rag.client.dto.RagSseEvent;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.function.Consumer;
@@ -32,6 +35,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @ExtendWith(MockitoExtension.class)
@@ -260,6 +268,53 @@ class ChatServiceTest {
     verify(chatMessagePersistenceService, never()).loadConversation(any());
   }
 
+  @Test
+  @DisplayName("streamChat 은 ML 실패를 error SSE 로 전송한 뒤 연결을 완료한다")
+  void shouldSendErrorSseAndCompleteWhenRagClientFails() throws Exception {
+    PausingTaskExecutor taskExecutor = new PausingTaskExecutor();
+    ChatService chatService =
+        new ChatService(
+            chatMessagePersistenceService, currentUserProvider, ragClient, taskExecutor, 2, 60_000);
+    MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new ChatController(chatService)).build();
+    Conversation conversation = Conversation.builder().conversationId("conv-1").build();
+    when(chatMessagePersistenceService.loadConversation("conv-1")).thenReturn(conversation);
+    when(chatMessagePersistenceService.recentHistory("conv-1", 2)).thenReturn(List.of());
+    when(chatMessagePersistenceService.saveUserMessage(conversation, "질문"))
+        .thenReturn(Message.builder().conversationId("conv-1").role(MessageRole.user).build());
+    when(currentUserProvider.getUserId()).thenReturn("user-001");
+    when(currentUserProvider.getGroups()).thenReturn(List.of("Cloud-Control-Center"));
+    org.mockito.Mockito.doThrow(
+            new RagClientException(RagClient.ML_SERVER_ERROR, "RAG Pipeline failed"))
+        .when(ragClient)
+        .streamQuery(any(), any());
+
+    MvcResult result =
+        mockMvc
+            .perform(
+                MockMvcRequestBuilders.post("/api/conversations/conv-1/chat")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.TEXT_EVENT_STREAM)
+                    .content("{\"question\":\"질문\"}"))
+            .andExpect(
+                org.springframework.test.web.servlet.result.MockMvcResultMatchers.request()
+                    .asyncStarted())
+            .andReturn();
+
+    taskExecutor.runSubmittedTask();
+
+    String responseBody =
+        mockMvc
+            .perform(MockMvcRequestBuilders.asyncDispatch(result))
+            .andExpect(
+                org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString(StandardCharsets.UTF_8);
+    assertThat(responseBody).contains("event:error", "ML_SERVER_ERROR", "답변 생성 중 오류가 발생했습니다.");
+    verify(chatMessagePersistenceService, never())
+        .saveAssistantMessage(any(), any(), any(), any(), any(), any());
+  }
+
   private static class RecordingTaskExecutor implements TaskExecutor {
 
     private Runnable submittedTask;
@@ -271,6 +326,20 @@ class ChatServiceTest {
 
     boolean hasSubmittedTask() {
       return submittedTask != null;
+    }
+  }
+
+  private static class PausingTaskExecutor implements TaskExecutor {
+
+    private Runnable submittedTask;
+
+    @Override
+    public void execute(Runnable task) {
+      this.submittedTask = task;
+    }
+
+    void runSubmittedTask() {
+      submittedTask.run();
     }
   }
 }
