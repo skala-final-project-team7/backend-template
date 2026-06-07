@@ -14,7 +14,9 @@ import com.lina.common.exception.ErrorCode;
 import java.io.IOException;
 import java.util.List;
 import java.util.function.Consumer;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -45,6 +47,7 @@ public class ChatService {
   private final MessageRepository messageRepository;
   private final CurrentUserProvider currentUserProvider;
   private final RagClient ragClient;
+  private final TaskExecutor chatSseTaskExecutor;
   private final int historyTurns;
 
   public ChatService(
@@ -52,11 +55,13 @@ public class ChatService {
       MessageRepository messageRepository,
       CurrentUserProvider currentUserProvider,
       RagClient ragClient,
+      @Qualifier("chatSseTaskExecutor") TaskExecutor chatSseTaskExecutor,
       @Value("${lina.rag.history-turns:10}") int historyTurns) {
     this.conversationRepository = conversationRepository;
     this.messageRepository = messageRepository;
     this.currentUserProvider = currentUserProvider;
     this.ragClient = ragClient;
+    this.chatSseTaskExecutor = chatSseTaskExecutor;
     this.historyTurns = historyTurns;
   }
 
@@ -69,16 +74,15 @@ public class ChatService {
    */
   public SseEmitter streamChat(String conversationId, String question) {
     SseEmitter emitter = new SseEmitter();
-    Thread.ofVirtual()
-        .start(
-            () -> {
-              try {
-                relayRagQuery(conversationId, question, event -> sendEvent(emitter, event));
-                emitter.complete();
-              } catch (RuntimeException exception) {
-                emitter.completeWithError(exception);
-              }
-            });
+    chatSseTaskExecutor.execute(
+        () -> {
+          try {
+            relayRagQuery(conversationId, question, event -> sendEvent(emitter, event));
+            emitter.complete();
+          } catch (RuntimeException exception) {
+            emitter.completeWithError(exception);
+          }
+        });
     return emitter;
   }
 

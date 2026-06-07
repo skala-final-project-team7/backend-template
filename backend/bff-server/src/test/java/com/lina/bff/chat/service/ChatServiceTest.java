@@ -26,6 +26,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.core.task.SyncTaskExecutor;
+import org.springframework.core.task.TaskExecutor;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @ExtendWith(MockitoExtension.class)
 class ChatServiceTest {
@@ -43,7 +46,12 @@ class ChatServiceTest {
   void shouldRelayQueryCommandToRagClient() {
     ChatService chatService =
         new ChatService(
-            conversationRepository, messageRepository, currentUserProvider, ragClient, 2);
+            conversationRepository,
+            messageRepository,
+            currentUserProvider,
+            ragClient,
+            new SyncTaskExecutor(),
+            2);
     Conversation conversation =
         Conversation.builder().conversationId("conv-1").userId("user-001").title("S3 대화").build();
     Message oldest =
@@ -102,7 +110,12 @@ class ChatServiceTest {
   void shouldRejectRagCallWhenAclMissing() {
     ChatService chatService =
         new ChatService(
-            conversationRepository, messageRepository, currentUserProvider, ragClient, 2);
+            conversationRepository,
+            messageRepository,
+            currentUserProvider,
+            ragClient,
+            new SyncTaskExecutor(),
+            2);
     when(conversationRepository.findByConversationIdAndDeletedAtIsNull("conv-1"))
         .thenReturn(Optional.of(Conversation.builder().conversationId("conv-1").build()));
     when(currentUserProvider.getUserId()).thenReturn("user-001");
@@ -117,5 +130,39 @@ class ChatServiceTest {
     assertThat(event.event()).isEqualTo("error");
     assertThat(event.data().get("errorCode").asText()).isEqualTo("UNAUTHORIZED");
     assertThat(event.data().get("message").asText()).isEqualTo("RAG 호출에 필요한 ACL 정보가 없습니다.");
+  }
+
+  @Test
+  @DisplayName("streamChat 은 RAG 중계 작업을 Spring TaskExecutor 에 제출하고 SseEmitter 를 즉시 반환한다")
+  void shouldSubmitStreamingWorkToTaskExecutor() {
+    RecordingTaskExecutor taskExecutor = new RecordingTaskExecutor();
+    ChatService chatService =
+        new ChatService(
+            conversationRepository,
+            messageRepository,
+            currentUserProvider,
+            ragClient,
+            taskExecutor,
+            2);
+
+    SseEmitter emitter = chatService.streamChat("conv-1", "질문");
+
+    assertThat(emitter).isNotNull();
+    assertThat(taskExecutor.hasSubmittedTask()).isTrue();
+    verify(conversationRepository, never()).findByConversationIdAndDeletedAtIsNull(any());
+  }
+
+  private static class RecordingTaskExecutor implements TaskExecutor {
+
+    private Runnable submittedTask;
+
+    @Override
+    public void execute(Runnable task) {
+      this.submittedTask = task;
+    }
+
+    boolean hasSubmittedTask() {
+      return submittedTask != null;
+    }
   }
 }
