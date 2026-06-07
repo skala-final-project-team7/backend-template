@@ -104,4 +104,15 @@ public class Conversation {
     this.lastMessageAt = messageCreatedAt;
     this.updatedAt = messageCreatedAt;
   }
+
+  /** 현재 제목이 기본 제목이면 첫 assistant 응답의 생성 제목을 1회 적용한다. */
+  public boolean applyGeneratedTitleIfDefault(
+      String defaultTitle, String generatedTitle, Instant updatedAt) {
+    if (!defaultTitle.equals(title) || generatedTitle == null || generatedTitle.isBlank()) {
+      return false;
+    }
+    this.title = generatedTitle.strip();
+    this.updatedAt = updatedAt;
+    return true;
+  }
 }

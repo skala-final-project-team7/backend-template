@@ -148,6 +148,10 @@ class ChatServiceTest {
               verificationPayload.put("verificationResult", "SUPPORTED");
               consumer.accept(new RagSseEvent("verification", verificationPayload));
 
+              ObjectNode metaPayload = JsonNodeFactory.instance.objectNode();
+              metaPayload.put("title", "S3 권한 오류 해결 방법");
+              consumer.accept(new RagSseEvent("meta", metaPayload));
+
               ObjectNode donePayload = JsonNodeFactory.instance.objectNode();
               donePayload.put("timestamp", "2026-06-07T01:02:03Z");
               consumer.accept(new RagSseEvent("done", donePayload));
@@ -157,7 +161,7 @@ class ChatServiceTest {
         .when(ragClient)
         .streamQuery(any(), any());
     when(chatMessagePersistenceService.saveAssistantMessage(
-            any(Conversation.class), any(), any(), any(), any()))
+            any(Conversation.class), any(), any(), any(), any(), any()))
         .thenAnswer(
             invocation ->
                 Message.builder()
@@ -174,14 +178,14 @@ class ChatServiceTest {
     chatService.relayRagQuery("conv-1", "질문", eventConsumer);
 
     ArgumentCaptor<RagSseEvent> eventCaptor = ArgumentCaptor.forClass(RagSseEvent.class);
-    verify(eventConsumer, times(4)).accept(eventCaptor.capture());
+    verify(eventConsumer, times(5)).accept(eventCaptor.capture());
     List<RagSseEvent> events = eventCaptor.getAllValues();
     assertThat(events)
         .extracting(RagSseEvent::event)
-        .containsExactly("token", "sources", "verification", "done");
+        .containsExactly("token", "sources", "verification", "meta", "done");
     assertThat(events.get(1).data().get("sources").get(0).get("sourceUpdatedAt").asText())
         .isEqualTo("2026-04-15T18:30:00+09:00");
-    assertThat(events.get(3).data().get("timestamp").asText())
+    assertThat(events.get(4).data().get("timestamp").asText())
         .isEqualTo("2026-06-07T10:02:03+09:00");
 
     ArgumentCaptor<List<MessageSource>> sourcesCaptor = ArgumentCaptor.forClass(List.class);
@@ -191,7 +195,8 @@ class ChatServiceTest {
             org.mockito.ArgumentMatchers.eq("S3 권한 오류는"),
             sourcesCaptor.capture(),
             org.mockito.ArgumentMatchers.eq(0.85),
-            org.mockito.ArgumentMatchers.eq(VerificationResult.SUPPORTED));
+            org.mockito.ArgumentMatchers.eq(VerificationResult.SUPPORTED),
+            org.mockito.ArgumentMatchers.eq("S3 권한 오류 해결 방법"));
     assertThat(sourcesCaptor.getValue())
         .singleElement()
         .satisfies(
@@ -201,7 +206,7 @@ class ChatServiceTest {
                   .isEqualTo(Instant.parse("2026-04-15T09:30:00Z"));
               assertThat(source.getRelevanceScore()).isEqualTo(0.92);
             });
-    assertThat(events.get(3).data().get("messageId").asText()).isEqualTo("assistant-msg-1");
+    assertThat(events.get(4).data().get("messageId").asText()).isEqualTo("assistant-msg-1");
   }
 
   @Test
@@ -236,7 +241,7 @@ class ChatServiceTest {
     assertThat(event.data().get("errorCode").asText()).isEqualTo("ML_TIMEOUT");
     assertThat(event.data().get("message").asText()).isEqualTo("ML 응답이 지연되었습니다.");
     verify(chatMessagePersistenceService, never())
-        .saveAssistantMessage(any(), any(), any(), any(), any());
+        .saveAssistantMessage(any(), any(), any(), any(), any(), any());
   }
 
   @Test

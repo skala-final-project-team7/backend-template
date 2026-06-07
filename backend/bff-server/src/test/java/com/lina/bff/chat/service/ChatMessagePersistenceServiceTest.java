@@ -140,7 +140,12 @@ class ChatMessagePersistenceServiceTest {
 
     Message saved =
         service.saveAssistantMessage(
-            conversation, "답변", List.of(source), 0.85, VerificationResult.SUPPORTED);
+            conversation,
+            "답변",
+            List.of(source),
+            0.85,
+            VerificationResult.SUPPORTED,
+            "S3 권한 오류 해결 방법");
 
     assertThat(saved.getRole()).isEqualTo(MessageRole.assistant);
     assertThat(saved.getContent()).isEqualTo("답변");
@@ -153,6 +158,62 @@ class ChatMessagePersistenceServiceTest {
     ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
     verify(messageRepository).save(messageCaptor.capture());
     assertThat(messageCaptor.getValue().getSources()).containsExactly(source);
+  }
+
+  @Test
+  @DisplayName("대화 제목이 기본값이면 assistant 저장 시 meta.title 로 1회 자동 설정한다")
+  void shouldApplyGeneratedTitleWhenConversationTitleIsDefault() {
+    ChatMessagePersistenceService service =
+        new ChatMessagePersistenceService(conversationRepository, messageRepository);
+    Conversation conversation =
+        Conversation.builder().conversationId("conv-1").title("새 대화").build();
+    Instant createdAt = Instant.parse("2026-06-07T01:00:00Z");
+    when(messageRepository.save(any(Message.class)))
+        .thenAnswer(
+            invocation -> {
+              Message message = invocation.getArgument(0);
+              return Message.builder()
+                  .messageId(message.getMessageId())
+                  .conversationId(message.getConversationId())
+                  .role(message.getRole())
+                  .content(message.getContent())
+                  .createdAt(createdAt)
+                  .build();
+            });
+
+    service.saveAssistantMessage(conversation, "답변", List.of(), null, null, " S3 권한 오류 해결 방법 ");
+
+    assertThat(conversation.getTitle()).isEqualTo("S3 권한 오류 해결 방법");
+    assertThat(conversation.getUpdatedAt()).isEqualTo(createdAt);
+    verify(conversationRepository).save(conversation);
+  }
+
+  @Test
+  @DisplayName("대화 제목이 이미 바뀌었으면 assistant 저장 시 meta.title 을 무시한다")
+  void shouldIgnoreGeneratedTitleWhenConversationTitleAlreadyChanged() {
+    ChatMessagePersistenceService service =
+        new ChatMessagePersistenceService(conversationRepository, messageRepository);
+    Conversation conversation =
+        Conversation.builder().conversationId("conv-1").title("사용자가 바꾼 제목").build();
+    Instant createdAt = Instant.parse("2026-06-07T01:00:00Z");
+    when(messageRepository.save(any(Message.class)))
+        .thenAnswer(
+            invocation -> {
+              Message message = invocation.getArgument(0);
+              return Message.builder()
+                  .messageId(message.getMessageId())
+                  .conversationId(message.getConversationId())
+                  .role(message.getRole())
+                  .content(message.getContent())
+                  .createdAt(createdAt)
+                  .build();
+            });
+
+    service.saveAssistantMessage(conversation, "답변", List.of(), null, null, "S3 권한 오류 해결 방법");
+
+    assertThat(conversation.getTitle()).isEqualTo("사용자가 바꾼 제목");
+    assertThat(conversation.getUpdatedAt()).isEqualTo(createdAt);
+    verify(conversationRepository).save(conversation);
   }
 
   @Test

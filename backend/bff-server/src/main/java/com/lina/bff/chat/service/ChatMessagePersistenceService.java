@@ -16,6 +16,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class ChatMessagePersistenceService {
 
+  private static final String DEFAULT_TITLE = "새 대화";
+
   private final ConversationRepository conversationRepository;
   private final MessageRepository messageRepository;
 
@@ -61,7 +63,8 @@ public class ChatMessagePersistenceService {
       String content,
       List<MessageSource> sources,
       Double confidenceScore,
-      VerificationResult verificationResult) {
+      VerificationResult verificationResult,
+      String generatedTitle) {
     Message message =
         Message.builder()
             .conversationId(conversation.getConversationId())
@@ -73,6 +76,7 @@ public class ChatMessagePersistenceService {
             .build();
     Message saved = messageRepository.save(message);
     conversation.recordMessageAt(saved.getCreatedAt());
+    conversation.applyGeneratedTitleIfDefault(DEFAULT_TITLE, generatedTitle, saved.getCreatedAt());
     conversationRepository.save(conversation);
     return saved;
   }

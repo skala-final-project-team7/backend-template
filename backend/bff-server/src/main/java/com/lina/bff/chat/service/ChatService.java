@@ -269,6 +269,7 @@ public class ChatService {
     private List<MessageSource> sources = List.of();
     private Double confidenceScore;
     private VerificationResult verificationResult;
+    private String generatedTitle;
     private Message assistantMessage;
 
     ChatStreamState(Conversation conversation) {
@@ -296,6 +297,13 @@ public class ChatService {
         if (result != null && result.isTextual()) {
           verificationResult = toVerificationResult(result.asText());
         }
+        return;
+      }
+      if ("meta".equals(event.event())) {
+        JsonNode title = event.data().get("title");
+        if (title != null && title.isTextual()) {
+          generatedTitle = title.asText();
+        }
       }
     }
 
@@ -305,7 +313,12 @@ public class ChatService {
       }
       Message message =
           chatMessagePersistenceService.saveAssistantMessage(
-              conversation, answerContent.toString(), sources, confidenceScore, verificationResult);
+              conversation,
+              answerContent.toString(),
+              sources,
+              confidenceScore,
+              verificationResult,
+              generatedTitle);
       assistantMessage = message;
       return assistantMessage;
     }
