@@ -50,16 +50,11 @@ lina:
     sse-timeout-ms: ${ML_PIPELINE_SSE_TIMEOUT_MS:60000}
     history-turns: ${ML_PIPELINE_HISTORY_TURNS:10}
   # Data Ingestion Pipeline(/ml/ingest) 진입점. 수집 서버 별도 배포면 DATA_INGESTION_BASE_URL 지정,
-  # 동일 ML 서버면 ML_PIPELINE_BASE_URL 로 fallback. Confluence 토큰(lina.confluence.*)은
-  # 이 클라이언트의 /ml/ingest 요청 본문에 실린다.
+  # 동일 ML 서버면 ML_PIPELINE_BASE_URL 로 fallback. BFF 는 Confluence credential set 을 조회하거나
+  # HTTP/RabbitMQ payload 에 싣지 않는다. Data Ingestion Worker 가 auth-server 내부 API 로 조회한다.
   data-ingestion:
     base-url: ${DATA_INGESTION_BASE_URL:${ML_PIPELINE_BASE_URL:}}
     request-timeout-ms: ${DATA_INGESTION_TIMEOUT_MS:30000}
-  # Confluence OAuth 토큰/cloudId 전달 (3단계 auth-server PoC 도입)
-  # 평문 secret 미포함 — 모두 환경 변수 주입. PoC 모드에서만 사용하며 확장 단계에서 connectionId 로 대체된다.
-  confluence:
-    access-token: ${CONFLUENCE_ACCESS_TOKEN:}
-    cloud-id: ${CONFLUENCE_CLOUD_ID:}
   auth-server:
     base-url: ${AUTH_SERVER_BASE_URL:}
   jwt:
