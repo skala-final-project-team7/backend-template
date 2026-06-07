@@ -4,7 +4,10 @@ import com.lina.bff.chat.dto.ChatRequest;
 import com.lina.bff.chat.service.ChatService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -45,8 +48,13 @@ public class ChatController {
    * @return SseEmitter — Wrapper 미적용 SSE 응답
    */
   @PostMapping(path = "/{conversationId}/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-  public SseEmitter chat(
+  public ResponseEntity<SseEmitter> chat(
       @PathVariable String conversationId, @Valid @RequestBody ChatRequest request) {
-    return chatService.streamChat(conversationId, request.question());
+    return ResponseEntity.ok()
+        .contentType(MediaType.TEXT_EVENT_STREAM)
+        .cacheControl(CacheControl.noCache())
+        .header(HttpHeaders.CONNECTION, "keep-alive")
+        .header("X-Accel-Buffering", "no")
+        .body(chatService.streamChat(conversationId, request.question()));
   }
 }

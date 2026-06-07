@@ -4,6 +4,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -51,6 +52,10 @@ class ChatControllerTest {
         .perform(MockMvcRequestBuilders.asyncDispatch(result))
         .andExpect(status().isOk())
         .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
+        .andExpect(
+            header().string("Cache-Control", org.hamcrest.Matchers.containsString("no-cache")))
+        .andExpect(header().string("Connection", "keep-alive"))
+        .andExpect(header().string("X-Accel-Buffering", "no"))
         .andExpect(
             content()
                 .string(

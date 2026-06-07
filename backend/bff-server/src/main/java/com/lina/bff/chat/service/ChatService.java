@@ -10,6 +10,7 @@ import com.lina.bff.chat.entity.MessageSource;
 import com.lina.bff.chat.entity.VerificationResult;
 import com.lina.bff.config.CurrentUserProvider;
 import com.lina.bff.rag.client.RagClient;
+import com.lina.bff.rag.client.RagClient.RagClientException;
 import com.lina.bff.rag.client.dto.RagQueryCommand;
 import com.lina.bff.rag.client.dto.RagSseEvent;
 import com.lina.common.exception.ErrorCode;
@@ -56,7 +57,10 @@ public class ChatService {
       Set.of("status", "token", "sources", "verification", "meta", "done", "error");
   private static final Set<String> RELAYABLE_ERROR_CODES =
       Set.of(
-          "ML_SERVER_ERROR", "ML_TIMEOUT", "ML_CONNECTION_ERROR", ErrorCode.UNAUTHORIZED.getCode());
+          RagClient.ML_SERVER_ERROR,
+          RagClient.ML_TIMEOUT,
+          RagClient.ML_CONNECTION_ERROR,
+          ErrorCode.UNAUTHORIZED.getCode());
   private static final String DONE_EVENT = "done";
   private static final String ERROR_EVENT = "error";
   private static final ZoneId KST = ZoneId.of("Asia/Seoul");
@@ -66,18 +70,21 @@ public class ChatService {
   private final RagClient ragClient;
   private final TaskExecutor chatSseTaskExecutor;
   private final int historyTurns;
+  private final long sseTimeoutMs;
 
   public ChatService(
       ChatMessagePersistenceService chatMessagePersistenceService,
       CurrentUserProvider currentUserProvider,
       RagClient ragClient,
       @Qualifier("chatSseTaskExecutor") TaskExecutor chatSseTaskExecutor,
-      @Value("${lina.rag.history-turns:10}") int historyTurns) {
+      @Value("${lina.rag.history-turns:10}") int historyTurns,
+      @Value("${lina.rag.sse-timeout-ms:60000}") long sseTimeoutMs) {
     this.chatMessagePersistenceService = chatMessagePersistenceService;
     this.currentUserProvider = currentUserProvider;
     this.ragClient = ragClient;
     this.chatSseTaskExecutor = chatSseTaskExecutor;
     this.historyTurns = historyTurns;
+    this.sseTimeoutMs = sseTimeoutMs;
   }
 
   /**
@@ -88,8 +95,10 @@ public class ChatService {
    * @return SseEmitter — 공통 Wrapper 를 적용하지 않는 SSE 응답 객체
    */
   public SseEmitter streamChat(String conversationId, String question) {
-    SseEmitter emitter = new SseEmitter();
+    SseEmitter emitter = new SseEmitter(sseTimeoutMs);
     AtomicBoolean terminalEventSent = new AtomicBoolean(false);
+    emitter.onTimeout(
+        () -> sendMlErrorThenComplete(emitter, terminalEventSent, RagClient.ML_TIMEOUT));
     chatSseTaskExecutor.execute(
         () -> {
           try {
@@ -106,6 +115,8 @@ public class ChatService {
             if (!terminalEventSent.get()) {
               emitter.complete();
             }
+          } catch (RagClientException exception) {
+            sendMlErrorThenComplete(emitter, terminalEventSent, exception.getErrorCode());
           } catch (RuntimeException exception) {
             emitter.completeWithError(exception);
           }
@@ -230,7 +241,7 @@ public class ChatService {
     String errorCode =
         normalized.hasNonNull("errorCode") ? normalized.get("errorCode").asText() : null;
     if (!RELAYABLE_ERROR_CODES.contains(errorCode)) {
-      normalized.put("errorCode", "ML_SERVER_ERROR");
+      normalized.put("errorCode", RagClient.ML_SERVER_ERROR);
     }
     if (!normalized.hasNonNull("message") || normalized.get("message").asText().isBlank()) {
       normalized.put("message", "답변 생성 중 오류가 발생했습니다.");
@@ -260,6 +271,32 @@ public class ChatService {
     } catch (IOException exception) {
       throw new IllegalStateException("SSE 이벤트 전송에 실패했습니다.", exception);
     }
+  }
+
+  private void sendMlErrorThenComplete(
+      SseEmitter emitter, AtomicBoolean terminalEventSent, String errorCode) {
+    if (!terminalEventSent.compareAndSet(false, true)) {
+      return;
+    }
+    ObjectNode payload = JsonNodeFactory.instance.objectNode();
+    payload.put(
+        "errorCode",
+        RELAYABLE_ERROR_CODES.contains(errorCode) ? errorCode : RagClient.ML_SERVER_ERROR);
+    payload.put("message", messageForMlError(payload.get("errorCode").asText()));
+    try {
+      emitter.send(SseEmitter.event().name(ERROR_EVENT).data(payload));
+      emitter.complete();
+    } catch (IOException exception) {
+      emitter.completeWithError(exception);
+    }
+  }
+
+  private String messageForMlError(String errorCode) {
+    return switch (errorCode) {
+      case RagClient.ML_TIMEOUT -> "ML 응답 시간이 초과되었습니다.";
+      case RagClient.ML_CONNECTION_ERROR -> "ML 서버 연결이 중단되었습니다.";
+      default -> "답변 생성 중 오류가 발생했습니다.";
+    };
   }
 
   private class ChatStreamState {

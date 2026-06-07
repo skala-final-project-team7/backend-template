@@ -15,6 +15,7 @@ class RagClientConfigTest {
           .withPropertyValues(
               "lina.rag.base-url=http://rag.example",
               "lina.rag.request-timeout-ms=15000",
+              "lina.rag.sse-timeout-ms=60000",
               "lina.data-ingestion.base-url=http://ingest.example",
               "lina.data-ingestion.request-timeout-ms=20000");
 
@@ -46,6 +47,7 @@ class RagClientConfigTest {
         .withPropertyValues(
             "lina.rag.base-url=",
             "lina.rag.request-timeout-ms=15000",
+            "lina.rag.sse-timeout-ms=60000",
             "lina.data-ingestion.base-url=",
             "lina.data-ingestion.request-timeout-ms=20000")
         .run(context -> assertThat(context).hasNotFailed());

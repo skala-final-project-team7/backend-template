@@ -8,12 +8,15 @@ import com.lina.bff.rag.client.dto.RagSseEvent;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 /**
  *
@@ -38,6 +41,10 @@ import org.springframework.web.client.RestClient;
 @RequiredArgsConstructor
 public class RagClient {
 
+  public static final String ML_SERVER_ERROR = "ML_SERVER_ERROR";
+  public static final String ML_TIMEOUT = "ML_TIMEOUT";
+  public static final String ML_CONNECTION_ERROR = "ML_CONNECTION_ERROR";
+
   private final RestClient ragRestClient;
   private final ObjectMapper objectMapper;
 
@@ -61,27 +68,38 @@ public class RagClient {
    * @throws RagClientException ML 호출 또는 SSE 파싱 실패 시
    */
   public void streamQuery(RagQueryCommand command, Consumer<RagSseEvent> eventConsumer) {
-    ragRestClient
-        .post()
-        .uri("/ml/query")
-        .contentType(MediaType.APPLICATION_JSON)
-        .accept(MediaType.TEXT_EVENT_STREAM)
-        .body(command)
-        .exchange(
-            (request, response) -> {
-              if (!response.getStatusCode().is2xxSuccessful()) {
-                throw new RagClientException("RAG Pipeline returned non-success status");
-              }
+    try {
+      ragRestClient
+          .post()
+          .uri("/ml/query")
+          .contentType(MediaType.APPLICATION_JSON)
+          .accept(MediaType.TEXT_EVENT_STREAM)
+          .body(command)
+          .exchange(
+              (request, response) -> {
+                if (!response.getStatusCode().is2xxSuccessful()) {
+                  throw new RagClientException(
+                      ML_SERVER_ERROR, "RAG Pipeline returned non-success status");
+                }
 
-              try (BufferedReader reader =
-                  new BufferedReader(
-                      new InputStreamReader(response.getBody(), StandardCharsets.UTF_8))) {
-                parseSse(reader, eventConsumer);
-              } catch (IOException exception) {
-                throw new RagClientException("Failed to read RAG SSE stream", exception);
-              }
-              return null;
-            });
+                try (BufferedReader reader =
+                    new BufferedReader(
+                        new InputStreamReader(response.getBody(), StandardCharsets.UTF_8))) {
+                  parseSse(reader, eventConsumer);
+                } catch (IOException exception) {
+                  throw new RagClientException(
+                      errorCodeFor(exception), "Failed to read RAG SSE stream", exception);
+                }
+                return null;
+              });
+    } catch (RagClientException exception) {
+      throw exception;
+    } catch (ResourceAccessException exception) {
+      throw new RagClientException(
+          errorCodeFor(exception), "Failed to access RAG Pipeline", exception);
+    } catch (RestClientException exception) {
+      throw new RagClientException(ML_CONNECTION_ERROR, "Failed to call RAG Pipeline", exception);
+    }
   }
 
   /**
@@ -135,18 +153,42 @@ public class RagClient {
           data.isEmpty() ? objectMapper.createObjectNode() : objectMapper.readTree(data.toString());
       eventConsumer.accept(new RagSseEvent(eventName, payload));
     } catch (JsonProcessingException exception) {
-      throw new RagClientException("Failed to parse RAG SSE event data", exception);
+      throw new RagClientException(
+          ML_CONNECTION_ERROR, "Failed to parse RAG SSE event data", exception);
     }
+  }
+
+  private String errorCodeFor(Throwable throwable) {
+    return hasCause(throwable, SocketTimeoutException.class) ? ML_TIMEOUT : ML_CONNECTION_ERROR;
+  }
+
+  private boolean hasCause(Throwable throwable, Class<? extends Throwable> causeType) {
+    Throwable current = throwable;
+    while (current != null) {
+      if (causeType.isInstance(current)) {
+        return true;
+      }
+      current = current.getCause();
+    }
+    return false;
   }
 
   public static class RagClientException extends RuntimeException {
 
-    public RagClientException(String message) {
+    private final String errorCode;
+
+    public RagClientException(String errorCode, String message) {
       super(message);
+      this.errorCode = errorCode;
     }
 
-    public RagClientException(String message, Throwable cause) {
+    public RagClientException(String errorCode, String message, Throwable cause) {
       super(message, cause);
+      this.errorCode = errorCode;
+    }
+
+    public String getErrorCode() {
+      return errorCode;
     }
   }
 }

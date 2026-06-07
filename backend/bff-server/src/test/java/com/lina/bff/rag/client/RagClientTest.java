@@ -6,12 +6,15 @@ import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.github.tomakehurst.wiremock.junit5.WireMockTest;
+import com.lina.bff.rag.client.RagClient.RagClientException;
 import com.lina.bff.rag.client.dto.RagQueryCommand;
 import com.lina.bff.rag.client.dto.RagSseEvent;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -123,10 +126,56 @@ class RagClientTest {
     assertThat(requestBody).doesNotContain("accessToken", "cloudId");
   }
 
+  @Test
+  @DisplayName("ML 서버가 5xx 를 반환하면 ML_SERVER_ERROR 로 실패한다")
+  void shouldFailWithMlServerErrorWhenMlReturns5xx() {
+    wireMock.stubFor(
+        post(urlEqualTo("/ml/query"))
+            .willReturn(aResponse().withStatus(500).withBody("internal error")));
+    RagClient ragClient = new RagClient(buildRestClient(), objectMapper);
+
+    assertThatThrownBy(() -> ragClient.streamQuery(command(), event -> {}))
+        .isInstanceOf(RagClientException.class)
+        .extracting("errorCode")
+        .isEqualTo(RagClient.ML_SERVER_ERROR);
+  }
+
+  @Test
+  @DisplayName("ML SSE idle timeout 이 발생하면 ML_TIMEOUT 으로 실패한다")
+  void shouldFailWithMlTimeoutWhenReadTimeoutExceeded() {
+    wireMock.stubFor(
+        post(urlEqualTo("/ml/query"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "text/event-stream")
+                    .withFixedDelay(200)
+                    .withBody(
+                        """
+                        event: done
+                        data: {}
+
+                        """)));
+    RagClient ragClient = new RagClient(buildRestClient(Duration.ofMillis(50)), objectMapper);
+
+    assertThatThrownBy(() -> ragClient.streamQuery(command(), event -> {}))
+        .isInstanceOf(RagClientException.class)
+        .extracting("errorCode")
+        .isEqualTo(RagClient.ML_TIMEOUT);
+  }
+
   private RestClient buildRestClient() {
-    return RestClient.builder()
-        .baseUrl(wireMock.baseUrl())
-        .requestFactory(new SimpleClientHttpRequestFactory())
-        .build();
+    return buildRestClient(Duration.ofSeconds(30));
+  }
+
+  private RestClient buildRestClient(Duration readTimeout) {
+    SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+    requestFactory.setReadTimeout(readTimeout);
+    return RestClient.builder().baseUrl(wireMock.baseUrl()).requestFactory(requestFactory).build();
+  }
+
+  private RagQueryCommand command() {
+    return new RagQueryCommand(
+        "질문", "user-001", List.of("Cloud-Control-Center"), "conv-uuid-001", List.of(), true);
   }
 }

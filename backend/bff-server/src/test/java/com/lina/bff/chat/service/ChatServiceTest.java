@@ -53,7 +53,8 @@ class ChatServiceTest {
             currentUserProvider,
             ragClient,
             new SyncTaskExecutor(),
-            2);
+            2,
+            60_000);
   }
 
   @Test
@@ -250,7 +251,7 @@ class ChatServiceTest {
     RecordingTaskExecutor taskExecutor = new RecordingTaskExecutor();
     ChatService chatService =
         new ChatService(
-            chatMessagePersistenceService, currentUserProvider, ragClient, taskExecutor, 2);
+            chatMessagePersistenceService, currentUserProvider, ragClient, taskExecutor, 2, 60_000);
 
     SseEmitter emitter = chatService.streamChat("conv-1", "질문");
 
