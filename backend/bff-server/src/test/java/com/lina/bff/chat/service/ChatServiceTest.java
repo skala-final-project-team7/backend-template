@@ -14,16 +14,14 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.lina.bff.chat.entity.Conversation;
 import com.lina.bff.chat.entity.Message;
 import com.lina.bff.chat.entity.MessageRole;
+import com.lina.bff.chat.entity.MessageSource;
 import com.lina.bff.chat.entity.VerificationResult;
-import com.lina.bff.chat.repository.ConversationRepository;
-import com.lina.bff.chat.repository.MessageRepository;
 import com.lina.bff.config.CurrentUserProvider;
 import com.lina.bff.rag.client.RagClient;
 import com.lina.bff.rag.client.dto.RagQueryCommand;
 import com.lina.bff.rag.client.dto.RagSseEvent;
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,8 +37,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @ExtendWith(MockitoExtension.class)
 class ChatServiceTest {
 
-  @Mock private ConversationRepository conversationRepository;
-  @Mock private MessageRepository messageRepository;
+  @Mock private ChatMessagePersistenceService chatMessagePersistenceService;
   @Mock private CurrentUserProvider currentUserProvider;
   @Mock private RagClient ragClient;
   @Mock private Consumer<RagSseEvent> eventConsumer;
@@ -52,8 +49,7 @@ class ChatServiceTest {
   void setUp() {
     chatService =
         new ChatService(
-            conversationRepository,
-            messageRepository,
+            chatMessagePersistenceService,
             currentUserProvider,
             ragClient,
             new SyncTaskExecutor(),
@@ -65,34 +61,14 @@ class ChatServiceTest {
   void shouldRelayQueryCommandToRagClient() {
     Conversation conversation =
         Conversation.builder().conversationId("conv-1").userId("user-001").title("S3 대화").build();
-    Message oldest =
-        Message.builder()
-            .messageId("msg-1")
-            .conversationId("conv-1")
-            .role(MessageRole.user)
-            .content("가장 오래된 질문")
-            .createdAt(Instant.parse("2026-05-06T10:00:00Z"))
-            .build();
-    Message recentUser =
-        Message.builder()
-            .messageId("msg-2")
-            .conversationId("conv-1")
-            .role(MessageRole.user)
-            .content("S3 장애 이력 알려줘")
-            .createdAt(Instant.parse("2026-05-06T10:01:00Z"))
-            .build();
-    Message recentAssistant =
-        Message.builder()
-            .messageId("msg-3")
-            .conversationId("conv-1")
-            .role(MessageRole.assistant)
-            .content("최근 S3 장애는 3건입니다.")
-            .createdAt(Instant.parse("2026-05-06T10:02:00Z"))
-            .build();
-    when(conversationRepository.findByConversationIdAndDeletedAtIsNull("conv-1"))
-        .thenReturn(Optional.of(conversation));
-    when(messageRepository.findByConversationIdAndDeletedAtIsNullOrderByCreatedAtAsc("conv-1"))
-        .thenReturn(List.of(oldest, recentUser, recentAssistant));
+    List<RagQueryCommand.HistoryMessage> history =
+        List.of(
+            new RagQueryCommand.HistoryMessage("user", "S3 장애 이력 알려줘"),
+            new RagQueryCommand.HistoryMessage("assistant", "최근 S3 장애는 3건입니다."));
+    when(chatMessagePersistenceService.loadConversation("conv-1")).thenReturn(conversation);
+    when(chatMessagePersistenceService.recentHistory("conv-1", 2)).thenReturn(history);
+    when(chatMessagePersistenceService.saveUserMessage(conversation, "지난번 S3 권한 오류는 어떻게 해결했어?"))
+        .thenReturn(Message.builder().conversationId("conv-1").role(MessageRole.user).build());
     when(currentUserProvider.getUserId()).thenReturn("user-001");
     when(currentUserProvider.getGroups()).thenReturn(List.of("Cloud-Control-Center"));
 
@@ -106,10 +82,7 @@ class ChatServiceTest {
     assertThat(command.userId()).isEqualTo("user-001");
     assertThat(command.groups()).containsExactly("Cloud-Control-Center");
     assertThat(command.stream()).isTrue();
-    assertThat(command.history())
-        .containsExactly(
-            new RagQueryCommand.HistoryMessage("user", "S3 장애 이력 알려줘"),
-            new RagQueryCommand.HistoryMessage("assistant", "최근 S3 장애는 3건입니다."));
+    assertThat(command.history()).containsExactlyElementsOf(history);
 
     assertThat(objectMapper.valueToTree(command).has("spaceKey")).isFalse();
     assertThat(objectMapper.valueToTree(command).has("accessToken")).isFalse();
@@ -119,8 +92,11 @@ class ChatServiceTest {
   @Test
   @DisplayName("현재 사용자 ACL 이 비어 있으면 RAG 호출 없이 UNAUTHORIZED SSE error 이벤트로 종료한다")
   void shouldRejectRagCallWhenAclMissing() {
-    when(conversationRepository.findByConversationIdAndDeletedAtIsNull("conv-1"))
-        .thenReturn(Optional.of(Conversation.builder().conversationId("conv-1").build()));
+    Conversation conversation = Conversation.builder().conversationId("conv-1").build();
+    when(chatMessagePersistenceService.loadConversation("conv-1")).thenReturn(conversation);
+    when(chatMessagePersistenceService.recentHistory("conv-1", 2)).thenReturn(List.of());
+    when(chatMessagePersistenceService.saveUserMessage(conversation, "질문"))
+        .thenReturn(Message.builder().conversationId("conv-1").role(MessageRole.user).build());
     when(currentUserProvider.getUserId()).thenReturn("user-001");
     when(currentUserProvider.getGroups()).thenReturn(List.of());
 
@@ -136,12 +112,14 @@ class ChatServiceTest {
   }
 
   @Test
+  @SuppressWarnings("unchecked")
   @DisplayName("정본 SSE 이벤트만 중계하고 done 에 저장된 assistant messageId 를 채운다")
   void shouldRelayCanonicalEventsAndFillDoneMessageIdFromSavedAssistant() {
-    when(conversationRepository.findByConversationIdAndDeletedAtIsNull("conv-1"))
-        .thenReturn(Optional.of(Conversation.builder().conversationId("conv-1").build()));
-    when(messageRepository.findByConversationIdAndDeletedAtIsNullOrderByCreatedAtAsc("conv-1"))
-        .thenReturn(List.of());
+    Conversation conversation = Conversation.builder().conversationId("conv-1").build();
+    when(chatMessagePersistenceService.loadConversation("conv-1")).thenReturn(conversation);
+    when(chatMessagePersistenceService.recentHistory("conv-1", 2)).thenReturn(List.of());
+    when(chatMessagePersistenceService.saveUserMessage(conversation, "질문"))
+        .thenReturn(Message.builder().conversationId("conv-1").role(MessageRole.user).build());
     when(currentUserProvider.getUserId()).thenReturn("user-001");
     when(currentUserProvider.getGroups()).thenReturn(List.of("Cloud-Control-Center"));
     doAnswer(
@@ -178,6 +156,20 @@ class ChatServiceTest {
             })
         .when(ragClient)
         .streamQuery(any(), any());
+    when(chatMessagePersistenceService.saveAssistantMessage(
+            any(Conversation.class), any(), any(), any(), any()))
+        .thenAnswer(
+            invocation ->
+                Message.builder()
+                    .messageId("assistant-msg-1")
+                    .conversationId("conv-1")
+                    .role(MessageRole.assistant)
+                    .content(invocation.getArgument(1))
+                    .sources(invocation.getArgument(2))
+                    .confidenceScore(invocation.getArgument(3))
+                    .verificationResult(invocation.getArgument(4))
+                    .createdAt(Instant.parse("2026-06-07T01:02:03Z"))
+                    .build());
 
     chatService.relayRagQuery("conv-1", "질문", eventConsumer);
 
@@ -192,15 +184,15 @@ class ChatServiceTest {
     assertThat(events.get(3).data().get("timestamp").asText())
         .isEqualTo("2026-06-07T10:02:03+09:00");
 
-    ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
-    verify(messageRepository, times(2)).save(messageCaptor.capture());
-    List<Message> savedMessages = messageCaptor.getAllValues();
-    assertThat(savedMessages.get(0).getRole()).isEqualTo(MessageRole.user);
-    assertThat(savedMessages.get(0).getContent()).isEqualTo("질문");
-    Message assistantMessage = savedMessages.get(1);
-    assertThat(assistantMessage.getRole()).isEqualTo(MessageRole.assistant);
-    assertThat(assistantMessage.getContent()).isEqualTo("S3 권한 오류는");
-    assertThat(assistantMessage.getSources())
+    ArgumentCaptor<List<MessageSource>> sourcesCaptor = ArgumentCaptor.forClass(List.class);
+    verify(chatMessagePersistenceService)
+        .saveAssistantMessage(
+            any(Conversation.class),
+            org.mockito.ArgumentMatchers.eq("S3 권한 오류는"),
+            sourcesCaptor.capture(),
+            org.mockito.ArgumentMatchers.eq(0.85),
+            org.mockito.ArgumentMatchers.eq(VerificationResult.SUPPORTED));
+    assertThat(sourcesCaptor.getValue())
         .singleElement()
         .satisfies(
             source -> {
@@ -209,20 +201,17 @@ class ChatServiceTest {
                   .isEqualTo(Instant.parse("2026-04-15T09:30:00Z"));
               assertThat(source.getRelevanceScore()).isEqualTo(0.92);
             });
-    assertThat(assistantMessage.getConfidenceScore()).isEqualTo(0.85);
-    assertThat(assistantMessage.getVerificationResult()).isEqualTo(VerificationResult.SUPPORTED);
-    assertThat(events.get(3).data().get("messageId").asText())
-        .isEqualTo(assistantMessage.getMessageId());
-    verify(conversationRepository, times(2)).save(any(Conversation.class));
+    assertThat(events.get(3).data().get("messageId").asText()).isEqualTo("assistant-msg-1");
   }
 
   @Test
   @DisplayName("RAG error 이벤트는 유효한 errorCode 를 그대로 중계하고 assistant 메시지는 저장하지 않는다")
   void shouldPassthroughValidRagErrorWithoutSavingAssistantMessage() {
-    when(conversationRepository.findByConversationIdAndDeletedAtIsNull("conv-1"))
-        .thenReturn(Optional.of(Conversation.builder().conversationId("conv-1").build()));
-    when(messageRepository.findByConversationIdAndDeletedAtIsNullOrderByCreatedAtAsc("conv-1"))
-        .thenReturn(List.of());
+    Conversation conversation = Conversation.builder().conversationId("conv-1").build();
+    when(chatMessagePersistenceService.loadConversation("conv-1")).thenReturn(conversation);
+    when(chatMessagePersistenceService.recentHistory("conv-1", 2)).thenReturn(List.of());
+    when(chatMessagePersistenceService.saveUserMessage(conversation, "질문"))
+        .thenReturn(Message.builder().conversationId("conv-1").role(MessageRole.user).build());
     when(currentUserProvider.getUserId()).thenReturn("user-001");
     when(currentUserProvider.getGroups()).thenReturn(List.of("Cloud-Control-Center"));
     doAnswer(
@@ -246,9 +235,8 @@ class ChatServiceTest {
     assertThat(event.event()).isEqualTo("error");
     assertThat(event.data().get("errorCode").asText()).isEqualTo("ML_TIMEOUT");
     assertThat(event.data().get("message").asText()).isEqualTo("ML 응답이 지연되었습니다.");
-    ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
-    verify(messageRepository).save(messageCaptor.capture());
-    assertThat(messageCaptor.getValue().getRole()).isEqualTo(MessageRole.user);
+    verify(chatMessagePersistenceService, never())
+        .saveAssistantMessage(any(), any(), any(), any(), any());
   }
 
   @Test
@@ -257,18 +245,13 @@ class ChatServiceTest {
     RecordingTaskExecutor taskExecutor = new RecordingTaskExecutor();
     ChatService chatService =
         new ChatService(
-            conversationRepository,
-            messageRepository,
-            currentUserProvider,
-            ragClient,
-            taskExecutor,
-            2);
+            chatMessagePersistenceService, currentUserProvider, ragClient, taskExecutor, 2);
 
     SseEmitter emitter = chatService.streamChat("conv-1", "질문");
 
     assertThat(emitter).isNotNull();
     assertThat(taskExecutor.hasSubmittedTask()).isTrue();
-    verify(conversationRepository, never()).findByConversationIdAndDeletedAtIsNull(any());
+    verify(chatMessagePersistenceService, never()).loadConversation(any());
   }
 
   private static class RecordingTaskExecutor implements TaskExecutor {

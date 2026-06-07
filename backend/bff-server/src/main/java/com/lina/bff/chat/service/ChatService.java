@@ -6,16 +6,12 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.lina.bff.chat.entity.Conversation;
 import com.lina.bff.chat.entity.Message;
-import com.lina.bff.chat.entity.MessageRole;
 import com.lina.bff.chat.entity.MessageSource;
 import com.lina.bff.chat.entity.VerificationResult;
-import com.lina.bff.chat.repository.ConversationRepository;
-import com.lina.bff.chat.repository.MessageRepository;
 import com.lina.bff.config.CurrentUserProvider;
 import com.lina.bff.rag.client.RagClient;
 import com.lina.bff.rag.client.dto.RagQueryCommand;
 import com.lina.bff.rag.client.dto.RagSseEvent;
-import com.lina.common.exception.BizException;
 import com.lina.common.exception.ErrorCode;
 import java.io.IOException;
 import java.time.Instant;
@@ -65,22 +61,19 @@ public class ChatService {
   private static final String ERROR_EVENT = "error";
   private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
-  private final ConversationRepository conversationRepository;
-  private final MessageRepository messageRepository;
+  private final ChatMessagePersistenceService chatMessagePersistenceService;
   private final CurrentUserProvider currentUserProvider;
   private final RagClient ragClient;
   private final TaskExecutor chatSseTaskExecutor;
   private final int historyTurns;
 
   public ChatService(
-      ConversationRepository conversationRepository,
-      MessageRepository messageRepository,
+      ChatMessagePersistenceService chatMessagePersistenceService,
       CurrentUserProvider currentUserProvider,
       RagClient ragClient,
       @Qualifier("chatSseTaskExecutor") TaskExecutor chatSseTaskExecutor,
       @Value("${lina.rag.history-turns:10}") int historyTurns) {
-    this.conversationRepository = conversationRepository;
-    this.messageRepository = messageRepository;
+    this.chatMessagePersistenceService = chatMessagePersistenceService;
     this.currentUserProvider = currentUserProvider;
     this.ragClient = ragClient;
     this.chatSseTaskExecutor = chatSseTaskExecutor;
@@ -133,9 +126,10 @@ public class ChatService {
    */
   public void relayRagQuery(
       String conversationId, String question, Consumer<RagSseEvent> eventConsumer) {
-    Conversation conversation = loadConversation(conversationId);
-    List<RagQueryCommand.HistoryMessage> history = recentHistory(conversationId);
-    saveUserMessage(conversation, question);
+    Conversation conversation = chatMessagePersistenceService.loadConversation(conversationId);
+    List<RagQueryCommand.HistoryMessage> history =
+        chatMessagePersistenceService.recentHistory(conversationId, historyTurns);
+    chatMessagePersistenceService.saveUserMessage(conversation, question);
 
     String userId = currentUserProvider.getUserId();
     List<String> groups = currentUserProvider.getGroups();
@@ -150,23 +144,6 @@ public class ChatService {
     ChatStreamState streamState = new ChatStreamState(conversation);
     ragClient.streamQuery(
         command, event -> relayCanonicalEvent(event, eventConsumer, terminated, streamState));
-  }
-
-  private Conversation loadConversation(String conversationId) {
-    return conversationRepository
-        .findByConversationIdAndDeletedAtIsNull(conversationId)
-        .orElseThrow(() -> new BizException(ErrorCode.RESOURCE_NOT_FOUND, "해당 대화를 찾을 수 없습니다."));
-  }
-
-  private List<RagQueryCommand.HistoryMessage> recentHistory(String conversationId) {
-    List<Message> messages =
-        messageRepository.findByConversationIdAndDeletedAtIsNullOrderByCreatedAtAsc(conversationId);
-    int fromIndex = Math.max(messages.size() - historyTurns, 0);
-    return messages.subList(fromIndex, messages.size()).stream()
-        .map(
-            message ->
-                new RagQueryCommand.HistoryMessage(message.getRole().name(), message.getContent()))
-        .toList();
   }
 
   private void publishUnauthorizedAclError(Consumer<RagSseEvent> eventConsumer) {
@@ -277,22 +254,6 @@ public class ChatService {
     return DONE_EVENT.equals(eventName) || ERROR_EVENT.equals(eventName);
   }
 
-  private Message saveUserMessage(Conversation conversation, String question) {
-    Message userMessage =
-        Message.builder()
-            .conversationId(conversation.getConversationId())
-            .role(MessageRole.user)
-            .content(question)
-            .build();
-    Message saved = messageRepository.save(userMessage);
-    if (saved == null) {
-      saved = userMessage;
-    }
-    conversation.recordMessageAt(saved.getCreatedAt());
-    conversationRepository.save(conversation);
-    return saved;
-  }
-
   private void sendEvent(SseEmitter emitter, RagSseEvent event) {
     try {
       emitter.send(SseEmitter.event().name(event.event()).data(event.data()));
@@ -343,20 +304,9 @@ public class ChatService {
         return assistantMessage;
       }
       Message message =
-          Message.builder()
-              .conversationId(conversation.getConversationId())
-              .role(MessageRole.assistant)
-              .content(answerContent.toString())
-              .sources(sources)
-              .confidenceScore(confidenceScore)
-              .verificationResult(verificationResult)
-              .build();
-      assistantMessage = messageRepository.save(message);
-      if (assistantMessage == null) {
-        assistantMessage = message;
-      }
-      conversation.recordMessageAt(assistantMessage.getCreatedAt());
-      conversationRepository.save(conversation);
+          chatMessagePersistenceService.saveAssistantMessage(
+              conversation, answerContent.toString(), sources, confidenceScore, verificationResult);
+      assistantMessage = message;
       return assistantMessage;
     }
   }
