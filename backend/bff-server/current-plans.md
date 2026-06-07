@@ -420,6 +420,8 @@
 - [ ] WireMock 테스트: SSE 정상 스트림 / ML 5xx / 타임아웃 → `error` 이벤트·연결 정리, **요청 body 에 `accessToken`/`cloudId` 미포함** 검증 (`/ml/query` 본문에 토큰 누출 없음). 4단계 `/ml/ingest`/RabbitMQ job payload 테스트도 credential 미포함(`jobId`/`adminUserId`/`mode` 중심)으로 수행. 실제 ML 호출 금지.
 - [ ] `ChatService` Service Unit Test (RagClient·Repository Mock), Controller 이벤트 시퀀스 검증
 
+> **Mongo transaction 메모 (2026-06-07):** 현재 로컬/PoC Mongo 는 standalone 전제로 운용하므로 `MongoTransactionManager` 와 `@Transactional` 을 적용하지 않는다. standalone 에서 Mongo multi-document transaction 을 켜면 런타임 오류가 날 수 있다. 저장 책임은 `ChatMessagePersistenceService` 로 분리해 두었으므로, Mongo 를 replica set/sharded cluster 로 전환하고 `MongoTransactionManager` 를 설정한 뒤에는 긴 SSE 메서드가 아니라 `saveUserMessage` / `saveAssistantMessage` 같은 짧은 write 메서드에만 `@Transactional` 적용을 검토한다.
+
 ---
 
 ### Feature 6. 피드백 API
