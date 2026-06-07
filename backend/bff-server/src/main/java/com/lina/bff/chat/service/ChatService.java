@@ -1,5 +1,7 @@
 package com.lina.bff.chat.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.lina.bff.chat.entity.Message;
@@ -12,7 +14,14 @@ import com.lina.bff.rag.client.dto.RagSseEvent;
 import com.lina.common.exception.BizException;
 import com.lina.common.exception.ErrorCode;
 import java.io.IOException;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -42,6 +51,12 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  */
 @Service
 public class ChatService {
+
+  private static final Set<String> RELAYABLE_EVENTS =
+      Set.of("status", "token", "sources", "verification", "meta", "done", "error");
+  private static final String DONE_EVENT = "done";
+  private static final String ERROR_EVENT = "error";
+  private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
   private final ConversationRepository conversationRepository;
   private final MessageRepository messageRepository;
@@ -74,11 +89,23 @@ public class ChatService {
    */
   public SseEmitter streamChat(String conversationId, String question) {
     SseEmitter emitter = new SseEmitter();
+    AtomicBoolean terminalEventSent = new AtomicBoolean(false);
     chatSseTaskExecutor.execute(
         () -> {
           try {
-            relayRagQuery(conversationId, question, event -> sendEvent(emitter, event));
-            emitter.complete();
+            relayRagQuery(
+                conversationId,
+                question,
+                event -> {
+                  sendEvent(emitter, event);
+                  if (isTerminalEvent(event.event())) {
+                    terminalEventSent.set(true);
+                    emitter.complete();
+                  }
+                });
+            if (!terminalEventSent.get()) {
+              emitter.complete();
+            }
           } catch (RuntimeException exception) {
             emitter.completeWithError(exception);
           }
@@ -112,7 +139,8 @@ public class ChatService {
     RagQueryCommand command =
         new RagQueryCommand(
             question, userId, groups, conversationId, recentHistory(conversationId), true);
-    ragClient.streamQuery(command, eventConsumer);
+    AtomicBoolean terminated = new AtomicBoolean(false);
+    ragClient.streamQuery(command, event -> relayCanonicalEvent(event, eventConsumer, terminated));
   }
 
   private void ensureConversationExists(String conversationId) {
@@ -137,6 +165,85 @@ public class ChatService {
     payload.put("errorCode", ErrorCode.UNAUTHORIZED.getCode());
     payload.put("message", "RAG 호출에 필요한 ACL 정보가 없습니다.");
     eventConsumer.accept(new RagSseEvent("error", payload));
+  }
+
+  private void relayCanonicalEvent(
+      RagSseEvent event, Consumer<RagSseEvent> eventConsumer, AtomicBoolean terminated) {
+    if (terminated.get() || !RELAYABLE_EVENTS.contains(event.event())) {
+      return;
+    }
+
+    RagSseEvent relayedEvent = new RagSseEvent(event.event(), normalizePayload(event));
+    eventConsumer.accept(relayedEvent);
+    if (isTerminalEvent(event.event())) {
+      terminated.set(true);
+    }
+  }
+
+  private JsonNode normalizePayload(RagSseEvent event) {
+    if ("sources".equals(event.event())) {
+      return normalizeSourcesPayload(event.data());
+    }
+    if (DONE_EVENT.equals(event.event())) {
+      return normalizeDonePayload(event.data());
+    }
+    return event.data();
+  }
+
+  private JsonNode normalizeSourcesPayload(JsonNode payload) {
+    if (!payload.isObject()) {
+      return payload;
+    }
+    ObjectNode normalized = payload.deepCopy();
+    JsonNode sources = normalized.get("sources");
+    if (sources instanceof ArrayNode sourceArray) {
+      sourceArray.forEach(this::normalizeSourceUpdatedAt);
+    }
+    return normalized;
+  }
+
+  private void normalizeSourceUpdatedAt(JsonNode source) {
+    if (!source.isObject()) {
+      return;
+    }
+    JsonNode sourceUpdatedAt = source.get("sourceUpdatedAt");
+    if (sourceUpdatedAt == null || !sourceUpdatedAt.isTextual()) {
+      return;
+    }
+    String kstTimestamp = toKstTimestamp(sourceUpdatedAt.asText());
+    if (kstTimestamp != null) {
+      ((ObjectNode) source).put("sourceUpdatedAt", kstTimestamp);
+    }
+  }
+
+  private JsonNode normalizeDonePayload(JsonNode payload) {
+    ObjectNode normalized =
+        payload.isObject() ? payload.deepCopy() : JsonNodeFactory.instance.objectNode();
+    JsonNode timestamp = normalized.get("timestamp");
+    String kstTimestamp =
+        timestamp != null && timestamp.isTextual()
+            ? toKstTimestamp(timestamp.asText())
+            : toKstTimestamp(Instant.now());
+    if (kstTimestamp != null) {
+      normalized.put("timestamp", kstTimestamp);
+    }
+    return normalized;
+  }
+
+  private String toKstTimestamp(String timestamp) {
+    try {
+      return toKstTimestamp(OffsetDateTime.parse(timestamp).toInstant());
+    } catch (DateTimeParseException exception) {
+      return null;
+    }
+  }
+
+  private String toKstTimestamp(Instant instant) {
+    return DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(instant.atZone(KST));
+  }
+
+  private boolean isTerminalEvent(String eventName) {
+    return DONE_EVENT.equals(eventName) || ERROR_EVENT.equals(eventName);
   }
 
   private void sendEvent(SseEmitter emitter, RagSseEvent event) {

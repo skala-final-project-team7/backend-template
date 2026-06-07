@@ -2,11 +2,15 @@ package com.lina.bff.chat.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.lina.bff.chat.entity.Conversation;
 import com.lina.bff.chat.entity.Message;
 import com.lina.bff.chat.entity.MessageRole;
@@ -20,6 +24,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -40,11 +45,11 @@ class ChatServiceTest {
   @Mock private Consumer<RagSseEvent> eventConsumer;
 
   private final ObjectMapper objectMapper = new ObjectMapper();
+  private ChatService chatService;
 
-  @Test
-  @DisplayName("RAG 호출 시 질문, 대화 ID, 최근 history, ACL, stream=true 를 전달한다")
-  void shouldRelayQueryCommandToRagClient() {
-    ChatService chatService =
+  @BeforeEach
+  void setUp() {
+    chatService =
         new ChatService(
             conversationRepository,
             messageRepository,
@@ -52,6 +57,11 @@ class ChatServiceTest {
             ragClient,
             new SyncTaskExecutor(),
             2);
+  }
+
+  @Test
+  @DisplayName("RAG 호출 시 질문, 대화 ID, 최근 history, ACL, stream=true 를 전달한다")
+  void shouldRelayQueryCommandToRagClient() {
     Conversation conversation =
         Conversation.builder().conversationId("conv-1").userId("user-001").title("S3 대화").build();
     Message oldest =
@@ -108,14 +118,6 @@ class ChatServiceTest {
   @Test
   @DisplayName("현재 사용자 ACL 이 비어 있으면 RAG 호출 없이 UNAUTHORIZED SSE error 이벤트로 종료한다")
   void shouldRejectRagCallWhenAclMissing() {
-    ChatService chatService =
-        new ChatService(
-            conversationRepository,
-            messageRepository,
-            currentUserProvider,
-            ragClient,
-            new SyncTaskExecutor(),
-            2);
     when(conversationRepository.findByConversationIdAndDeletedAtIsNull("conv-1"))
         .thenReturn(Optional.of(Conversation.builder().conversationId("conv-1").build()));
     when(currentUserProvider.getUserId()).thenReturn("user-001");
@@ -130,6 +132,50 @@ class ChatServiceTest {
     assertThat(event.event()).isEqualTo("error");
     assertThat(event.data().get("errorCode").asText()).isEqualTo("UNAUTHORIZED");
     assertThat(event.data().get("message").asText()).isEqualTo("RAG 호출에 필요한 ACL 정보가 없습니다.");
+  }
+
+  @Test
+  @DisplayName("정본 SSE 이벤트만 중계하고 sourceUpdatedAt 과 done timestamp 를 KST 로 직렬화한다")
+  void shouldRelayCanonicalEventsAndSerializeTimestampsAsKst() {
+    when(conversationRepository.findByConversationIdAndDeletedAtIsNull("conv-1"))
+        .thenReturn(Optional.of(Conversation.builder().conversationId("conv-1").build()));
+    when(messageRepository.findByConversationIdAndDeletedAtIsNullOrderByCreatedAtAsc("conv-1"))
+        .thenReturn(List.of());
+    when(currentUserProvider.getUserId()).thenReturn("user-001");
+    when(currentUserProvider.getGroups()).thenReturn(List.of("Cloud-Control-Center"));
+    doAnswer(
+            invocation -> {
+              @SuppressWarnings("unchecked")
+              Consumer<RagSseEvent> consumer = invocation.getArgument(1, Consumer.class);
+              consumer.accept(new RagSseEvent("debug", JsonNodeFactory.instance.objectNode()));
+
+              ObjectNode sourcesPayload = JsonNodeFactory.instance.objectNode();
+              ObjectNode source = sourcesPayload.putArray("sources").addObject();
+              source.put("title", "S3 트러블슈팅 가이드");
+              source.put("sourceUpdatedAt", "2026-04-15T09:30:00Z");
+              consumer.accept(new RagSseEvent("sources", sourcesPayload));
+
+              ObjectNode donePayload = JsonNodeFactory.instance.objectNode();
+              donePayload.put("messageId", "msg-uuid-001");
+              donePayload.put("timestamp", "2026-06-07T01:02:03Z");
+              consumer.accept(new RagSseEvent("done", donePayload));
+              consumer.accept(new RagSseEvent("token", JsonNodeFactory.instance.objectNode()));
+              return null;
+            })
+        .when(ragClient)
+        .streamQuery(any(), any());
+
+    chatService.relayRagQuery("conv-1", "질문", eventConsumer);
+
+    ArgumentCaptor<RagSseEvent> eventCaptor = ArgumentCaptor.forClass(RagSseEvent.class);
+    verify(eventConsumer, times(2)).accept(eventCaptor.capture());
+    List<RagSseEvent> events = eventCaptor.getAllValues();
+    assertThat(events).extracting(RagSseEvent::event).containsExactly("sources", "done");
+    assertThat(events.get(0).data().get("sources").get(0).get("sourceUpdatedAt").asText())
+        .isEqualTo("2026-04-15T18:30:00+09:00");
+    assertThat(events.get(1).data().get("messageId").asText()).isEqualTo("msg-uuid-001");
+    assertThat(events.get(1).data().get("timestamp").asText())
+        .isEqualTo("2026-06-07T10:02:03+09:00");
   }
 
   @Test
