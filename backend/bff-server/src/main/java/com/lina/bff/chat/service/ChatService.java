@@ -11,11 +11,13 @@ import com.lina.bff.rag.client.dto.RagQueryCommand;
 import com.lina.bff.rag.client.dto.RagSseEvent;
 import com.lina.common.exception.BizException;
 import com.lina.common.exception.ErrorCode;
+import java.io.IOException;
 import java.util.List;
 import java.util.function.Consumer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  *
@@ -56,6 +58,28 @@ public class ChatService {
     this.currentUserProvider = currentUserProvider;
     this.ragClient = ragClient;
     this.historyTurns = historyTurns;
+  }
+
+  /**
+   * FE 로 반환할 SSE 연결을 생성하고 RAG 질의 중계를 시작한다.
+   *
+   * @param conversationId 질의가 속한 대화 식별자
+   * @param question 사용자 질문
+   * @return SseEmitter — 공통 Wrapper 를 적용하지 않는 SSE 응답 객체
+   */
+  public SseEmitter streamChat(String conversationId, String question) {
+    SseEmitter emitter = new SseEmitter();
+    Thread.ofVirtual()
+        .start(
+            () -> {
+              try {
+                relayRagQuery(conversationId, question, event -> sendEvent(emitter, event));
+                emitter.complete();
+              } catch (RuntimeException exception) {
+                emitter.completeWithError(exception);
+              }
+            });
+    return emitter;
   }
 
   /**
@@ -109,5 +133,13 @@ public class ChatService {
     payload.put("errorCode", ErrorCode.UNAUTHORIZED.getCode());
     payload.put("message", "RAG 호출에 필요한 ACL 정보가 없습니다.");
     eventConsumer.accept(new RagSseEvent("error", payload));
+  }
+
+  private void sendEvent(SseEmitter emitter, RagSseEvent event) {
+    try {
+      emitter.send(SseEmitter.event().name(event.event()).data(event.data()));
+    } catch (IOException exception) {
+      throw new IllegalStateException("SSE 이벤트 전송에 실패했습니다.", exception);
+    }
   }
 }
