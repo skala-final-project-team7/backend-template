@@ -5,6 +5,10 @@
 
 ---
 
+## 2026-06-07
+
+- **bff-server 2단계 Feature 5 두 번째 항목 완료 — `/ml/query` 요청 payload 정합성 검증**: `ChatService` 가 기존 활성 대화 확인 후 `CurrentUserProvider` 의 데모 ACL(`userId`/`groups`)과 `MessageRepository` 의 시간순 메시지 이력 중 최근 `lina.rag.history-turns` 개를 조합해 `RagQueryCommand` 로 전달하는 경로를 확인했다. 요청 본문은 `question`, `conversationId`, `history[].role` lowercase 저장값(`user`/`assistant`), `userId`, `groups`, `stream: true` 만 포함하고, LINA API 표면에서 제거된 `spaceKey` 와 Confluence credential 인 `accessToken`/`cloudId` 를 포함하지 않는다. 이번 loop 는 Feature 5의 두 번째 체크리스트 상태 반영에 한정했고, 다음 항목인 ACL fail-closed SSE `error` 종료/외부 `SseEmitter` 중계/영속 처리는 후속 loop 로 남겼다. 검증: sandbox 에서 `~/.gradle` lock 접근이 막혀 권한 상승 후 `cd backend && ./gradlew :bff-server:test --tests com.lina.bff.chat.service.ChatServiceTest --tests com.lina.bff.rag.client.RagClientTest` 통과.
+
 ## 2026-06-05
 
 - **bff-server 2단계 Feature 5 첫 항목 완료 — RAG Client 동기 SSE 파싱 경계**: `rag/client/RagClient` 와 `RagQueryCommand`/`RagSseEvent` DTO 를 추가해 `/ml/query` 호출을 Service 계층 밖 `rag/client/` 패키지로 격리했다. 구현은 Spring MVC/Virtual Threads 규칙에 맞춰 동기 `RestClient.exchange()` + `InputStream`/`BufferedReader` 로 `event:`/`data:` SSE 쌍을 순서대로 파싱하며, `Mono`/`Flux`/WebFlux 타입은 사용하지 않았다. 요청 DTO 는 camelCase 계약(`question`, `userId`, `groups`, `conversationId`, `history`, `stream`)을 따르고 `accessToken`/`cloudId` 를 포함하지 않는다. 이번 loop 범위는 Feature 5 첫 체크리스트 항목까지이며, ACL fail-closed, ChatService 영속, SseEmitter 외부 중계, done/error boundary 가공은 다음 체크리스트로 남겼다. 검증: 실패 테스트 선작성 후 `../gradlew :bff-server:test --tests com.lina.bff.rag.client.RagClientTest` 통과. 참고: sandbox 에서 `~/.gradle` lock 접근이 막혀 Gradle 명령은 권한 상승으로 실행했다.
