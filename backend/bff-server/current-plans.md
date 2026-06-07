@@ -409,7 +409,7 @@
   - **spaceKey 등 스페이스 스코프 파라미터 미전달** (2026-06-04 결정 — LINA API 표면에서 spaceKey 제거). cross-space 검색이 유일한 모드, ACL(`userId`/`groups`) 만 적용. `lina.demo.fixed-space-key` 설정 deprecation 대상. (`api-spec.md` §2-1)
   - **`stream: true`** — BFF 는 항상 명시(토큰 스트리밍 ON, RAG 기본은 `false`)
   - **`/ml/query` 본문에 `accessToken`/`cloudId` 미포함** (확정된 결정 #5, 2026-05-22 갱신). 2026-06-05 갱신: `/ml/ingest`/RabbitMQ job payload 에도 Confluence credential set 을 포함하지 않는다. Data Ingestion Worker 가 `adminUserId` 로 auth-server 내부 API 에서 admin OAuth `accessToken` + `cloudId` 를 함께 조회한다.
-- [ ] **ACL fail-closed 게이트**: `userId` 가 비어 있거나 `groups` 가 빈 배열(`[]`)이면 `/ml/query` 호출을 **차단**하고 SSE `error`(`errorCode: UNAUTHORIZED`)로 종료 (`backend/CLAUDE.md` §6 "ACL 필터 없이 RAG 호출 금지" / `docs/api-spec.md` §2-1)
+- [x] **ACL fail-closed 게이트**: `userId` 가 비어 있거나 `groups` 가 빈 배열(`[]`)이면 `/ml/query` 호출을 **차단**하고 SSE `error`(`errorCode: UNAUTHORIZED`)로 종료 (`backend/CLAUDE.md` §6 "ACL 필터 없이 RAG 호출 금지" / `docs/api-spec.md` §2-1)
 - [ ] `POST /api/conversations/{conversationId}/chat` — `SseEmitter` 반환, Wrapper 미적용
 - [ ] `status`/`token`/`sources`/`verification`/`meta`/`done`/`error` 이벤트 중계 (집합 정본 `docs/api-spec.md` §1-1). `status`=진행표시, `meta`=호환용(제거 예정), 스트림은 `done`/`error`로 종료. 출처 `sourceUpdatedAt`·`done` 페이로드 timestamp 는 **KST 직렬화**
 - [ ] **Boundary 가공 (RAG → BFF → FE)**: (a) `error` 이벤트는 RAG·BFF·FE 모두 `{ "errorCode": ..., "message": ... }` 동일 키 — passthrough, `errorCode` 값이 §1-1 표 일치 여부만 검증; (b) `done` 은 RAG `{}` → BFF 가 저장한 assistant `messageId` 를 채워 `done: { "messageId": ... }` 로 중계 (`docs/api-spec.md` §2-1 / `backend/rules/rag-pipeline.md` §3)

@@ -1,5 +1,7 @@
 package com.lina.bff.chat.service;
 
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.lina.bff.chat.entity.Message;
 import com.lina.bff.chat.repository.ConversationRepository;
 import com.lina.bff.chat.repository.MessageRepository;
@@ -75,7 +77,8 @@ public class ChatService {
     String userId = currentUserProvider.getUserId();
     List<String> groups = currentUserProvider.getGroups();
     if (userId == null || userId.isBlank() || groups == null || groups.isEmpty()) {
-      throw new BizException(ErrorCode.UNAUTHORIZED, "RAG 호출에 필요한 ACL 정보가 없습니다.");
+      publishUnauthorizedAclError(eventConsumer);
+      return;
     }
 
     RagQueryCommand command =
@@ -99,5 +102,12 @@ public class ChatService {
             message ->
                 new RagQueryCommand.HistoryMessage(message.getRole().name(), message.getContent()))
         .toList();
+  }
+
+  private void publishUnauthorizedAclError(Consumer<RagSseEvent> eventConsumer) {
+    ObjectNode payload = JsonNodeFactory.instance.objectNode();
+    payload.put("errorCode", ErrorCode.UNAUTHORIZED.getCode());
+    payload.put("message", "RAG 호출에 필요한 ACL 정보가 없습니다.");
+    eventConsumer.accept(new RagSseEvent("error", payload));
   }
 }

@@ -1,7 +1,6 @@
 package com.lina.bff.chat.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -17,8 +16,6 @@ import com.lina.bff.config.CurrentUserProvider;
 import com.lina.bff.rag.client.RagClient;
 import com.lina.bff.rag.client.dto.RagQueryCommand;
 import com.lina.bff.rag.client.dto.RagSseEvent;
-import com.lina.common.exception.BizException;
-import com.lina.common.exception.ErrorCode;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -101,7 +98,7 @@ class ChatServiceTest {
   }
 
   @Test
-  @DisplayName("현재 사용자 ACL 이 비어 있으면 RAG 호출을 만들지 않는다")
+  @DisplayName("현재 사용자 ACL 이 비어 있으면 RAG 호출 없이 UNAUTHORIZED SSE error 이벤트로 종료한다")
   void shouldRejectRagCallWhenAclMissing() {
     ChatService chatService =
         new ChatService(
@@ -111,11 +108,14 @@ class ChatServiceTest {
     when(currentUserProvider.getUserId()).thenReturn("user-001");
     when(currentUserProvider.getGroups()).thenReturn(List.of());
 
-    assertThatThrownBy(() -> chatService.relayRagQuery("conv-1", "질문", eventConsumer))
-        .isInstanceOf(BizException.class)
-        .extracting("errorCode")
-        .isEqualTo(ErrorCode.UNAUTHORIZED);
+    chatService.relayRagQuery("conv-1", "질문", eventConsumer);
 
     verify(ragClient, never()).streamQuery(any(), any());
+    ArgumentCaptor<RagSseEvent> eventCaptor = ArgumentCaptor.forClass(RagSseEvent.class);
+    verify(eventConsumer).accept(eventCaptor.capture());
+    RagSseEvent event = eventCaptor.getValue();
+    assertThat(event.event()).isEqualTo("error");
+    assertThat(event.data().get("errorCode").asText()).isEqualTo("UNAUTHORIZED");
+    assertThat(event.data().get("message").asText()).isEqualTo("RAG 호출에 필요한 ACL 정보가 없습니다.");
   }
 }
