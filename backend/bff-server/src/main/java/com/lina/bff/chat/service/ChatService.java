@@ -4,7 +4,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.lina.bff.chat.entity.Conversation;
 import com.lina.bff.chat.entity.Message;
+import com.lina.bff.chat.entity.MessageRole;
+import com.lina.bff.chat.entity.MessageSource;
+import com.lina.bff.chat.entity.VerificationResult;
 import com.lina.bff.chat.repository.ConversationRepository;
 import com.lina.bff.chat.repository.MessageRepository;
 import com.lina.bff.config.CurrentUserProvider;
@@ -19,6 +23,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -27,7 +32,6 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
@@ -54,6 +58,9 @@ public class ChatService {
 
   private static final Set<String> RELAYABLE_EVENTS =
       Set.of("status", "token", "sources", "verification", "meta", "done", "error");
+  private static final Set<String> RELAYABLE_ERROR_CODES =
+      Set.of(
+          "ML_SERVER_ERROR", "ML_TIMEOUT", "ML_CONNECTION_ERROR", ErrorCode.UNAUTHORIZED.getCode());
   private static final String DONE_EVENT = "done";
   private static final String ERROR_EVENT = "error";
   private static final ZoneId KST = ZoneId.of("Asia/Seoul");
@@ -124,10 +131,11 @@ public class ChatService {
    * @param eventConsumer RAG SSE 이벤트 소비자
    * @throws BizException 대화가 없거나 ACL 이 비어 있어 RAG 호출을 만들 수 없을 때
    */
-  @Transactional(readOnly = true)
   public void relayRagQuery(
       String conversationId, String question, Consumer<RagSseEvent> eventConsumer) {
-    ensureConversationExists(conversationId);
+    Conversation conversation = loadConversation(conversationId);
+    List<RagQueryCommand.HistoryMessage> history = recentHistory(conversationId);
+    saveUserMessage(conversation, question);
 
     String userId = currentUserProvider.getUserId();
     List<String> groups = currentUserProvider.getGroups();
@@ -137,14 +145,15 @@ public class ChatService {
     }
 
     RagQueryCommand command =
-        new RagQueryCommand(
-            question, userId, groups, conversationId, recentHistory(conversationId), true);
+        new RagQueryCommand(question, userId, groups, conversationId, history, true);
     AtomicBoolean terminated = new AtomicBoolean(false);
-    ragClient.streamQuery(command, event -> relayCanonicalEvent(event, eventConsumer, terminated));
+    ChatStreamState streamState = new ChatStreamState(conversation);
+    ragClient.streamQuery(
+        command, event -> relayCanonicalEvent(event, eventConsumer, terminated, streamState));
   }
 
-  private void ensureConversationExists(String conversationId) {
-    conversationRepository
+  private Conversation loadConversation(String conversationId) {
+    return conversationRepository
         .findByConversationIdAndDeletedAtIsNull(conversationId)
         .orElseThrow(() -> new BizException(ErrorCode.RESOURCE_NOT_FOUND, "해당 대화를 찾을 수 없습니다."));
   }
@@ -168,24 +177,31 @@ public class ChatService {
   }
 
   private void relayCanonicalEvent(
-      RagSseEvent event, Consumer<RagSseEvent> eventConsumer, AtomicBoolean terminated) {
+      RagSseEvent event,
+      Consumer<RagSseEvent> eventConsumer,
+      AtomicBoolean terminated,
+      ChatStreamState streamState) {
     if (terminated.get() || !RELAYABLE_EVENTS.contains(event.event())) {
       return;
     }
 
-    RagSseEvent relayedEvent = new RagSseEvent(event.event(), normalizePayload(event));
+    streamState.capture(event);
+    RagSseEvent relayedEvent = new RagSseEvent(event.event(), normalizePayload(event, streamState));
     eventConsumer.accept(relayedEvent);
     if (isTerminalEvent(event.event())) {
       terminated.set(true);
     }
   }
 
-  private JsonNode normalizePayload(RagSseEvent event) {
+  private JsonNode normalizePayload(RagSseEvent event, ChatStreamState streamState) {
     if ("sources".equals(event.event())) {
       return normalizeSourcesPayload(event.data());
     }
     if (DONE_EVENT.equals(event.event())) {
-      return normalizeDonePayload(event.data());
+      return normalizeDonePayload(event.data(), streamState.saveAssistantMessage());
+    }
+    if (ERROR_EVENT.equals(event.event())) {
+      return normalizeErrorPayload(event.data());
     }
     return event.data();
   }
@@ -216,16 +232,31 @@ public class ChatService {
     }
   }
 
-  private JsonNode normalizeDonePayload(JsonNode payload) {
+  private JsonNode normalizeDonePayload(JsonNode payload, Message assistantMessage) {
     ObjectNode normalized =
         payload.isObject() ? payload.deepCopy() : JsonNodeFactory.instance.objectNode();
+    normalized.put("messageId", assistantMessage.getMessageId());
     JsonNode timestamp = normalized.get("timestamp");
     String kstTimestamp =
         timestamp != null && timestamp.isTextual()
             ? toKstTimestamp(timestamp.asText())
-            : toKstTimestamp(Instant.now());
+            : toKstTimestamp(assistantMessage.getCreatedAt());
     if (kstTimestamp != null) {
       normalized.put("timestamp", kstTimestamp);
+    }
+    return normalized;
+  }
+
+  private JsonNode normalizeErrorPayload(JsonNode payload) {
+    ObjectNode normalized =
+        payload.isObject() ? payload.deepCopy() : JsonNodeFactory.instance.objectNode();
+    String errorCode =
+        normalized.hasNonNull("errorCode") ? normalized.get("errorCode").asText() : null;
+    if (!RELAYABLE_ERROR_CODES.contains(errorCode)) {
+      normalized.put("errorCode", "ML_SERVER_ERROR");
+    }
+    if (!normalized.hasNonNull("message") || normalized.get("message").asText().isBlank()) {
+      normalized.put("message", "답변 생성 중 오류가 발생했습니다.");
     }
     return normalized;
   }
@@ -246,11 +277,142 @@ public class ChatService {
     return DONE_EVENT.equals(eventName) || ERROR_EVENT.equals(eventName);
   }
 
+  private Message saveUserMessage(Conversation conversation, String question) {
+    Message userMessage =
+        Message.builder()
+            .conversationId(conversation.getConversationId())
+            .role(MessageRole.user)
+            .content(question)
+            .build();
+    Message saved = messageRepository.save(userMessage);
+    if (saved == null) {
+      saved = userMessage;
+    }
+    conversation.recordMessageAt(saved.getCreatedAt());
+    conversationRepository.save(conversation);
+    return saved;
+  }
+
   private void sendEvent(SseEmitter emitter, RagSseEvent event) {
     try {
       emitter.send(SseEmitter.event().name(event.event()).data(event.data()));
     } catch (IOException exception) {
       throw new IllegalStateException("SSE 이벤트 전송에 실패했습니다.", exception);
     }
+  }
+
+  private class ChatStreamState {
+
+    private final Conversation conversation;
+    private final StringBuilder answerContent = new StringBuilder();
+    private List<MessageSource> sources = List.of();
+    private Double confidenceScore;
+    private VerificationResult verificationResult;
+    private Message assistantMessage;
+
+    ChatStreamState(Conversation conversation) {
+      this.conversation = conversation;
+    }
+
+    void capture(RagSseEvent event) {
+      if ("token".equals(event.event())) {
+        JsonNode content = event.data().get("content");
+        if (content != null && content.isTextual()) {
+          answerContent.append(content.asText());
+        }
+        return;
+      }
+      if ("sources".equals(event.event())) {
+        sources = toMessageSources(event.data());
+        return;
+      }
+      if ("verification".equals(event.event())) {
+        JsonNode confidence = event.data().get("confidenceScore");
+        if (confidence != null && confidence.isNumber()) {
+          confidenceScore = confidence.asDouble();
+        }
+        JsonNode result = event.data().get("verificationResult");
+        if (result != null && result.isTextual()) {
+          verificationResult = toVerificationResult(result.asText());
+        }
+      }
+    }
+
+    Message saveAssistantMessage() {
+      if (assistantMessage != null) {
+        return assistantMessage;
+      }
+      Message message =
+          Message.builder()
+              .conversationId(conversation.getConversationId())
+              .role(MessageRole.assistant)
+              .content(answerContent.toString())
+              .sources(sources)
+              .confidenceScore(confidenceScore)
+              .verificationResult(verificationResult)
+              .build();
+      assistantMessage = messageRepository.save(message);
+      if (assistantMessage == null) {
+        assistantMessage = message;
+      }
+      conversation.recordMessageAt(assistantMessage.getCreatedAt());
+      conversationRepository.save(conversation);
+      return assistantMessage;
+    }
+  }
+
+  private List<MessageSource> toMessageSources(JsonNode payload) {
+    JsonNode sourceNodes = payload.get("sources");
+    if (!(sourceNodes instanceof ArrayNode sourceArray)) {
+      return List.of();
+    }
+
+    List<MessageSource> parsedSources = new ArrayList<>();
+    sourceArray.forEach(
+        source -> {
+          if (source.isObject()) {
+            parsedSources.add(
+                MessageSource.builder()
+                    .title(textValue(source, "title"))
+                    .pageId(textValue(source, "pageId"))
+                    .spaceId(textValue(source, "spaceId"))
+                    .spaceName(textValue(source, "spaceName"))
+                    .url(textValue(source, "url"))
+                    .sourceUpdatedAt(instantValue(source, "sourceUpdatedAt"))
+                    .relevanceScore(doubleValue(source, "relevanceScore"))
+                    .build());
+          }
+        });
+    return parsedSources;
+  }
+
+  private VerificationResult toVerificationResult(String value) {
+    try {
+      return VerificationResult.valueOf(value);
+    } catch (IllegalArgumentException exception) {
+      return null;
+    }
+  }
+
+  private String textValue(JsonNode node, String fieldName) {
+    JsonNode value = node.get(fieldName);
+    return value != null && value.isTextual() ? value.asText() : null;
+  }
+
+  private Instant instantValue(JsonNode node, String fieldName) {
+    String value = textValue(node, fieldName);
+    if (value == null) {
+      return null;
+    }
+    try {
+      return OffsetDateTime.parse(value).toInstant();
+    } catch (DateTimeParseException exception) {
+      return null;
+    }
+  }
+
+  private Double doubleValue(JsonNode node, String fieldName) {
+    JsonNode value = node.get(fieldName);
+    return value != null && value.isNumber() ? value.asDouble() : null;
   }
 }

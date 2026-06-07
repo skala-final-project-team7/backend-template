@@ -98,4 +98,10 @@ public class Conversation {
     }
     this.updatedAt = Instant.now();
   }
+
+  /** 메시지가 추가된 시각을 대화 목록 정렬 키에 반영한다. */
+  public void recordMessageAt(Instant messageCreatedAt) {
+    this.lastMessageAt = messageCreatedAt;
+    this.updatedAt = messageCreatedAt;
+  }
 }

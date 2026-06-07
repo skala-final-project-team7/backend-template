@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.lina.bff.chat.entity.Conversation;
 import com.lina.bff.chat.entity.Message;
 import com.lina.bff.chat.entity.MessageRole;
+import com.lina.bff.chat.entity.VerificationResult;
 import com.lina.bff.chat.repository.ConversationRepository;
 import com.lina.bff.chat.repository.MessageRepository;
 import com.lina.bff.config.CurrentUserProvider;
@@ -135,8 +136,8 @@ class ChatServiceTest {
   }
 
   @Test
-  @DisplayName("정본 SSE 이벤트만 중계하고 sourceUpdatedAt 과 done timestamp 를 KST 로 직렬화한다")
-  void shouldRelayCanonicalEventsAndSerializeTimestampsAsKst() {
+  @DisplayName("정본 SSE 이벤트만 중계하고 done 에 저장된 assistant messageId 를 채운다")
+  void shouldRelayCanonicalEventsAndFillDoneMessageIdFromSavedAssistant() {
     when(conversationRepository.findByConversationIdAndDeletedAtIsNull("conv-1"))
         .thenReturn(Optional.of(Conversation.builder().conversationId("conv-1").build()));
     when(messageRepository.findByConversationIdAndDeletedAtIsNullOrderByCreatedAtAsc("conv-1"))
@@ -149,14 +150,27 @@ class ChatServiceTest {
               Consumer<RagSseEvent> consumer = invocation.getArgument(1, Consumer.class);
               consumer.accept(new RagSseEvent("debug", JsonNodeFactory.instance.objectNode()));
 
+              ObjectNode tokenPayload = JsonNodeFactory.instance.objectNode();
+              tokenPayload.put("content", "S3 권한 오류는");
+              consumer.accept(new RagSseEvent("token", tokenPayload));
+
               ObjectNode sourcesPayload = JsonNodeFactory.instance.objectNode();
               ObjectNode source = sourcesPayload.putArray("sources").addObject();
               source.put("title", "S3 트러블슈팅 가이드");
+              source.put("pageId", "12345");
+              source.put("spaceId", "98310");
+              source.put("spaceName", "Cloud Control Center");
+              source.put("url", "https://confluence.example.com/pages/12345");
               source.put("sourceUpdatedAt", "2026-04-15T09:30:00Z");
+              source.put("relevanceScore", 0.92);
               consumer.accept(new RagSseEvent("sources", sourcesPayload));
 
+              ObjectNode verificationPayload = JsonNodeFactory.instance.objectNode();
+              verificationPayload.put("confidenceScore", 0.85);
+              verificationPayload.put("verificationResult", "SUPPORTED");
+              consumer.accept(new RagSseEvent("verification", verificationPayload));
+
               ObjectNode donePayload = JsonNodeFactory.instance.objectNode();
-              donePayload.put("messageId", "msg-uuid-001");
               donePayload.put("timestamp", "2026-06-07T01:02:03Z");
               consumer.accept(new RagSseEvent("done", donePayload));
               consumer.accept(new RagSseEvent("token", JsonNodeFactory.instance.objectNode()));
@@ -168,14 +182,73 @@ class ChatServiceTest {
     chatService.relayRagQuery("conv-1", "질문", eventConsumer);
 
     ArgumentCaptor<RagSseEvent> eventCaptor = ArgumentCaptor.forClass(RagSseEvent.class);
-    verify(eventConsumer, times(2)).accept(eventCaptor.capture());
+    verify(eventConsumer, times(4)).accept(eventCaptor.capture());
     List<RagSseEvent> events = eventCaptor.getAllValues();
-    assertThat(events).extracting(RagSseEvent::event).containsExactly("sources", "done");
-    assertThat(events.get(0).data().get("sources").get(0).get("sourceUpdatedAt").asText())
+    assertThat(events)
+        .extracting(RagSseEvent::event)
+        .containsExactly("token", "sources", "verification", "done");
+    assertThat(events.get(1).data().get("sources").get(0).get("sourceUpdatedAt").asText())
         .isEqualTo("2026-04-15T18:30:00+09:00");
-    assertThat(events.get(1).data().get("messageId").asText()).isEqualTo("msg-uuid-001");
-    assertThat(events.get(1).data().get("timestamp").asText())
+    assertThat(events.get(3).data().get("timestamp").asText())
         .isEqualTo("2026-06-07T10:02:03+09:00");
+
+    ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+    verify(messageRepository, times(2)).save(messageCaptor.capture());
+    List<Message> savedMessages = messageCaptor.getAllValues();
+    assertThat(savedMessages.get(0).getRole()).isEqualTo(MessageRole.user);
+    assertThat(savedMessages.get(0).getContent()).isEqualTo("질문");
+    Message assistantMessage = savedMessages.get(1);
+    assertThat(assistantMessage.getRole()).isEqualTo(MessageRole.assistant);
+    assertThat(assistantMessage.getContent()).isEqualTo("S3 권한 오류는");
+    assertThat(assistantMessage.getSources())
+        .singleElement()
+        .satisfies(
+            source -> {
+              assertThat(source.getTitle()).isEqualTo("S3 트러블슈팅 가이드");
+              assertThat(source.getSourceUpdatedAt())
+                  .isEqualTo(Instant.parse("2026-04-15T09:30:00Z"));
+              assertThat(source.getRelevanceScore()).isEqualTo(0.92);
+            });
+    assertThat(assistantMessage.getConfidenceScore()).isEqualTo(0.85);
+    assertThat(assistantMessage.getVerificationResult()).isEqualTo(VerificationResult.SUPPORTED);
+    assertThat(events.get(3).data().get("messageId").asText())
+        .isEqualTo(assistantMessage.getMessageId());
+    verify(conversationRepository, times(2)).save(any(Conversation.class));
+  }
+
+  @Test
+  @DisplayName("RAG error 이벤트는 유효한 errorCode 를 그대로 중계하고 assistant 메시지는 저장하지 않는다")
+  void shouldPassthroughValidRagErrorWithoutSavingAssistantMessage() {
+    when(conversationRepository.findByConversationIdAndDeletedAtIsNull("conv-1"))
+        .thenReturn(Optional.of(Conversation.builder().conversationId("conv-1").build()));
+    when(messageRepository.findByConversationIdAndDeletedAtIsNullOrderByCreatedAtAsc("conv-1"))
+        .thenReturn(List.of());
+    when(currentUserProvider.getUserId()).thenReturn("user-001");
+    when(currentUserProvider.getGroups()).thenReturn(List.of("Cloud-Control-Center"));
+    doAnswer(
+            invocation -> {
+              @SuppressWarnings("unchecked")
+              Consumer<RagSseEvent> consumer = invocation.getArgument(1, Consumer.class);
+              ObjectNode errorPayload = JsonNodeFactory.instance.objectNode();
+              errorPayload.put("errorCode", "ML_TIMEOUT");
+              errorPayload.put("message", "ML 응답이 지연되었습니다.");
+              consumer.accept(new RagSseEvent("error", errorPayload));
+              return null;
+            })
+        .when(ragClient)
+        .streamQuery(any(), any());
+
+    chatService.relayRagQuery("conv-1", "질문", eventConsumer);
+
+    ArgumentCaptor<RagSseEvent> eventCaptor = ArgumentCaptor.forClass(RagSseEvent.class);
+    verify(eventConsumer).accept(eventCaptor.capture());
+    RagSseEvent event = eventCaptor.getValue();
+    assertThat(event.event()).isEqualTo("error");
+    assertThat(event.data().get("errorCode").asText()).isEqualTo("ML_TIMEOUT");
+    assertThat(event.data().get("message").asText()).isEqualTo("ML 응답이 지연되었습니다.");
+    ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+    verify(messageRepository).save(messageCaptor.capture());
+    assertThat(messageCaptor.getValue().getRole()).isEqualTo(MessageRole.user);
   }
 
   @Test
