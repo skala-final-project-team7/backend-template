@@ -13,7 +13,7 @@
 | 단계 | 범위 | 상태 |
 |---|---|---|
 | 1단계 | 프로젝트 초기 셋업 (패키지 구조, 설정, 공통 예외/응답) | ✅ 완료 (2026-05-15, `auth-server` 와 공동) |
-| 2단계 | BFF Server 핵심 API (대화 CRUD, RAG 호출 + SSE 중계, 메시지 이력, 피드백, DB 스키마) | 🚧 Feature 1 완료, Feature 2~ 미착수 |
+| 2단계 | BFF Server 핵심 API (대화 CRUD, RAG 호출 + SSE 중계, 메시지 이력, 피드백, 대화 검색, DB 스키마) | ✅ 완료 (2026-06-08, Feature 1~8) |
 | 4단계 | 부가 API (관리자 대시보드 · Confluence 미리보기) | 미착수 |
 
 > **2026-05-19 범위 조정:** 중간발표를 인증 없이 시연하기 위해 2단계에서 **JWT 검증 필터를 제외**하고 3단계로 이동한다. 대신 **피드백 API**를 4단계에서 2단계로 당긴다. 근거: 사용자 지시 + `docs/api-spec.md` 전제("중간 발표 시 인증 하드코딩, 로그인 제외"). 상세는 아래 **2단계** 섹션 참조.
@@ -464,14 +464,16 @@
 ### Feature 8. 검증
 
 #### 체크리스트
-- [ ] `./scripts/format.sh` 성공
-- [ ] `./scripts/lint.sh` 성공
-- [ ] `./scripts/test.sh` 성공
-- [ ] `./scripts/verify.sh` 성공
-- [ ] `./gradlew :bff-server:bootRun` 기동 확인
-- [ ] `docs/api-spec.md` §1 명세와 구현 정합성 확인 (불일치 시에만 수정)
-- [ ] `git diff` 기준 의도하지 않은 변경 / 담당 외 파일 변경 없음
-- [ ] `backend/CLAUDE.md` §7 체크리스트 점검 (`Mono`/`Flux` 미사용, MongoDB의 RAG 파이프라인 데이터 쓰기 없음, ACL 누락 경로 없음, 평문 secret 없음)
+- [x] `./scripts/format.sh` 성공
+- [x] `./scripts/lint.sh` 성공
+- [x] `./scripts/test.sh` 성공
+- [x] `./scripts/verify.sh` 성공
+- [x] `./gradlew :bff-server:bootRun` 기동 확인
+- [x] `docs/api-spec.md` §1 명세와 구현 정합성 확인 (불일치 시에만 수정)
+- [x] `git diff` 기준 의도하지 않은 변경 / 담당 외 파일 변경 없음
+- [x] `backend/CLAUDE.md` §7 체크리스트 점검 (`Mono`/`Flux` 미사용, MongoDB의 RAG 파이프라인 데이터 쓰기 없음, ACL 누락 경로 없음, 평문 secret 없음)
+
+> Feature 8 완료 (2026-06-08). `format`/`lint`/`verify` 전부 `BUILD SUCCESSFUL`, 전체 테스트 강제 재실행(`test --rerun-tasks`) 107건(common 8 / bff-server 98 / auth-server 1) 실패 0. `:bff-server:bootRun` 정상 기동(Tomcat 8080, MongoDB 연결, `Started BffApplication in ~1s`) 후 graceful stop. **2단계 외부 API 전체 라이브 스모크**(api-spec §1): `POST /api/conversations` 201 · `GET /api/conversations` 200(고정 우선·최신순) · `PATCH /api/conversations/{id}` 200 · `GET /api/conversations/{id}/messages` 200(KST·soft delete 제외) · `POST /api/messages/{id}/feedback` 신규 201/갱신 200(upsert) · `DELETE /api/conversations/{id}` 200 soft delete(이후 404) · `GET /api/conversations/search` 200(권한 격리·KST)/`q=a` 400 `INVALID_SEARCH_QUERY` · `POST /api/conversations/{id}/chat` 은 ML 미가동 시 SSE `event:error`(`ML_CONNECTION_ERROR`) 종료 경로 확인 + mock ML SSE 서버(`localhost:8000`)로 정상 경로 end-to-end 검증(`status`→`token`×N→`sources`→`verification`→`meta`→`done`): RAG `done {}` → BFF `messageId`/KST `timestamp` 보강, user/assistant 메시지 영속(토큰 누적 content·`confidenceScore`·`verificationResult`·`sources`), `meta.title` 제목 1회 자동설정(`"새 대화"`→설정), `sourceUpdatedAt`/`done.timestamp` KST 직렬화 확인. 에러 케이스 404(없는 대화)·400(빈 PATCH·잘못된 rating·size 초과)·404(없는 메시지) 모두 기대대로. 쓰기 검증은 임시 대화로만 수행하고 종료 후 정리(사용자 데이터 보존). `docs/api-spec.md` §1 명세와 응답 구조 일치(불일치 없음 → 문서 미수정). git diff 범위 = Feature 7 커밋(b98b3d5) 15파일로 담당 영역(chat 검색)+필수 `common/ErrorCode`(`INVALID_SEARCH_QUERY`)+plan/working-log 에 한정, 담당 외 파일·설정/secret 파일 미변경. `backend/CLAUDE.md` §7: `Mono`/`Flux` 실사용 0(금지 주석 1건만), RAG 파이프라인 컬렉션 쓰기 0, 검색 경로 read-only, 평문 secret 0. **검증 단계라 코드 수정 없음.**
 
 ## 위험 요소
 
@@ -494,14 +496,16 @@
 
 ## 2단계 완료 기준 (Done Definition)
 
-- [ ] 위 7개 도메인 Feature 의 외부 API 가 `docs/api-spec.md` §1 명세대로 동작 (대화 CRUD·메시지 이력·챗 SSE·피드백·대화 검색)
-- [ ] `docs/db-schema.md` 작성 완료, Entity와 일치
-- [ ] Service Unit / Controller MockMvc / Repository DataMongoTest / RagClient WireMock 테스트 통과
-- [ ] `Mono`/`Flux`/WebFlux 미사용, MongoDB RAG 파이프라인 데이터(`raw_pages`/`chunked_units` 등) 쓰기 없음, ACL 누락 호출 경로 없음 (`backend/CLAUDE.md` §7 체크리스트)
-- [ ] 인증 우회가 `DemoSecurityConfig`/`CurrentUserProvider`로 격리됨, production 분기 미추가
-- [ ] 평문 secret 미포함 (DB 비밀번호 등 `${...}` 환경변수 참조)
-- [ ] `./scripts/format.sh`/`lint.sh`/`test.sh`/`verify.sh` 통과
-- [ ] `git diff` 기준 의도하지 않은 변경 없음, 담당 외 파일 미수정
+- [x] 위 7개 도메인 Feature 의 외부 API 가 `docs/api-spec.md` §1 명세대로 동작 (대화 CRUD·메시지 이력·챗 SSE·피드백·대화 검색)
+- [x] `docs/db-schema.md` 작성 완료, Entity와 일치
+- [x] Service Unit / Controller MockMvc / Repository DataMongoTest / RagClient WireMock 테스트 통과
+- [x] `Mono`/`Flux`/WebFlux 미사용, MongoDB RAG 파이프라인 데이터(`raw_pages`/`chunked_units` 등) 쓰기 없음, ACL 누락 호출 경로 없음 (`backend/CLAUDE.md` §7 체크리스트)
+- [x] 인증 우회가 `DemoSecurityConfig`/`CurrentUserProvider`로 격리됨, production 분기 미추가
+- [x] 평문 secret 미포함 (DB 비밀번호 등 `${...}` 환경변수 참조)
+- [x] `./scripts/format.sh`/`lint.sh`/`test.sh`/`verify.sh` 통과
+- [x] `git diff` 기준 의도하지 않은 변경 없음, 담당 외 파일 미수정
+
+> 2단계 완료 (2026-06-08). Feature 1~7(대화 CRUD·메시지 이력·챗 SSE 중계·피드백·대화 검색) + Feature 8(검증) 전부 완료. 외부 API 는 라이브 스모크(챗은 mock ML SSE 서버로 정상 경로 end-to-end) 로 `docs/api-spec.md` §1 정합 확인, 테스트 107건 통과, `backend/CLAUDE.md` §7(`Mono`/`Flux` 미사용·RAG 파이프라인 데이터 쓰기 없음·ACL fail-closed·평문 secret 없음) 충족, 인증 우회는 `DemoSecurityConfig`/`CurrentUserProvider` 로 격리(도메인 Controller/Service 에 인증 분기 미추가). 3단계(Authorization Server)는 `backend/auth-server/current-plans.md` 참조.
 
 ## 확정된 결정 (사용자 확인 완료)
 
