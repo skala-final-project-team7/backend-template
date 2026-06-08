@@ -38,23 +38,25 @@ public class RagClientConfig {
   @Bean
   RestClient ragRestClient(
       @Value("${lina.rag.base-url:}") String baseUrl,
-      @Value("${lina.rag.request-timeout-ms:30000}") long requestTimeoutMs) {
-    return buildClient(baseUrl, requestTimeoutMs);
+      @Value("${lina.rag.request-timeout-ms:30000}") long requestTimeoutMs,
+      @Value("${lina.rag.sse-timeout-ms:60000}") long sseTimeoutMs) {
+    return buildClient(baseUrl, requestTimeoutMs, sseTimeoutMs);
   }
 
   @Bean
   RestClient dataIngestionRestClient(
       @Value("${lina.data-ingestion.base-url:}") String baseUrl,
       @Value("${lina.data-ingestion.request-timeout-ms:30000}") long requestTimeoutMs) {
-    return buildClient(baseUrl, requestTimeoutMs);
+    return buildClient(baseUrl, requestTimeoutMs, requestTimeoutMs);
   }
 
-  private static RestClient buildClient(String baseUrl, long requestTimeoutMs) {
-    Duration timeout = Duration.ofMillis(requestTimeoutMs);
+  private static RestClient buildClient(String baseUrl, long connectTimeoutMs, long readTimeoutMs) {
+    Duration connectTimeout = Duration.ofMillis(connectTimeoutMs);
+    Duration readTimeout = Duration.ofMillis(readTimeoutMs);
     ClientHttpRequestFactorySettings settings =
         ClientHttpRequestFactorySettings.DEFAULTS
-            .withConnectTimeout(timeout)
-            .withReadTimeout(timeout);
+            .withConnectTimeout(connectTimeout)
+            .withReadTimeout(readTimeout);
     ClientHttpRequestFactory requestFactory = ClientHttpRequestFactories.get(settings);
 
     RestClient.Builder builder = RestClient.builder().requestFactory(requestFactory);
