@@ -64,4 +64,10 @@ public class Feedback {
     this.comment = comment;
     this.createdAt = createdAt != null ? createdAt : Instant.now();
   }
+
+  /** 기존 피드백을 갱신한다(upsert). feedbackId 와 최초 createdAt 은 유지한다. */
+  public void update(FeedbackRating rating, String comment) {
+    this.rating = rating;
+    this.comment = comment;
+  }
 }

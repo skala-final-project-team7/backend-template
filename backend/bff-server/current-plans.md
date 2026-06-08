@@ -430,11 +430,13 @@
 - `feedback/service/FeedbackServiceTest.java`, `feedback/controller/FeedbackControllerTest.java`
 
 #### 체크리스트
-- [ ] `POST /api/messages/{messageId}/feedback` — `rating`(`LIKE`/`DISLIKE`, UPPER) 검증, `comment` 선택
-- [ ] 메시지당 1건 unique + upsert: 신규 201 / 갱신 200
-- [ ] 잘못된 `rating`/필수 누락 시 400, 없는 메시지 시 404
-- [ ] **`createdAt` 응답을 KST(`+09:00`)로 직렬화** (확정된 결정 #6)
-- [ ] Service Unit Test (신규/갱신 분기) + Controller MockMvc
+- [x] `POST /api/messages/{messageId}/feedback` — `rating`(`LIKE`/`DISLIKE`, UPPER) 검증, `comment` 선택
+- [x] 메시지당 1건 unique + upsert: 신규 201 / 갱신 200
+- [x] 잘못된 `rating`/필수 누락 시 400, 없는 메시지 시 404
+- [x] **`createdAt` 응답을 KST(`+09:00`)로 직렬화** (확정된 결정 #6)
+- [x] Service Unit Test (신규/갱신 분기) + Controller MockMvc
+
+> Feature 6 완료 (2026-06-08). `FeedbackController`/`FeedbackService`(+nested `FeedbackResult` 신규/갱신 flag)/`CreateFeedbackRequest`/`FeedbackResponse` 신규 작성. upsert 시 `Feedback.update()` 로 `feedbackId`·최초 `createdAt` 유지(엔티티 보강). 없는/삭제 메시지 404 판정을 위해 `MessageRepository.existsByMessageIdAndDeletedAtIsNull` 추가(soft delete 규칙 §3.4 준수). 응답은 `docs/api-spec.md` §1-3 과 일치(변경 불필요). `./scripts/verify.sh` 통과 — 피드백 테스트 Service 4 / Controller 5 / Repository 2 전부 성공.
 
 ---
 
