@@ -1,6 +1,7 @@
 package com.lina.bff.chat.repository;
 
 import com.lina.bff.chat.entity.Conversation;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -56,4 +57,18 @@ public interface ConversationRepository extends MongoRepository<Conversation, St
    * @return 활성 대화 (없으면 Optional.empty)
    */
   Optional<Conversation> findByConversationIdAndDeletedAtIsNull(String conversationId);
+
+  /**
+   * 사용자별 활성 대화 전체를 조회한다(대화 검색 권한 격리·메타데이터 확보용).
+   *
+   * <ul>
+   *   <li>사용 인덱스: idx_conversations_user_active_recent {userId:1, deletedAt:1, ...}
+   *   <li>필터: userId 일치 + deletedAt == null (soft delete 제외)
+   *   <li>호출 위치: ConversationSearchService.search (Feature 7) — 본인 대화로 검색 범위를 제한
+   * </ul>
+   *
+   * @param userId 조회 대상 사용자 식별자
+   * @return 활성 대화 목록 (없으면 빈 리스트)
+   */
+  List<Conversation> findByUserIdAndDeletedAtIsNull(String userId);
 }

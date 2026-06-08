@@ -447,17 +447,19 @@
 본인 대화의 메시지 본문(`messages.content`)에서 검색어 매칭. 결과는 대화 단위로 묶고 매칭 메시지 샘플 + 카운트 동반. (`docs/api-spec.md` §1-2 「대화 검색」, `docs/db-schema.md` §3.2)
 
 #### 체크리스트
-- [ ] `ConversationSearchController` — `GET /api/conversations/search` 진입점
-- [ ] `q` 검증: **trim 후 길이 2~50 자**. 위반 시 `400` (`errorCode: INVALID_SEARCH_QUERY`). `size` 최대 50.
-- [ ] `q` 의 정규식 메타문자 escape 후 `$regex` (case-insensitive) on `messages.content`. text index 는 후속 라운드 (`db-schema.md` §3.2 인덱스 표 후속 행)
-- [ ] 권한 격리: `conversations.userId == 현재 사용자` 필터 강제 (2단계 데모 = `lina.demo.fixed-user-id`). `CurrentUserProvider` 통해서만 조회 — 타 사용자 대화 노출 차단
-- [ ] soft delete 필터: `conversations.deletedAt == null` AND `messages.deletedAt == null`
-- [ ] 정렬: `lastMessageAt` DESC (관련도 점수 미적용 — PoC)
-- [ ] 응답 구조: `results[].matchedMessages` **대화당 최대 3개** + `matchCount` (총 매칭 수). `totalCount` 는 매칭 대화 총 수
-- [ ] snippet 추출 유틸: 첫 매칭 위치 기준 좌우 ~40자, 본문 잘림 시 `...` prefix/suffix 부착. `matchPositions` 는 추출된 `snippet` 기준 `[[start, end]]` (end exclusive, UTF-16). **HTML 미생성** — XSS 방지
-- [ ] `INVALID_SEARCH_QUERY` enum 값을 `common` 모듈 `ErrorCode` 에 추가 (도메인 특화 코드 최초 사례 — `docs/api-spec.md` Common 노트)
-- [ ] Repository 테스트: 본인 대화만 매칭, 다른 사용자 대화 미노출, deleted 미노출, case-insensitive, 메타문자 escape
-- [ ] Controller 테스트(MockMvc): `q` 미존재 / trim 길이 미달·초과 / `size` 초과 → 400 `INVALID_SEARCH_QUERY`
+- [x] `ConversationSearchController` — `GET /api/conversations/search` 진입점
+- [x] `q` 검증: **trim 후 길이 2~50 자**. 위반 시 `400` (`errorCode: INVALID_SEARCH_QUERY`). `size` 최대 50.
+- [x] `q` 의 정규식 메타문자 escape 후 `$regex` (case-insensitive) on `messages.content`. text index 는 후속 라운드 (`db-schema.md` §3.2 인덱스 표 후속 행)
+- [x] 권한 격리: `conversations.userId == 현재 사용자` 필터 강제 (2단계 데모 = `lina.demo.fixed-user-id`). `CurrentUserProvider` 통해서만 조회 — 타 사용자 대화 노출 차단
+- [x] soft delete 필터: `conversations.deletedAt == null` AND `messages.deletedAt == null`
+- [x] 정렬: `lastMessageAt` DESC (관련도 점수 미적용 — PoC)
+- [x] 응답 구조: `results[].matchedMessages` **대화당 최대 3개** + `matchCount` (총 매칭 수). `totalCount` 는 매칭 대화 총 수
+- [x] snippet 추출 유틸: 첫 매칭 위치 기준 좌우 ~40자, 본문 잘림 시 `...` prefix/suffix 부착. `matchPositions` 는 추출된 `snippet` 기준 `[[start, end]]` (end exclusive, UTF-16). **HTML 미생성** — XSS 방지
+- [x] `INVALID_SEARCH_QUERY` enum 값을 `common` 모듈 `ErrorCode` 에 추가 (도메인 특화 코드 최초 사례 — `docs/api-spec.md` Common 노트)
+- [x] Repository 테스트: 본인 대화만 매칭, 다른 사용자 대화 미노출, deleted 미노출, case-insensitive, 메타문자 escape
+- [x] Controller 테스트(MockMvc): `q` 미존재 / trim 길이 미달·초과 / `size` 초과 → 400 `INVALID_SEARCH_QUERY`
+
+> Feature 7 완료 (2026-06-08). `ConversationSearchController`/`ConversationSearchService`/`SearchTextSupport`(snippet·escape 유틸)/`ConversationSearchResponse`·`ConversationSearchResultResponse`·`MatchedMessageResponse` DTO 신규. `common` `ErrorCode` 에 `INVALID_SEARCH_QUERY` 추가. 검색은 본인 활성 대화 id 집합으로 범위를 제한(권한 격리)하고 `MessageRepository.searchActiveByConversationIdsAndContent`(`@Query` `$regex`/`$options:i`, soft delete 필터)로 매칭. `ConversationRepository.findByUserIdAndDeletedAtIsNull` 추가. 정렬 `lastMessageAt` DESC, snippet/matchPositions 는 서버에서 HTML 미생성. 테스트: 유틸 7 / Service 8 / Controller 3 / Repository 5 전부 성공. `./scripts/verify.sh` 통과. `docs/api-spec.md` §1-2·`db-schema.md` §3.2 와 일치(문서 변경 불필요).
 
 ### Feature 8. 검증
 
