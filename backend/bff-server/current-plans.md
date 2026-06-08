@@ -402,23 +402,25 @@
 - `rag/client/RagClientTest.java`, `chat/service/ChatServiceTest.java`, `chat/controller/ChatControllerTest.java`
 
 #### 체크리스트
-- [ ] `RagClient` — `rag/client/`에서만 ML/AI Agent 호출, 동기 `RestClient`/`HttpClient` InputStream으로 SSE 파싱 (`Mono`/`Flux`/WebFlux 미사용)
-- [ ] ML 호출 시 다음을 전달 (`docs/api-spec.md` §2-1):
+- [x] `RagClient` — `rag/client/`에서만 ML/AI Agent 호출, 동기 `RestClient`/`HttpClient` InputStream으로 SSE 파싱 (`Mono`/`Flux`/WebFlux 미사용)
+- [x] ML 호출 시 다음을 전달 (`docs/api-spec.md` §2-1):
   - 질문(`question`), `conversationId`, 대화이력(`history`, 최근 N턴 — `lina.rag.history-turns` 기본 10). **`history[].role` 은 저장값 그대로**(`user`/`assistant` lowercase, LLM/OpenAI 표준 — boundary 변환 없음)
   - ACL: `userId`/`groups` (2단계 데모 고정값)
   - **spaceKey 등 스페이스 스코프 파라미터 미전달** (2026-06-04 결정 — LINA API 표면에서 spaceKey 제거). cross-space 검색이 유일한 모드, ACL(`userId`/`groups`) 만 적용. `lina.demo.fixed-space-key` 설정 deprecation 대상. (`api-spec.md` §2-1)
   - **`stream: true`** — BFF 는 항상 명시(토큰 스트리밍 ON, RAG 기본은 `false`)
   - **`/ml/query` 본문에 `accessToken`/`cloudId` 미포함** (확정된 결정 #5, 2026-05-22 갱신). 2026-06-05 갱신: `/ml/ingest`/RabbitMQ job payload 에도 Confluence credential set 을 포함하지 않는다. Data Ingestion Worker 가 `adminUserId` 로 auth-server 내부 API 에서 admin OAuth `accessToken` + `cloudId` 를 함께 조회한다.
-- [ ] **ACL fail-closed 게이트**: `userId` 가 비어 있거나 `groups` 가 빈 배열(`[]`)이면 `/ml/query` 호출을 **차단**하고 SSE `error`(`errorCode: UNAUTHORIZED`)로 종료 (`backend/CLAUDE.md` §6 "ACL 필터 없이 RAG 호출 금지" / `docs/api-spec.md` §2-1)
-- [ ] `POST /api/conversations/{conversationId}/chat` — `SseEmitter` 반환, Wrapper 미적용
-- [ ] `status`/`token`/`sources`/`verification`/`meta`/`done`/`error` 이벤트 중계 (집합 정본 `docs/api-spec.md` §1-1). `status`=진행표시, `meta`=호환용(제거 예정), 스트림은 `done`/`error`로 종료. 출처 `sourceUpdatedAt`·`done` 페이로드 timestamp 는 **KST 직렬화**
-- [ ] **Boundary 가공 (RAG → BFF → FE)**: (a) `error` 이벤트는 RAG·BFF·FE 모두 `{ "errorCode": ..., "message": ... }` 동일 키 — passthrough, `errorCode` 값이 §1-1 표 일치 여부만 검증; (b) `done` 은 RAG `{}` → BFF 가 저장한 assistant `messageId` 를 채워 `done: { "messageId": ... }` 로 중계 (`docs/api-spec.md` §2-1 / `backend/rules/rag-pipeline.md` §3)
-- [ ] user 메시지 선저장 → `done` 수신 시 assistant 메시지+출처+검증 저장 → `last_message_at` 갱신
-- [ ] 첫 assistant 응답의 `meta.title` 로 대화 제목 **1회 자동 설정** (현재 `title` 이 기본 `"새 대화"` 일 때만; 이후·사용자 PATCH 수정 시 무시) — `docs/api-spec.md` §1-1 "대화 제목 자동 설정 규칙"
-- [ ] ML 실패/타임아웃 시 재시도 없이 `error` 이벤트 전송 후 연결 정리 — SSE 타임아웃은 **idle 기준** `lina.rag.sse-timeout-ms`(기본 60s), 장시간 phase 는 `status` keep-alive, idle 초과 시 `error`(`ML_TIMEOUT`). 응답 헤더 `text/event-stream`/`no-cache`/`X-Accel-Buffering: no` (`docs/api-spec.md` §1-1)
-- [ ] **PoC 토큰 보안 (Data Ingestion 호출 경로 한정)**: `accessToken` 을 로그·tracing 본문에 노출하지 않음 (마스킹), HTTP/RabbitMQ job·event payload 에 `accessToken`/`refreshToken`/`cloudId` 미포함, actuator 민감 endpoint 비노출 — `docs/api-spec.md` §2-2 보안 주의 준수 (RAG 질의 경로엔 토큰 자체가 없으므로 본 규칙 적용 대상은 ingestion 호출)
-- [ ] WireMock 테스트: SSE 정상 스트림 / ML 5xx / 타임아웃 → `error` 이벤트·연결 정리, **요청 body 에 `accessToken`/`cloudId` 미포함** 검증 (`/ml/query` 본문에 토큰 누출 없음). 4단계 `/ml/ingest`/RabbitMQ job payload 테스트도 credential 미포함(`jobId`/`adminUserId`/`mode` 중심)으로 수행. 실제 ML 호출 금지.
-- [ ] `ChatService` Service Unit Test (RagClient·Repository Mock), Controller 이벤트 시퀀스 검증
+- [x] **ACL fail-closed 게이트**: `userId` 가 비어 있거나 `groups` 가 빈 배열(`[]`)이면 `/ml/query` 호출을 **차단**하고 SSE `error`(`errorCode: UNAUTHORIZED`)로 종료 (`backend/CLAUDE.md` §6 "ACL 필터 없이 RAG 호출 금지" / `docs/api-spec.md` §2-1)
+- [x] `POST /api/conversations/{conversationId}/chat` — `SseEmitter` 반환, Wrapper 미적용
+- [x] `status`/`token`/`sources`/`verification`/`meta`/`done`/`error` 이벤트 중계 (집합 정본 `docs/api-spec.md` §1-1). `status`=진행표시, `meta`=호환용(제거 예정), 스트림은 `done`/`error`로 종료. 출처 `sourceUpdatedAt`·`done` 페이로드 timestamp 는 **KST 직렬화**
+- [x] **Boundary 가공 (RAG → BFF → FE)**: (a) `error` 이벤트는 RAG·BFF·FE 모두 `{ "errorCode": ..., "message": ... }` 동일 키 — passthrough, `errorCode` 값이 §1-1 표 일치 여부만 검증; (b) `done` 은 RAG `{}` → BFF 가 저장한 assistant `messageId` 를 채워 `done: { "messageId": ... }` 로 중계 (`docs/api-spec.md` §2-1 / `backend/rules/rag-pipeline.md` §3)
+- [x] user 메시지 선저장 → `done` 수신 시 assistant 메시지+출처+검증 저장 → `last_message_at` 갱신
+- [x] 첫 assistant 응답의 `meta.title` 로 대화 제목 **1회 자동 설정** (현재 `title` 이 기본 `"새 대화"` 일 때만; 이후·사용자 PATCH 수정 시 무시) — `docs/api-spec.md` §1-1 "대화 제목 자동 설정 규칙"
+- [x] ML 실패/타임아웃 시 재시도 없이 `error` 이벤트 전송 후 연결 정리 — SSE 타임아웃은 **idle 기준** `lina.rag.sse-timeout-ms`(기본 60s), 장시간 phase 는 `status` keep-alive, idle 초과 시 `error`(`ML_TIMEOUT`). 응답 헤더 `text/event-stream`/`no-cache`/`X-Accel-Buffering: no` (`docs/api-spec.md` §1-1)
+- [x] **PoC 토큰 보안 (Data Ingestion 호출 경로 한정)**: `accessToken` 을 로그·tracing 본문에 노출하지 않음 (마스킹), HTTP/RabbitMQ job·event payload 에 `accessToken`/`refreshToken`/`cloudId` 미포함, actuator 민감 endpoint 비노출 — `docs/api-spec.md` §2-2 보안 주의 준수 (RAG 질의 경로엔 토큰 자체가 없으므로 본 규칙 적용 대상은 ingestion 호출)
+- [x] WireMock 테스트: SSE 정상 스트림 / ML 5xx / 타임아웃 → `error` 이벤트·연결 정리, **요청 body 에 `accessToken`/`cloudId` 미포함** 검증 (`/ml/query` 본문에 토큰 누출 없음). 4단계 `/ml/ingest`/RabbitMQ job payload 테스트도 credential 미포함(`jobId`/`adminUserId`/`mode` 중심)으로 수행. 실제 ML 호출 금지. 현재 BFF 에는 `/api/admin/ingest`/RabbitMQ payload 구현이 없으므로 2단계는 `/ml/query` WireMock 경계와 ChatService SSE error 종료 경로만 고정하고, ingestion payload 검증은 4단계 구현 시 추가한다.
+- [x] `ChatService` Service Unit Test (RagClient·Repository Mock), Controller 이벤트 시퀀스 검증
+
+> **Mongo transaction 메모 (2026-06-07):** 현재 로컬/PoC Mongo 는 standalone 전제로 운용하므로 `MongoTransactionManager` 와 `@Transactional` 을 적용하지 않는다. standalone 에서 Mongo multi-document transaction 을 켜면 런타임 오류가 날 수 있다. 저장 책임은 `ChatMessagePersistenceService` 로 분리해 두었으므로, Mongo 를 replica set/sharded cluster 로 전환하고 `MongoTransactionManager` 를 설정한 뒤에는 긴 SSE 메서드가 아니라 `saveUserMessage` / `saveAssistantMessage` 같은 짧은 write 메서드에만 `@Transactional` 적용을 검토한다.
 
 ---
 
