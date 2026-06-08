@@ -39,4 +39,17 @@ public interface MessageRepository extends MongoRepository<Message, String> {
    * @return 시간순 활성 메시지 목록 (없으면 빈 리스트)
    */
   List<Message> findByConversationIdAndDeletedAtIsNullOrderByCreatedAtAsc(String conversationId);
+
+  /**
+   * 활성 메시지 존재 여부를 확인한다(피드백 등록 시 대상 메시지 검증).
+   *
+   * <ul>
+   *   <li>필터: messageId 일치 + deletedAt == null
+   *   <li>호출 위치: FeedbackService 피드백 등록/갱신 (Feature 6) — 없는/삭제 메시지 404 판정
+   * </ul>
+   *
+   * @param messageId 대상 메시지 식별자
+   * @return 활성 메시지가 존재하면 true
+   */
+  boolean existsByMessageIdAndDeletedAtIsNull(String messageId);
 }
