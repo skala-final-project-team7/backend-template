@@ -19,12 +19,14 @@ import com.lina.common.exception.ErrorCode;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@RequiredArgsConstructor
 public class ConversationService {
 
   private static final String DEFAULT_TITLE = "새 대화";
@@ -33,15 +35,6 @@ public class ConversationService {
   private final ConversationRepository conversationRepository;
   private final MessageRepository messageRepository;
   private final CurrentUserProvider currentUserProvider;
-
-  public ConversationService(
-      ConversationRepository conversationRepository,
-      MessageRepository messageRepository,
-      CurrentUserProvider currentUserProvider) {
-    this.conversationRepository = conversationRepository;
-    this.messageRepository = messageRepository;
-    this.currentUserProvider = currentUserProvider;
-  }
 
   @Transactional
   public CreateConversationResponse createConversation() {

@@ -11,21 +11,17 @@ import com.lina.bff.rag.client.dto.RagQueryCommand;
 import com.lina.common.exception.BizException;
 import com.lina.common.exception.ErrorCode;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
 public class ChatMessagePersistenceService {
 
   private static final String DEFAULT_TITLE = "새 대화";
 
   private final ConversationRepository conversationRepository;
   private final MessageRepository messageRepository;
-
-  public ChatMessagePersistenceService(
-      ConversationRepository conversationRepository, MessageRepository messageRepository) {
-    this.conversationRepository = conversationRepository;
-    this.messageRepository = messageRepository;
-  }
 
   public Conversation loadConversation(String conversationId) {
     return conversationRepository

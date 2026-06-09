@@ -3,6 +3,7 @@ package com.lina.bff.chat.controller;
 import com.lina.bff.chat.dto.ConversationSearchResponse;
 import com.lina.bff.chat.service.ConversationSearchService;
 import com.lina.common.response.ApiResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -17,13 +18,10 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/conversations")
+@RequiredArgsConstructor
 public class ConversationSearchController {
 
   private final ConversationSearchService conversationSearchService;
-
-  public ConversationSearchController(ConversationSearchService conversationSearchService) {
-    this.conversationSearchService = conversationSearchService;
-  }
 
   @GetMapping("/search")
   public ResponseEntity<ApiResponse<ConversationSearchResponse>> searchConversations(

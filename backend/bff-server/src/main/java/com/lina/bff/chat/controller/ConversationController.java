@@ -7,6 +7,7 @@ import com.lina.bff.chat.dto.UpdateConversationRequest;
 import com.lina.bff.chat.dto.UpdateConversationResponse;
 import com.lina.bff.chat.service.ConversationService;
 import com.lina.common.response.ApiResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -21,13 +22,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/conversations")
+@RequiredArgsConstructor
 public class ConversationController {
 
   private final ConversationService conversationService;
-
-  public ConversationController(ConversationService conversationService) {
-    this.conversationService = conversationService;
-  }
 
   @PostMapping
   public ResponseEntity<ApiResponse<CreateConversationResponse>> createConversation() {

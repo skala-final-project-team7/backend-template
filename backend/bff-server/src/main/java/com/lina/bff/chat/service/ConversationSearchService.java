@@ -20,6 +20,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
  * soft delete 된 대화·메시지는 모두 제외한다.
  */
 @Service
+@RequiredArgsConstructor
 public class ConversationSearchService {
 
   private static final ZoneId KST = ZoneId.of("Asia/Seoul");
@@ -41,15 +43,6 @@ public class ConversationSearchService {
   private final ConversationRepository conversationRepository;
   private final MessageRepository messageRepository;
   private final CurrentUserProvider currentUserProvider;
-
-  public ConversationSearchService(
-      ConversationRepository conversationRepository,
-      MessageRepository messageRepository,
-      CurrentUserProvider currentUserProvider) {
-    this.conversationRepository = conversationRepository;
-    this.messageRepository = messageRepository;
-    this.currentUserProvider = currentUserProvider;
-  }
 
   @Transactional(readOnly = true)
   public ConversationSearchResponse search(String q, int page, int size) {
