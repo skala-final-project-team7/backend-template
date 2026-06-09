@@ -13,6 +13,8 @@ import org.springframework.http.HttpStatus;
  * 작성일 : 2026-05-15
  * 변경사항 내역 (날짜, 변경목적, 변경내용 순)
  *   - 2026-05-15, 최초 작성, backend/CLAUDE.md §4 매트릭스 기반 6개 기본 코드 정의
+ *   - 2026-06-08, 2단계 Feature 7 — 대화 검색 q 검증 전용 INVALID_SEARCH_QUERY 추가
+ *                 (도메인 특화 코드 최초 사례 — docs/api-spec.md Common 노트)
  * --------------------------------------------------
  * [호환성]
  *   - JDK 21 LTS
@@ -23,6 +25,7 @@ import org.springframework.http.HttpStatus;
 @Getter
 public enum ErrorCode {
   INVALID_REQUEST(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "요청 값이 유효하지 않습니다."),
+  INVALID_SEARCH_QUERY(HttpStatus.BAD_REQUEST, "INVALID_SEARCH_QUERY", "검색어가 유효하지 않습니다."),
   UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "인증이 필요합니다."),
   FORBIDDEN(HttpStatus.FORBIDDEN, "FORBIDDEN", "권한이 없습니다."),
   RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "요청한 리소스를 찾을 수 없습니다."),

@@ -9,6 +9,7 @@ import com.lina.common.exception.BizException;
 import com.lina.common.exception.ErrorCode;
 import java.time.ZoneId;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,18 +20,13 @@ import org.springframework.transaction.annotation.Transactional;
  * FeedbackResult} 의 {@code created} 로 전달되어 Controller 가 HTTP status(신규 201 / 갱신 200)를 결정한다.
  */
 @Service
+@RequiredArgsConstructor
 public class FeedbackService {
 
   private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
   private final FeedbackRepository feedbackRepository;
   private final MessageRepository messageRepository;
-
-  public FeedbackService(
-      FeedbackRepository feedbackRepository, MessageRepository messageRepository) {
-    this.feedbackRepository = feedbackRepository;
-    this.messageRepository = messageRepository;
-  }
 
   /** 피드백 등록/갱신 결과. {@code created=true} 면 신규(201), {@code false} 면 갱신(200). */
   public record FeedbackResult(boolean created, FeedbackResponse response) {}

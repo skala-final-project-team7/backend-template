@@ -13,7 +13,7 @@
 | 단계 | 범위 | 상태 |
 |---|---|---|
 | 1단계 | 프로젝트 초기 셋업 (패키지 구조, 설정, 공통 예외/응답) | ✅ 완료 (2026-05-15, `auth-server` 와 공동) |
-| 2단계 | BFF Server 핵심 API (대화 CRUD, RAG 호출 + SSE 중계, 메시지 이력, 피드백, DB 스키마) | 🚧 Feature 1 완료, Feature 2~ 미착수 |
+| 2단계 | BFF Server 핵심 API (대화 CRUD, RAG 호출 + SSE 중계, 메시지 이력, 피드백, 대화 검색, DB 스키마) | ✅ 완료 (2026-06-08, Feature 1~8) |
 | 4단계 | 부가 API (관리자 대시보드 · Confluence 미리보기) | 미착수 |
 
 > **2026-05-19 범위 조정:** 중간발표를 인증 없이 시연하기 위해 2단계에서 **JWT 검증 필터를 제외**하고 3단계로 이동한다. 대신 **피드백 API**를 4단계에서 2단계로 당긴다. 근거: 사용자 지시 + `docs/api-spec.md` 전제("중간 발표 시 인증 하드코딩, 로그인 제외"). 상세는 아래 **2단계** 섹션 참조.
@@ -447,29 +447,33 @@
 본인 대화의 메시지 본문(`messages.content`)에서 검색어 매칭. 결과는 대화 단위로 묶고 매칭 메시지 샘플 + 카운트 동반. (`docs/api-spec.md` §1-2 「대화 검색」, `docs/db-schema.md` §3.2)
 
 #### 체크리스트
-- [ ] `ConversationSearchController` — `GET /api/conversations/search` 진입점
-- [ ] `q` 검증: **trim 후 길이 2~50 자**. 위반 시 `400` (`errorCode: INVALID_SEARCH_QUERY`). `size` 최대 50.
-- [ ] `q` 의 정규식 메타문자 escape 후 `$regex` (case-insensitive) on `messages.content`. text index 는 후속 라운드 (`db-schema.md` §3.2 인덱스 표 후속 행)
-- [ ] 권한 격리: `conversations.userId == 현재 사용자` 필터 강제 (2단계 데모 = `lina.demo.fixed-user-id`). `CurrentUserProvider` 통해서만 조회 — 타 사용자 대화 노출 차단
-- [ ] soft delete 필터: `conversations.deletedAt == null` AND `messages.deletedAt == null`
-- [ ] 정렬: `lastMessageAt` DESC (관련도 점수 미적용 — PoC)
-- [ ] 응답 구조: `results[].matchedMessages` **대화당 최대 3개** + `matchCount` (총 매칭 수). `totalCount` 는 매칭 대화 총 수
-- [ ] snippet 추출 유틸: 첫 매칭 위치 기준 좌우 ~40자, 본문 잘림 시 `...` prefix/suffix 부착. `matchPositions` 는 추출된 `snippet` 기준 `[[start, end]]` (end exclusive, UTF-16). **HTML 미생성** — XSS 방지
-- [ ] `INVALID_SEARCH_QUERY` enum 값을 `common` 모듈 `ErrorCode` 에 추가 (도메인 특화 코드 최초 사례 — `docs/api-spec.md` Common 노트)
-- [ ] Repository 테스트: 본인 대화만 매칭, 다른 사용자 대화 미노출, deleted 미노출, case-insensitive, 메타문자 escape
-- [ ] Controller 테스트(MockMvc): `q` 미존재 / trim 길이 미달·초과 / `size` 초과 → 400 `INVALID_SEARCH_QUERY`
+- [x] `ConversationSearchController` — `GET /api/conversations/search` 진입점
+- [x] `q` 검증: **trim 후 길이 2~50 자**. 위반 시 `400` (`errorCode: INVALID_SEARCH_QUERY`). `size` 최대 50.
+- [x] `q` 의 정규식 메타문자 escape 후 `$regex` (case-insensitive) on `messages.content`. text index 는 후속 라운드 (`db-schema.md` §3.2 인덱스 표 후속 행)
+- [x] 권한 격리: `conversations.userId == 현재 사용자` 필터 강제 (2단계 데모 = `lina.demo.fixed-user-id`). `CurrentUserProvider` 통해서만 조회 — 타 사용자 대화 노출 차단
+- [x] soft delete 필터: `conversations.deletedAt == null` AND `messages.deletedAt == null`
+- [x] 정렬: `lastMessageAt` DESC (관련도 점수 미적용 — PoC)
+- [x] 응답 구조: `results[].matchedMessages` **대화당 최대 3개** + `matchCount` (총 매칭 수). `totalCount` 는 매칭 대화 총 수
+- [x] snippet 추출 유틸: 첫 매칭 위치 기준 좌우 ~40자, 본문 잘림 시 `...` prefix/suffix 부착. `matchPositions` 는 추출된 `snippet` 기준 `[[start, end]]` (end exclusive, UTF-16). **HTML 미생성** — XSS 방지
+- [x] `INVALID_SEARCH_QUERY` enum 값을 `common` 모듈 `ErrorCode` 에 추가 (도메인 특화 코드 최초 사례 — `docs/api-spec.md` Common 노트)
+- [x] Repository 테스트: 본인 대화만 매칭, 다른 사용자 대화 미노출, deleted 미노출, case-insensitive, 메타문자 escape
+- [x] Controller 테스트(MockMvc): `q` 미존재 / trim 길이 미달·초과 / `size` 초과 → 400 `INVALID_SEARCH_QUERY`
+
+> Feature 7 완료 (2026-06-08). `ConversationSearchController`/`ConversationSearchService`/`SearchTextSupport`(snippet·escape 유틸)/`ConversationSearchResponse`·`ConversationSearchResultResponse`·`MatchedMessageResponse` DTO 신규. `common` `ErrorCode` 에 `INVALID_SEARCH_QUERY` 추가. 검색은 본인 활성 대화 id 집합으로 범위를 제한(권한 격리)하고 `MessageRepository.searchActiveByConversationIdsAndContent`(`@Query` `$regex`/`$options:i`, soft delete 필터)로 매칭. `ConversationRepository.findByUserIdAndDeletedAtIsNull` 추가. 정렬 `lastMessageAt` DESC, snippet/matchPositions 는 서버에서 HTML 미생성. 테스트: 유틸 7 / Service 8 / Controller 3 / Repository 5 전부 성공. `./scripts/verify.sh` 통과. `docs/api-spec.md` §1-2·`db-schema.md` §3.2 와 일치(문서 변경 불필요).
 
 ### Feature 8. 검증
 
 #### 체크리스트
-- [ ] `./scripts/format.sh` 성공
-- [ ] `./scripts/lint.sh` 성공
-- [ ] `./scripts/test.sh` 성공
-- [ ] `./scripts/verify.sh` 성공
-- [ ] `./gradlew :bff-server:bootRun` 기동 확인
-- [ ] `docs/api-spec.md` §1 명세와 구현 정합성 확인 (불일치 시에만 수정)
-- [ ] `git diff` 기준 의도하지 않은 변경 / 담당 외 파일 변경 없음
-- [ ] `backend/CLAUDE.md` §7 체크리스트 점검 (`Mono`/`Flux` 미사용, MongoDB의 RAG 파이프라인 데이터 쓰기 없음, ACL 누락 경로 없음, 평문 secret 없음)
+- [x] `./scripts/format.sh` 성공
+- [x] `./scripts/lint.sh` 성공
+- [x] `./scripts/test.sh` 성공
+- [x] `./scripts/verify.sh` 성공
+- [x] `./gradlew :bff-server:bootRun` 기동 확인
+- [x] `docs/api-spec.md` §1 명세와 구현 정합성 확인 (불일치 시에만 수정)
+- [x] `git diff` 기준 의도하지 않은 변경 / 담당 외 파일 변경 없음
+- [x] `backend/CLAUDE.md` §7 체크리스트 점검 (`Mono`/`Flux` 미사용, MongoDB의 RAG 파이프라인 데이터 쓰기 없음, ACL 누락 경로 없음, 평문 secret 없음)
+
+> Feature 8 완료 (2026-06-08). `format`/`lint`/`verify` 전부 `BUILD SUCCESSFUL`, 전체 테스트 강제 재실행(`test --rerun-tasks`) 107건(common 8 / bff-server 98 / auth-server 1) 실패 0. `:bff-server:bootRun` 정상 기동(Tomcat 8080, MongoDB 연결, `Started BffApplication in ~1s`) 후 graceful stop. **2단계 외부 API 전체 라이브 스모크**(api-spec §1): `POST /api/conversations` 201 · `GET /api/conversations` 200(고정 우선·최신순) · `PATCH /api/conversations/{id}` 200 · `GET /api/conversations/{id}/messages` 200(KST·soft delete 제외) · `POST /api/messages/{id}/feedback` 신규 201/갱신 200(upsert) · `DELETE /api/conversations/{id}` 200 soft delete(이후 404) · `GET /api/conversations/search` 200(권한 격리·KST)/`q=a` 400 `INVALID_SEARCH_QUERY` · `POST /api/conversations/{id}/chat` 은 ML 미가동 시 SSE `event:error`(`ML_CONNECTION_ERROR`) 종료 경로 확인 + mock ML SSE 서버(`localhost:8000`)로 정상 경로 end-to-end 검증(`status`→`token`×N→`sources`→`verification`→`meta`→`done`): RAG `done {}` → BFF `messageId`/KST `timestamp` 보강, user/assistant 메시지 영속(토큰 누적 content·`confidenceScore`·`verificationResult`·`sources`), `meta.title` 제목 1회 자동설정(`"새 대화"`→설정), `sourceUpdatedAt`/`done.timestamp` KST 직렬화 확인. 에러 케이스 404(없는 대화)·400(빈 PATCH·잘못된 rating·size 초과)·404(없는 메시지) 모두 기대대로. 쓰기 검증은 임시 대화로만 수행하고 종료 후 정리(사용자 데이터 보존). `docs/api-spec.md` §1 명세와 응답 구조 일치(불일치 없음 → 문서 미수정). git diff 범위 = Feature 7 커밋(b98b3d5) 15파일로 담당 영역(chat 검색)+필수 `common/ErrorCode`(`INVALID_SEARCH_QUERY`)+plan/working-log 에 한정, 담당 외 파일·설정/secret 파일 미변경. `backend/CLAUDE.md` §7: `Mono`/`Flux` 실사용 0(금지 주석 1건만), RAG 파이프라인 컬렉션 쓰기 0, 검색 경로 read-only, 평문 secret 0. **검증 단계라 코드 수정 없음.**
 
 ## 위험 요소
 
@@ -492,14 +496,16 @@
 
 ## 2단계 완료 기준 (Done Definition)
 
-- [ ] 위 7개 도메인 Feature 의 외부 API 가 `docs/api-spec.md` §1 명세대로 동작 (대화 CRUD·메시지 이력·챗 SSE·피드백·대화 검색)
-- [ ] `docs/db-schema.md` 작성 완료, Entity와 일치
-- [ ] Service Unit / Controller MockMvc / Repository DataMongoTest / RagClient WireMock 테스트 통과
-- [ ] `Mono`/`Flux`/WebFlux 미사용, MongoDB RAG 파이프라인 데이터(`raw_pages`/`chunked_units` 등) 쓰기 없음, ACL 누락 호출 경로 없음 (`backend/CLAUDE.md` §7 체크리스트)
-- [ ] 인증 우회가 `DemoSecurityConfig`/`CurrentUserProvider`로 격리됨, production 분기 미추가
-- [ ] 평문 secret 미포함 (DB 비밀번호 등 `${...}` 환경변수 참조)
-- [ ] `./scripts/format.sh`/`lint.sh`/`test.sh`/`verify.sh` 통과
-- [ ] `git diff` 기준 의도하지 않은 변경 없음, 담당 외 파일 미수정
+- [x] 위 7개 도메인 Feature 의 외부 API 가 `docs/api-spec.md` §1 명세대로 동작 (대화 CRUD·메시지 이력·챗 SSE·피드백·대화 검색)
+- [x] `docs/db-schema.md` 작성 완료, Entity와 일치
+- [x] Service Unit / Controller MockMvc / Repository DataMongoTest / RagClient WireMock 테스트 통과
+- [x] `Mono`/`Flux`/WebFlux 미사용, MongoDB RAG 파이프라인 데이터(`raw_pages`/`chunked_units` 등) 쓰기 없음, ACL 누락 호출 경로 없음 (`backend/CLAUDE.md` §7 체크리스트)
+- [x] 인증 우회가 `DemoSecurityConfig`/`CurrentUserProvider`로 격리됨, production 분기 미추가
+- [x] 평문 secret 미포함 (DB 비밀번호 등 `${...}` 환경변수 참조)
+- [x] `./scripts/format.sh`/`lint.sh`/`test.sh`/`verify.sh` 통과
+- [x] `git diff` 기준 의도하지 않은 변경 없음, 담당 외 파일 미수정
+
+> 2단계 완료 (2026-06-08). Feature 1~7(대화 CRUD·메시지 이력·챗 SSE 중계·피드백·대화 검색) + Feature 8(검증) 전부 완료. 외부 API 는 라이브 스모크(챗은 mock ML SSE 서버로 정상 경로 end-to-end) 로 `docs/api-spec.md` §1 정합 확인, 테스트 107건 통과, `backend/CLAUDE.md` §7(`Mono`/`Flux` 미사용·RAG 파이프라인 데이터 쓰기 없음·ACL fail-closed·평문 secret 없음) 충족, 인증 우회는 `DemoSecurityConfig`/`CurrentUserProvider` 로 격리(도메인 Controller/Service 에 인증 분기 미추가). 3단계(Authorization Server)는 `backend/auth-server/current-plans.md` 참조.
 
 ## 확정된 결정 (사용자 확인 완료)
 

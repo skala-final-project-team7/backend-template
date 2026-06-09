@@ -1,8 +1,10 @@
 package com.lina.bff.chat.repository;
 
 import com.lina.bff.chat.entity.Message;
+import java.util.Collection;
 import java.util.List;
 import org.springframework.data.mongodb.repository.MongoRepository;
+import org.springframework.data.mongodb.repository.Query;
 
 /**
  *
@@ -52,4 +54,28 @@ public interface MessageRepository extends MongoRepository<Message, String> {
    * @return 활성 메시지가 존재하면 true
    */
   boolean existsByMessageIdAndDeletedAtIsNull(String messageId);
+
+  /**
+   * 주어진 대화 집합 내 활성 메시지 중 본문이 검색어 정규식과 매칭되는 메시지를 createdAt 오름차순으로 조회한다(대화 검색 Feature 7).
+   *
+   * <ul>
+   *   <li>필터: conversationId ∈ conversationIds + deletedAt == null + content
+   *       $regex(case-insensitive)
+   *   <li>정렬: createdAt ASC (대화별 매칭 샘플 추출 순서 고정)
+   *   <li>권한 격리: conversationIds 에 본인 활성 대화만 전달해 타 사용자 대화를 차단한다(ConversationSearchService)
+   *   <li>검색어는 호출 측에서 정규식 메타문자를 escape 한 뒤 전달한다(리터럴 매칭)
+   *   <li>인덱스: 본문 text index 는 후속 도입(docs/db-schema.md §3.2). PoC 는 $regex.
+   * </ul>
+   *
+   * @param conversationIds 검색 대상(본인 활성) 대화 식별자 집합
+   * @param contentRegex escape 된 검색어 정규식(case-insensitive 옵션은 쿼리에서 적용)
+   * @return 매칭 메시지 목록 (없으면 빈 리스트)
+   */
+  @Query(
+      value =
+          "{ 'conversationId': { '$in': ?0 }, 'deletedAt': null,"
+              + " 'content': { '$regex': ?1, '$options': 'i' } }",
+      sort = "{ 'createdAt': 1 }")
+  List<Message> searchActiveByConversationIdsAndContent(
+      Collection<String> conversationIds, String contentRegex);
 }
