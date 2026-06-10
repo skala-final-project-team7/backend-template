@@ -14,7 +14,7 @@ RAG 검색 파이프라인의 ACL 모델을 **스페이스 단위 → 페이지/
 
 - 질의 시점: `/ml/query` 에 JWT 의 `userId` / `groups` 를 전달해 Qdrant payload(`allowed_users` / `allowed_groups`)로 pre-filtering (`docs/api-spec.md` §2-1, 기획서 §6.4/§6.6).
 - 색인 시점: RAG PoC 가 페이지 단위 권한 API 부재로 `allowed_groups = ["space:{space_key}"]` 합성, `allowed_users` 는 빈 값.
-- 계획된 인가 저장소 `user_space_acl`(MySQL, 3단계, `docs/db-schema.md` §1)은 **스페이스 단위**이며, 인증(3단계)은 미착수(PoC 예정).
+- ~~계획된 인가 저장소 `user_space_acl`(MySQL, 3단계)~~ → **미사용 확정(2026-06-09)**: 스페이스 단위 권한 테이블은 불필요. 사용자 group 멤버십은 로그인 시 Confluence `memberof` 로 조회해 `user_groups` 테이블에 적재→JWT `groups`(`groupId`) 발급(`docs/db-schema.md` §6.3). 페이지-단위 ACL 은 본 ADR 의 Qdrant payload 방식(별도 page-ACL 테이블 불필요).
 - "페이지 권한" 은 `backend/rules/domains.md` §3 / `backend/rules/auth.md` §2 에 언급만 있고 소스·스키마 미정의.
 
 해결할 문제: 페이지별 접근 허용 대상(user/group)의 **source of truth** 와, 그 식별자가 질의 시점 JWT claim 과 매칭되는 체계, 갱신·예외 정책을 확정한다.
@@ -33,7 +33,7 @@ RAG 검색 파이프라인의 ACL 모델을 **스페이스 단위 → 페이지/
 
 1. **수집 자격증명**: admin 의 Confluence OAuth access_token + `Atl-Confluence-With-Admin-Key: true` 헤더 (admin-only ingestion 모델). 일반 동선은 BFF `POST /api/admin/ingest` 가 auth-server 내부 API 를 통해 Admin Key 를 활성화하고, 수집 worker 는 auth-server 내부 credential 조회 API 로 admin OAuth `accessToken` + `cloudId` 를 함께 조회한다. RabbitMQ job/completion payload 에는 `accessToken`/`refreshToken`/`cloudId` 를 포함하지 않는다. 테스트 결과: page-level read restriction 을 우회해 admin 이 접근 가능한 모든 페이지 수집 가능(일반 호출 232건 → Admin Key 호출 237건, 5개 restricted page 차이 확인).
 2. **본문 수집**: `GET /api/v2/pages/{id}?body-format=storage` — `body.storage.value` 가 페이지 본문(HTML/storage format), `spaceId`/`parentId`/`ownerId`/`authorId`/`version` 등 메타데이터 포함.
-3. **권한 추출**: 페이지별로 `GET /rest/api/content/{pageId}/restriction/byOperation/read` 호출 → 응답의 `restrictions.user.results[].accountId` 와 `restrictions.group.results[].name` 을 추출해 Qdrant payload `allowed_users` / `allowed_groups` 로 변환.
+3. **권한 추출**: 페이지별로 `GET /rest/api/content/{pageId}/restriction/byOperation/read` 호출 → 응답의 `restrictions.user.results[].accountId` 와 `restrictions.group.results[].id`(**groupId** — JWT `groups` 와 동일 vocabulary, 2026-06-09 확정) 을 추출해 Qdrant payload `allowed_users` / `allowed_groups` 로 변환. (restriction 응답이 group `id` 를 제공하지 않고 `name` 만 주는 경우 group `name`→`id` 매핑 1회 수행 — 색인 구현 시 확인)
 4. **계층 권한 (open)**: 일부 페이지는 page-level restriction 이 비어 있어도 parent folder/page 또는 space permission 으로 차단된다 (테스트 §11.2). 정확한 effective ACL 산출은 §4 미해결 항목 참조.
 
 **역할 분리**:
@@ -61,7 +61,7 @@ RAG 검색 파이프라인의 ACL 모델을 **스페이스 단위 → 페이지/
 | `allowed_groups[]` | JWT `groups` 와 동일 식별자 | content restriction 의 group 을 JWT vocabulary 로 표기 |
 
 - JWT `userId`/`groups` 가 실제로 어떤 값 체계인지(예: Confluence accountId / group name / groupId)는 **auth-server 의 Confluence OAuth 매핑이 결정**한다 → §4 확인. 색인은 그 체계를 그대로 따른다.
-- 과거 PoC 의 합성 토큰 `space:{spaceKey}` 모델은 폐기(2026-06-04, api-spec v2.4.0 spaceKey 제거 결정과 함께). 색인은 Confluence content restrictions API 응답의 **실제 group 식별자**(`restrictions.group.results[].name`)를 그대로 `allowed_groups` 에 적재한다 — JWT vocabulary 와 동일 체계(§4.1 확인 항목).
+- 과거 PoC 의 합성 토큰 `space:{spaceKey}` 모델은 폐기(2026-06-04, api-spec v2.4.0 spaceKey 제거 결정과 함께). 색인은 Confluence content restrictions API 응답의 group **`id`(groupId)**(`restrictions.group.results[].id`)를 `allowed_groups` 에 적재한다 — JWT `groups`(`groupId`)와 동일 vocabulary(2026-06-09 확정).
 
 ### 2.3 질의 시점 매칭 (JWT ↔ payload)
 
@@ -99,7 +99,7 @@ RAG 검색 파이프라인의 ACL 모델을 **스페이스 단위 → 페이지/
 
 ## 4. 미해결 / 확인 필요 (Open Questions)
 
-1. **JWT vocabulary 확정** — `userId` 는 **Confluence `accountId`** 로 확정(`docs/db-schema.md` §6.1 `users.user_id` 정의, 2026-06-02). `groups` vocabulary 는 group `name` (restriction API 응답 형식) 으로 정합 가능성 크나, auth-server `/api/users/me` 또는 Confluence 그룹 API 첫 호출 결과로 최종 확정 필요.
+1. ~~JWT vocabulary 확정~~ — ✅ **확정·합의 완료**: `userId` = Confluence `accountId`(2026-06-02), **`groups` = `groupId`** — BE ↔ RAG/색인 **vocabulary 합의 완료(2026-06-10)**. auth-server callback 이 `memberof` `results[].id`(groupId)를 JWT `groups` 에 적재하고, 색인도 `allowed_groups` 에 `groupId` 로 적재(§2). **BE 측 작업 확정**(질의 시 `userId`/`groups`(groupId) 전달만). ※ Confluence restriction 응답이 group `id` 를 직접 제공하는지(미제공 시 `name`→`id` 매핑)는 **색인측 순수 구현 디테일로 RAG/색인 팀이 처리** — 매칭 vocabulary 는 `groupId` 로 고정되어 BE 영향 없음.
 2. **inherited 권한 산출 책임** — Admin Key 테스트(§11.2) 에서 page-level restriction 비어 있어도 일반 호출에서 안 보이는 페이지 2건 확인. parent folder/page restriction 또는 space permission 계층 영향. PoC 결정 필요: (a) page-level restriction 만 반영하고 누락 감수 vs (b) 상위 계층까지 조회해 effective 산출. (a) 가 단순하지만 일부 페이지 권한 누설 위험.
 3. 첨부파일(`raw_attachments`) 권한이 부모 페이지 권한을 따르는지 — 테스트 미실시. 첨부 API 응답에 별도 restriction 이 있는지 확인 필요.
 4. `/ml/query` 가 실시간 Confluence 호출을 일절 하지 않는다는 전제(§2-1) 재확인 — 본 ADR 도 이 전제에 의존.

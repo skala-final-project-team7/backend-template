@@ -12,7 +12,7 @@
 |---|---|---|
 | Service 비즈니스 로직 | Unit Test | 필수 |
 | Controller API 계약 | MockMvc / WebMvcTest | 필수 |
-| Repository 쿼리 | DataJpaTest | 주요 쿼리에 한해 |
+| Repository 쿼리 | `@DataMongoTest`(bff-server MongoDB) / `@DataJpaTest`(auth-server MySQL) | 주요 쿼리에 한해 |
 | Client 외부 호출 | WireMock / MockServer | ML Pipeline, Confluence 호출에 한해 |
 | 인증 흐름 | SecurityTest | 필수 |
 

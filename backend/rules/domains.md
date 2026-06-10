@@ -26,9 +26,9 @@
 
 ## 3. 사용자 도메인 (user)
 
-- Confluence OAuth를 통해 인증된 사용자 정보를 저장/갱신한다.
-- 사용자-권한 매핑(접근 가능 스페이스, 페이지 권한)을 관리한다.
-- ACL 정보는 RAG Pipeline 호출 시 `userId`, `groups` 형태로 전달한다.
+- Confluence OAuth를 통해 인증된 사용자 정보(`userId`/`name`/`email`/`role` 등)를 MySQL `users`에 저장/갱신한다 (auth-server, OAuth callback upsert).
+- 사용자 `groups`(group 멤버십)는 로그인(OAuth callback) 시 Confluence `memberof` API로 조회해 **`user_groups` 테이블**(`docs/db-schema.md` §6.3)에 적재하고 JWT claim(`groupId`)으로 발급한다. **스페이스 단위 권한 테이블 `user_space_acl`은 미사용**(2026-06-09 결정). **페이지-단위 ACL은 수집 단계에서 Qdrant payload**(`allowed_groups`/`allowed_users`)에 저장한다 (`docs/adr/0001-page-level-acl-source.md` §2).
+- ACL 정보는 RAG Pipeline 호출 시 `userId`(Confluence accountId), `groups`(**`groupId` 배열** — Qdrant `allowed_groups`와 동일 표기) 형태로 전달한다.
 
 ---
 

@@ -147,8 +147,9 @@ MySQL은 인증/인가 관련 정형 데이터 저장에 사용한다. 3단계(A
 
 - 사용자 계정 및 역할 (`users` — `role` 컬럼이 USER/ADMIN, JWT `role` claim 의 source of truth; `docs/db-schema.md` §6.1)
 - OAuth Access/Refresh Token (암호화 저장, `user_tokens`)
-- 사용자 스페이스 접근 권한 (`user_space_acl`)
 - 서비스 설정
+
+> 사용자 `groups` 는 로그인(OAuth callback) 시 Confluence `memberof` API 로 조회해 **`user_groups` 테이블**(`docs/db-schema.md` §6.3)에 적재하고 JWT claim(`groupId`)으로 발급한다. 스페이스 단위 권한 테이블 **`user_space_acl` 은 미사용** — 페이지-단위 ACL 은 수집 단계 Qdrant payload (`docs/adr/0001-page-level-acl-source.md` §2).
 
 ---
 

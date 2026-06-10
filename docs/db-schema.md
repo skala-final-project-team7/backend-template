@@ -16,6 +16,7 @@
 | 2026-06-01 | `messages.role` 저장값을 `USER`/`ASSISTANT` → **`user`/`assistant`** (lowercase) 로 통일 — LLM/OpenAI 산업 표준, RAG `/ml/query` 와이어와 동일 값(boundary 변환 제거). Common Enum 표기 정책의 명시된 예외 | RAG boundary 매핑 제거·산업 표준 정렬 |
 | 2026-06-02 | MySQL `users` 테이블 정의(§6.1) — `role` 컬럼(`USER`/`ADMIN`) 포함, JWT `role` claim 의 single source. 별도 `admins` 테이블 계획 흡수. 최초 admin 은 마이그레이션 스크립트에 하드코딩 INSERT | 권한 모델 DB 단일화·YAML config 미사용 |
 | 2026-06-02 | `messages.content` 본문 검색 인덱스 권고(§3.2 후속) — `GET /api/conversations/search` (api-spec §1-2 신설) 를 위한 인덱스. PoC 는 `$regex`, 후속에 text index 전환 검토 | 대화 본문 검색 endpoint 도입 |
+| 2026-06-10 | MySQL 3단계 스키마를 auth-server 실제 마이그레이션(`V001`~`V003`)에 맞춰 **재정의**(§6). `users` PK=`user_key`(BINARY16 UUID), `user_id`=Confluence accountId(UNIQUE, JWT/RAG `userId`), `email`(UNIQUE) 분리, LINA `access_token` 컬럼. `groups`→**`user_groups`**(1:N, `group_id`=groupId, 로그인 시 `memberof` 적재). Confluence OAuth access/refresh + `cloud_id`→**`user_tokens`**(앱 내 미리보기 라이브 호출, AES-GCM). LINA refresh token 은 후속 | auth-server Feature 1 SQL 확정 |
 
 ---
 
@@ -26,7 +27,7 @@
 | **MongoDB (BFF CRUD)** | `conversations`, `messages`(`sources` 내장), `feedbacks` | BFF 가 읽기/쓰기 | 본 문서 §3 의 정의 대상 |
 | **MongoDB (BFF 읽기 전용)** | `raw_pages`, `raw_attachments`, `attachment_texts`, `chunked_units`, `import_jobs`, `sync_logs` | BFF 는 조회만, 쓰기는 Ingestion/Sync Worker | RAG 파이프라인 입력 데이터 |
 | **MongoDB (RAG 파이프라인 전용)** | `inference_logs`, `audit_logs`, `qca_dataset` | RAG 파이프라인이 관리. BFF 접근 없음 | 본 문서 범위 밖 |
-| **MySQL (3단계)** | `users`(role 포함, §6.1), `user_tokens`, `user_space_acl` | Authorization Server 가 관리 | 2단계에서는 미사용. 3단계 도입 시 별도 정의. 별도 `admins` 테이블 계획은 `users.role` 컬럼으로 흡수(2026-06-02). |
+| **MySQL (3단계)** | `users`(role 포함, §6.1), `user_groups`(§6.3), `user_tokens`(§6.2) | Authorization Server 가 관리 | 2단계에서는 미사용. 별도 `admins` 테이블 계획은 `users.role` 로 흡수(2026-06-02). `groups` 는 로그인 시 Confluence `memberof` 로 조회해 **`user_groups`** 에 적재→JWT claim(`groupId`). **`user_space_acl`(스페이스 단위 권한 테이블) 미사용** — 페이지 ACL 은 Qdrant payload(ADR 0001 §2). |
 
 `backend/CLAUDE.md` §2.2 / §6 의 MongoDB 쓰기 금지 규칙은 위 두 번째 행(RAG 파이프라인 데이터)에 한정된다. 대화/피드백 컬렉션은 BFF 가 정상 CRUD 한다.
 
@@ -202,49 +203,75 @@
 
 | 컬럼 | 타입 | 필수 | 비고 |
 |---|---|---|---|
-| `user_id` | VARCHAR(64) **PK** | ✅ | Confluence accountId (예: `712020:91b5112c-...`). JWT `userId` claim 과 동일 식별자 |
-| `role` | ENUM(`USER`, `ADMIN`) | ✅ | 권한 역할. JWT `role` claim 의 **source of truth** (DB 단일). 기존 별도 `admins` 테이블 계획 흡수 |
-| `name` | VARCHAR(128) | — | 표시 이름 (Confluence 응답에서 받아 저장) |
-| `email` | VARCHAR(256) | — | 이메일 |
+| `user_key` | BINARY(16) **PK** | ✅ | 내부 PK. 앱이 UUID 생성 후 `UUID_TO_BIN` 으로 저장 |
+| `user_id` | VARCHAR(128) **UNIQUE** | ✅ | Confluence accountId (예: `712020:91b5112c-...`). 문서/JWT/RAG `/ml/query`/Qdrant `allowed_users` 의 `userId` 와 동일 식별자. **이메일 아님** |
+| `email` | VARCHAR(255) **UNIQUE** | ✅ | 로그인 이메일 |
+| `name` | VARCHAR(128) | — | 표시 이름 (Confluence 응답에서 저장) |
 | `profile_image_url` | VARCHAR(512) | — | |
+| `role` | ENUM(`USER`, `ADMIN`) | ✅ | 권한 역할. JWT `role` claim 의 **source of truth** (DB 단일). 별도 `admins` 테이블 흡수 |
+| `access_token` | VARCHAR(512) | ✅ | **LINA 발급** access token(세션). Confluence 토큰 아님(§6.2). LINA refresh token 은 후속 라운드 |
 | `last_login_at` | DATETIME (UTC) | — | OAuth callback 시 갱신 |
 | `created_at` | DATETIME (UTC) | ✅ | INSERT 시각 |
+| `updated_at` | DATETIME (UTC) | ✅ | 갱신 시각 (`ON UPDATE CURRENT_TIMESTAMP`) |
 
-샘플 행:
+> **`user_id`(=accountId) vs `email`:** `user_id` 는 Confluence accountId 로 문서·JWT·RAG 전반의 `userId` 다(이메일 아님). `email` 은 로그인 식별자. PK 는 내부 UUID(`user_key`)이며, 외부 식별자(`user_id`/`email`)에 각각 UNIQUE 를 둔다.
 
-| user_id | role | name | created_at |
-|---|---|---|---|
-| `712020:91b5112c-...` | `ADMIN` | yhlee | 2026-05-29 |
-| `712020:b5462b07-...` | `USER` | 신유진 | 2026-05-30 |
-| `712020:d54eba09-...` | `USER` | sunny | 2026-06-01 |
-
-**역할 결정 (auth-server Feature A)**
+**역할 결정 (auth-server)**
 
 - OAuth callback 에서 Confluence accountId 받음 → `SELECT role FROM users WHERE user_id = ?`
-- 행 없음 → `INSERT (..., role = 'USER')` 기본
-- 행 있음 → 그 `role` 사용
-- JWT `role` claim 으로 발급
-- **config 분기 없이 DB 단일 source** (YAML bootstrap 미사용)
+- 행 없음 → `INSERT (..., role = 'USER')` 기본 / 행 있음 → 그 `role` 사용
+- JWT `role` claim 으로 발급 — **config 분기 없이 DB 단일 source**(YAML bootstrap 미사용)
 
 **최초 admin seed (PoC)**
 
-첫 배포 시 마이그레이션 스크립트(예: `V001__seed_initial_admin.sql`)에 admin accountId 를 **하드코딩 INSERT** 한다(`role='ADMIN'`). 운영 진입 시 Flyway placeholder + env 외부화 가능. 추가 admin 권한 부여/박탈은 DB UPDATE/DELETE 또는 향후 admin 관리 API 로 처리.
+첫 배포 마이그레이션에 admin 을 **하드코딩 INSERT**(`role='ADMIN'`). `user_key` 는 `UUID_TO_BIN(UUID())`, NOT NULL 컬럼(`user_id`/`email`/`access_token`)을 함께 지정한다. `access_token` 은 첫 로그인 전이라 placeholder 로 넣고 로그인 시 갱신한다(또는 컬럼 nullable 검토).
 
 ```sql
--- V001__seed_initial_admin.sql (예시)
-INSERT INTO users (user_id, role, name, created_at)
-VALUES ('712020:91b5112c-...', 'ADMIN', 'yhlee', NOW());
+-- 예시
+INSERT INTO users (user_key, user_id, email, name, role, access_token)
+VALUES (UUID_TO_BIN(UUID()), '712020:91b5112c-...', 'admin@example.com', 'yhlee', 'ADMIN', 'SEED_PLACEHOLDER');
 ```
 
-**별도 `admins` 테이블 미사용** — §1 의 MySQL 행에서도 admins 항목 제거. `users.role` 컬럼으로 흡수(2026-06-02 결정).
+**별도 `admins` 테이블 미사용** — `users.role` 컬럼으로 흡수(2026-06-02 결정).
 
 인덱스:
 
 | 인덱스 | 정의 | 목적 |
 |---|---|---|
-| PK | `user_id` | OAuth callback 시 accountId lookup |
-| (선택) `idx_users_role` | `(role, last_login_at)` | admin 목록 조회·활성 사용자 정렬용(운영 시) |
+| PK | `user_key` | 내부 조인 키(`user_groups`/`user_tokens` FK 대상) |
+| `uk_users_user_id` UNIQUE | `user_id` | OAuth callback 시 accountId lookup·중복 계정 방지 |
+| `uk_users_email` UNIQUE | `email` | 이메일 로그인 식별·중복 방지 |
 
-### 6.2 (예정) `user_tokens`, `user_space_acl`
+### 6.2 `user_tokens`
 
-Confluence OAuth access/refresh token 암호화 저장 + per-user space ACL (3단계 Feature A). 컬럼 구조는 3단계 착수 시 정의 — `backend/auth-server/current-plans.md` Feature A 참조.
+Confluence OAuth access/refresh token + `cloud_id` 저장. **앱 내 Confluence 페이지 미리보기**(라이브 REST 호출)에 사용한다 — 챗(`/ml/query`)은 토큰 불필요. 사용자당 1:1.
+
+| 컬럼 | 타입 | 필수 | 비고 |
+|---|---|---|---|
+| `user_key` | BINARY(16) **PK**, FK→`users` | ✅ | 1:1. `ON DELETE CASCADE` |
+| `confluence_access_token_enc` | VARBINARY(2048) | ✅ | Confluence OAuth access token. **AES-GCM 암호화**(평문 금지) |
+| `confluence_refresh_token_enc` | VARBINARY(2048) | ✅ | Confluence OAuth refresh token. **AES-GCM 암호화**. rotating |
+| `cloud_id` | VARCHAR(64) | ✅ | Confluence REST URL(`/ex/confluence/{cloudId}/...`) 구성용. 평문(민감 아님) |
+| `access_token_expires_at` | DATETIME (UTC) | ✅ | access 만료 시각. 임박 시 refresh 로 갱신 |
+| `created_at` / `updated_at` | DATETIME (UTC) | ✅ | |
+
+> Atlassian access token 이 길어 암호화 컬럼은 `VARBINARY(2048)`. 토큰은 OAuth callback 시 적재하고, 만료 임박이면 refresh 로 갱신(rotating — 저장소 덮어쓰기, 이전 값 미보존).
+
+### 6.3 `user_groups`
+
+사용자 Confluence group 멤버십(1:N). 로그인(OAuth callback) 시 `memberof` API 로 조회해 적재한다. JWT `groups`·Qdrant `allowed_groups` 와 동일 vocabulary(`groupId`).
+
+| 컬럼 | 타입 | 필수 | 비고 |
+|---|---|---|---|
+| `user_key` | BINARY(16), FK→`users` | ✅ | `ON DELETE CASCADE` |
+| `group_id` | VARCHAR(128) | ✅ | Confluence groupId (`memberof` 응답 `results[].id`). group `name` 아님 |
+
+인덱스:
+
+| 인덱스 | 정의 | 목적 |
+|---|---|---|
+| PK(복합) | `(user_key, group_id)` | 동일 group 중복 방지 + `user_key` 기준 멤버십 조회 |
+
+> groups 를 매 요청 `memberof` 재조회하는 대신 본 테이블에 영속(로그인 시 적재). 스페이스 단위 `user_space_acl` 은 미사용 — 페이지-단위 ACL 은 수집 단계 Qdrant payload (`docs/adr/0001-page-level-acl-source.md` §2).
+
+> **`user_space_acl` 미사용 (2026-06-09 결정).** 사용자 `groups` 는 인증 시 Confluence group 멤버십 API(`memberof`)로 조회해 JWT `groups` claim(**`groupId`**)에 적재하고, 페이지-단위 ACL 은 수집 단계 Qdrant payload(`allowed_groups`/`allowed_users`)에 저장한다 → RDB per-user space ACL 테이블 불필요 (`docs/adr/0001-page-level-acl-source.md` §2).
