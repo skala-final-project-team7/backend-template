@@ -23,7 +23,7 @@ RAG Pipeline 호출 시 다음 정보를 전달한다 (상세 계약: `docs/api-
 
 - 사용자 질문 텍스트 (`question`)
 - 대화 이력 (`history`, 최근 N턴) — `history[].role` 은 lowercase(`user`/`assistant`, LLM/OpenAI 표준, 저장값과 동일)
-- ACL 필터 정보 (`userId`=accountId, `groups`=**`groupId` 배열**, 인증 시 Confluence `memberof` 로 취득) — 빈 값이면 BFF 가 호출을 **차단**(fail-closed). Qdrant `allowed_groups` 와 동일 표기로 매칭됨 (`docs/adr/0001-page-level-acl-source.md` §2)
+- ACL 필터 정보 (`userId`=accountId, `groups`=**`groupId` 배열**, 인증 시 Confluence `memberof` 로 취득) — **`userId` 가 비면 BFF 차단**(fail-closed). **`groups` 빈 배열은 허용**(group 미소속 사용자도 `userId` 로 user-level/공개 페이지 매칭). Qdrant `allowed_groups` 와 동일 표기로 매칭됨 (`docs/adr/0001-page-level-acl-source.md` §2)
 - 대화방 ID (`conversationId`)
 - `stream: true` — 토큰 스트리밍 명시 (BFF 는 항상 `true` 로 호출)
 

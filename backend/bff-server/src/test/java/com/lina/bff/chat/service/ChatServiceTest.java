@@ -99,15 +99,14 @@ class ChatServiceTest {
   }
 
   @Test
-  @DisplayName("현재 사용자 ACL 이 비어 있으면 RAG 호출 없이 UNAUTHORIZED SSE error 이벤트로 종료한다")
-  void shouldRejectRagCallWhenAclMissing() {
+  @DisplayName("userId 가 비어 있으면 RAG 호출 없이 UNAUTHORIZED SSE error 이벤트로 종료한다")
+  void shouldRejectRagCallWhenUserIdMissing() {
     Conversation conversation = Conversation.builder().conversationId("conv-1").build();
     when(chatMessagePersistenceService.loadConversation("conv-1")).thenReturn(conversation);
     when(chatMessagePersistenceService.recentHistory("conv-1", 2)).thenReturn(List.of());
     when(chatMessagePersistenceService.saveUserMessage(conversation, "질문"))
         .thenReturn(Message.builder().conversationId("conv-1").role(MessageRole.user).build());
-    when(currentUserProvider.getUserId()).thenReturn("user-001");
-    when(currentUserProvider.getGroups()).thenReturn(List.of());
+    when(currentUserProvider.getUserId()).thenReturn("");
 
     chatService.relayRagQuery("conv-1", "질문", eventConsumer);
 
@@ -118,6 +117,26 @@ class ChatServiceTest {
     assertThat(event.event()).isEqualTo("error");
     assertThat(event.data().get("errorCode").asText()).isEqualTo("UNAUTHORIZED");
     assertThat(event.data().get("message").asText()).isEqualTo("RAG 호출에 필요한 ACL 정보가 없습니다.");
+  }
+
+  @Test
+  @DisplayName("groups 가 빈 배열이어도 userId 가 있으면 RAG 를 호출한다(group 미소속 사용자 허용)")
+  void shouldAllowRagCallWhenGroupsEmptyButUserIdPresent() {
+    Conversation conversation =
+        Conversation.builder().conversationId("conv-1").userId("acct").title("대화").build();
+    when(chatMessagePersistenceService.loadConversation("conv-1")).thenReturn(conversation);
+    when(chatMessagePersistenceService.recentHistory("conv-1", 2)).thenReturn(List.of());
+    when(chatMessagePersistenceService.saveUserMessage(conversation, "질문"))
+        .thenReturn(Message.builder().conversationId("conv-1").role(MessageRole.user).build());
+    when(currentUserProvider.getUserId()).thenReturn("712020:91b5112c-acct");
+    when(currentUserProvider.getGroups()).thenReturn(List.of());
+
+    chatService.relayRagQuery("conv-1", "질문", eventConsumer);
+
+    ArgumentCaptor<RagQueryCommand> commandCaptor = ArgumentCaptor.forClass(RagQueryCommand.class);
+    verify(ragClient).streamQuery(commandCaptor.capture(), any());
+    assertThat(commandCaptor.getValue().userId()).isEqualTo("712020:91b5112c-acct");
+    assertThat(commandCaptor.getValue().groups()).isEmpty();
   }
 
   @Test

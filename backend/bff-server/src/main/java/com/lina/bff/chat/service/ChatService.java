@@ -144,7 +144,9 @@ public class ChatService {
 
     String userId = currentUserProvider.getUserId();
     List<String> groups = currentUserProvider.getGroups();
-    if (userId == null || userId.isBlank() || groups == null || groups.isEmpty()) {
+    // fail-closed 는 userId 기준만 — groups 빈 배열은 허용한다(Confluence group 미소속 사용자도
+    // userId 로 user-level/공개 페이지가 매칭되므로). RagQueryCommand 가 null groups 를 빈 배열로 정규화.
+    if (userId == null || userId.isBlank()) {
       publishUnauthorizedAclError(eventConsumer);
       return;
     }

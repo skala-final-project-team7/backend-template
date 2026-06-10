@@ -1,7 +1,6 @@
 package com.lina.bff.rag.client.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
 
 /**
@@ -27,7 +26,7 @@ import java.util.List;
 public record RagQueryCommand(
     @NotBlank String question,
     @NotBlank String userId,
-    @NotEmpty List<String> groups,
+    List<String> groups,
     String conversationId,
     List<HistoryMessage> history,
     boolean stream) {
@@ -37,7 +36,8 @@ public record RagQueryCommand(
    *
    * @param question 사용자 자연어 질문
    * @param userId ACL pre-filtering 에 사용할 사용자 식별자
-   * @param groups ACL pre-filtering 에 사용할 사용자 그룹 목록. 빈 배열은 ChatService 의 fail-closed 게이트에서 차단된다.
+   * @param groups ACL pre-filtering 에 사용할 사용자 그룹(groupId) 목록. **빈 배열 허용**(group 미소속 사용자도 userId 로
+   *     매칭) — fail-closed 는 userId 기준만(2026-06-10).
    * @param conversationId 대화 컨텍스트 식별자
    * @param history RAG 에 전달할 최근 대화 이력. role 값은 저장값 그대로 user/assistant lowercase 를 사용한다.
    * @param stream BFF 는 SSE 스트리밍을 위해 항상 true 로 전달한다.
