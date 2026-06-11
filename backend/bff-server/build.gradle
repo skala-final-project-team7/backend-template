@@ -28,6 +28,7 @@ dependencies {
     implementation 'org.springframework.cloud:spring-cloud-starter-gateway-mvc'
 
     implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-amqp'
 
     // 대화/메시지/피드백 영속 (MongoDB). MySQL/JPA 는 3단계의 users/tokens/ACL 도입 시 추가
     implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
