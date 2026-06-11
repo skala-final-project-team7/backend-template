@@ -43,6 +43,30 @@ class AuthAdminKeyClientTest {
                     true)));
   }
 
+  @Test
+  @DisplayName("Admin Key deactivate 내부 API 를 adminUserId/jobId 로 호출한다")
+  void shouldCallDeactivateInternalApi() {
+    wireMock.stubFor(
+        post(urlEqualTo("/internal/admin/key/deactivate")).willReturn(aResponse().withStatus(200)));
+
+    AuthAdminKeyClient client = new AuthAdminKeyClient(buildRestClient());
+
+    client.deactivate("admin-account-id", "job-1");
+
+    wireMock.verify(
+        postRequestedFor(urlEqualTo("/internal/admin/key/deactivate"))
+            .withRequestBody(
+                equalToJson(
+                    """
+                    {
+                      "adminUserId": "admin-account-id",
+                      "jobId": "job-1"
+                    }
+                    """,
+                    true,
+                    true)));
+  }
+
   private RestClient buildRestClient() {
     return RestClient.builder()
         .baseUrl(wireMock.baseUrl())

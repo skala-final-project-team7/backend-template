@@ -568,7 +568,7 @@ Credential 처리 원칙:
 - [x] Data Ingestion Worker 가 `adminUserId` 로 auth-server 내부 credential 조회 API 에서 admin OAuth accessToken + cloudId + siteUrl 을 함께 조회하는 계약 확인 — `GET /internal/auth/admin-confluence-credential?adminUserId={id}` → `{ accessToken, cloudId, siteUrl, expiresAt }`, `refreshToken` 미반환, admin API Token 미반환 (`backend/auth-server/current-plans.md` Feature 5, `docs/api-spec.md` §2-5, ADR 0001 §2.1)
 - [x] completion event consumer 구현 계획 수립: RabbitMQ completion event DTO 는 `jobId`, `adminUserId`, `mode`, `status`, `completedAt`, `errorCode`, `message` 로 정의하고, BFF consumer 는 `COMPLETED`/`FAILED` event 를 consume한 뒤 auth-server `POST /internal/admin/key/deactivate` 에 `jobId`/`adminUserId` 를 전달해 Admin Key deactivate 를 위임한다. 성공 또는 idempotent 완료 확인 후 ack 하는 방향이며, 중복 처리·durable queue·retry/DLQ 세부 정책은 아래 후속 체크리스트에서 별도 확정한다. (`docs/api-spec.md` §2-2, ADR 0001 §2.1, `backend/auth-server/current-plans.md` Feature 6)
   - [x] completion event DTO 구현 (`jobId`, `adminUserId`, `mode`, `status`, `completedAt`, `errorCode`, `message`)
-  - [ ] auth-server Admin Key deactivate client 구현 (`POST /internal/admin/key/deactivate`, body `jobId`/`adminUserId`)
+  - [x] auth-server Admin Key deactivate client 구현 (`POST /internal/admin/key/deactivate`, body `jobId`/`adminUserId`)
   - [ ] RabbitMQ completion event consumer 구현 (`COMPLETED`/`FAILED` event consume → deactivate client 호출)
   - [ ] consumer ack 경계 구현: deactivate 성공 또는 idempotent 완료 확인 후 ack, 처리 실패 시 후속 retry/DLQ 정책으로 연결
   - [ ] consumer 단위 테스트 추가: 정상 completion event 수신 시 deactivate 호출, `COMPLETED`/`FAILED` 외 status 처리, 필수 필드 누락 처리
