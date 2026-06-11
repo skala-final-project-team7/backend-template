@@ -612,7 +612,7 @@ Request Body 없음 (admin API Token 은 서버 측에서 사용).
 1. BFF 는 ADMIN 권한을 검증하고 `jobId` 를 생성한다.
 2. BFF 는 auth-server 내부 `POST /internal/admin/key/activate` 로 Atlassian Admin Key 를 활성화한다(이미 유효하면 idempotent 하게 성공 처리).
 3. BFF 또는 Data Ingestion Pipeline 은 RabbitMQ 에 ingest job 을 발행한다. payload 는 `jobId`, `adminUserId`, `mode`, `requestedAt` 등 식별/상태 정보만 포함한다.
-4. Data Ingestion Worker 는 job 을 consume한 뒤 auth-server 내부 credential 조회 API 로 `adminUserId` 기준 **admin OAuth accessToken + cloudId** 를 함께 조회한다.
+4. Data Ingestion Worker 는 job 을 consume한 뒤 auth-server 내부 credential 조회 API 로 `adminUserId` 기준 **admin OAuth accessToken + cloudId + siteUrl** 를 함께 조회한다.
 5. Data Ingestion Worker 는 Confluence REST 호출 시 `https://api.atlassian.com/ex/confluence/{cloudId}/wiki/api/v2/...` 게이트웨이 URL(cloudId 로 구성) 로 `Authorization: Bearer {admin OAuth accessToken}` + `Atl-Confluence-With-Admin-Key: true` 헤더를 사용한다.
 6. 완료/실패 시 Data Ingestion Pipeline 은 RabbitMQ completion event 를 발행한다. BFF consumer 가 event 를 consume해 auth-server `POST /internal/admin/key/deactivate` 를 호출한다.
 7. BFF consumer 는 `jobId` 기준 중복 completion event 를 idempotent 하게 처리한다.
@@ -757,7 +757,7 @@ Request Body 없음 (admin API Token 은 서버 측에서 사용).
 - 스페이스 스코프 파라미터 **없음** — admin Key 로 admin 이 접근 가능한 전체 스페이스를 ML 이 iterate 하며 수집 (2026-06-04 결정, `/api/admin/ingest` 와 동일).
 - `jobId`: BFF 가 생성하거나 Data Ingestion Pipeline 이 생성해 반환하는 작업 식별자. completion event, status 조회, Admin Key deactivate idempotency 의 기준이다.
 - `adminUserId`: auth-server 에서 admin 의 Confluence OAuth credential 을 조회하기 위한 사용자 식별자. credential 자체가 아니다.
-- `accessToken`·`cloudId` 등 credential 은 본문에 포함하지 않는다. Data Ingestion Worker 는 job consume 후 auth-server 내부 credential 조회 API 로 **admin OAuth accessToken + cloudId** 를 함께 조회한다. Confluence REST 호출에는 `https://api.atlassian.com/ex/confluence/{cloudId}/wiki/api/v2/...` 게이트웨이 URL(cloudId 로 구성) 로 `Authorization: Bearer {admin OAuth accessToken}` + `Atl-Confluence-With-Admin-Key: true` 를 사용한다(Admin Key 는 §1-4 ① 에서 admin API Token 으로 사전 활성화).
+- `accessToken`·`cloudId` 등 credential 은 본문에 포함하지 않는다. Data Ingestion Worker 는 job consume 후 auth-server 내부 credential 조회 API 로 **admin OAuth accessToken + cloudId + siteUrl** 를 함께 조회한다. Confluence REST 호출에는 `https://api.atlassian.com/ex/confluence/{cloudId}/wiki/api/v2/...` 게이트웨이 URL(cloudId 로 구성) 로 `Authorization: Bearer {admin OAuth accessToken}` + `Atl-Confluence-With-Admin-Key: true` 를 사용한다(Admin Key 는 §1-4 ① 에서 admin API Token 으로 사전 활성화).
 
 > **RabbitMQ job payload 원칙:** `/ml/ingest` HTTP 호출이 내부적으로 MQ job 을 발행하든 BFF 가 직접 RabbitMQ 에 발행하든, MQ payload 는 작업 식별/상태 정보만 포함한다. `cloudId` 는 payload 로 전달하지 않고 auth-server 내부 credential 조회 응답에서 admin OAuth `accessToken` 과 함께 반환된다.
 
@@ -859,7 +859,7 @@ ML 서버는 책임이 다른 두 파이프라인으로 분리되어 있으며, 
 | ------ | --------------------------------------------------------------------- |
 | Method | `GET`                                                                 |
 | URL    | `/internal/auth/admin-confluence-credential?adminUserId={adminUserId}` |
-| 설명   | admin 의 Confluence **OAuth** `accessToken` + `cloudId` 를 함께 조회 (콘텐츠 조회용) |
+| 설명   | admin 의 Confluence **OAuth** `accessToken` + `cloudId` + `siteUrl` 을 함께 조회 (콘텐츠 조회·출처 URL 정규화용) |
 
 **Request**
 
@@ -873,6 +873,7 @@ ML 서버는 책임이 다른 두 파이프라인으로 분리되어 있으며, 
 {
   "accessToken": "<admin-oauth-access-token>",
   "cloudId": "11111111-2222-3333-4444-555555555555",
+  "siteUrl": "https://your-site.atlassian.net",
   "expiresAt": "2026-06-05T20:00:00+09:00"
 }
 ```
@@ -880,7 +881,8 @@ ML 서버는 책임이 다른 두 파이프라인으로 분리되어 있으며, 
 - `refreshToken` 은 응답하지 않는다.
 - auth-server 는 `adminUserId` 로 사용자/토큰 레코드를 조회하고 `users.role == ADMIN` 을 확인한다.
 - access token 이 만료됐거나 만료 임박이면 auth-server 가 저장된 refresh token 으로 Atlassian token refresh 를 수행하고 DB(`user_tokens`)를 최신 access/refresh token 으로 갱신한 뒤 응답한다.
-- `cloudId` 는 RabbitMQ payload 가 아니라 이 응답에서 `accessToken` 과 함께 반환된다.
+- `accessToken`·`cloudId` 는 `user_tokens` 에서, **`siteUrl`(JSON) 은 `admin_atlassian_credential.site_url`(DB 컬럼, §db-schema 6.4)**에서 로드해 함께 반환한다. RabbitMQ payload 로는 전달하지 않는다.
+- **`siteUrl`**(`https://{site}.atlassian.net`)은 ingestion 이 출처 링크(`_links.webui` 상대경로 → absolute)를 정규화해 Qdrant `webui_link`/RAG `sources[].url` 에 쓰는 값. secret 아님. **콘텐츠 조회 REST 호출에는 쓰지 않는다**(그쪽은 cloudId 게이트웨이). admin-key 관리(§1-4 ①)에 쓰는 `site_url` 컬럼 값을 별도 저장 없이 그대로 전달.
 - Data Ingestion Worker 는 Confluence REST 호출 시 `https://api.atlassian.com/ex/confluence/{cloudId}/wiki/api/v2/...` 게이트웨이 URL(cloudId 로 구성) 로 `Authorization: Bearer {admin OAuth accessToken}` + `Atl-Confluence-With-Admin-Key: true` 헤더를 사용한다(Admin Key 는 §1-4 ① 에서 admin API Token 으로 사전 활성화).
 
 **Error**
@@ -919,7 +921,7 @@ ML 서버는 책임이 다른 두 파이프라인으로 분리되어 있으며, 
   ├─ POST   /api/messages/{id}/feedback              → BFF → DB 피드백 저장(upsert)
   ├─ POST   /api/admin/key/activate                  → BFF → Auth Server → Atlassian POST /api/v2/admin-key (60분, 수동/테스트용)
   ├─ POST   /api/admin/ingest                        → BFF: key 활성 미확인 시 자동 activate → RabbitMQ ingest job 발행 또는 POST /ml/ingest
-  │                                                    ├─ Data Ingestion Worker → Auth Server 내부 credential 조회(OAuth accessToken+cloudId) → Confluence gateway(Bearer + Admin Key 헤더)
+  │                                                    ├─ Data Ingestion Worker → Auth Server 내부 credential 조회(OAuth accessToken+cloudId+siteUrl) → Confluence gateway(Bearer + Admin Key 헤더)
   │                                                    └─ RabbitMQ completion event → BFF consumer → Auth Server Admin Key deactivate(보안)
   ├─ GET    /api/admin/ingest/status/{jobId}         → BFF → GET /ml/ingest/status/{jobId}
   │
