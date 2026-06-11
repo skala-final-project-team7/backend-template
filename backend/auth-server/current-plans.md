@@ -152,12 +152,12 @@
 - `jwt/{JwtProvider,JwtProperties,JwtClaims}.java`, `jwt/JwtProviderTest.java`
 
 #### 체크리스트
-- [ ] Claim 셋: `userId`(Confluence accountId), `groups`, `role`(`USER`/`ADMIN`), `iss`, `iat`, `exp` — **camelCase**(`backend/rules/auth.md` §2). `groups` 값은 Feature 3 callback 이 AUTH-05(`memberof`)로 조회해 전달(JwtProvider 는 입력받아 서명만). **group 식별자 = `groupId`**(`results[].id`, 2026-06-09 확정 — RAG Qdrant `allowed_groups` 와 동일 표기, `name` 아님)
-- [ ] 서명 알고리즘·키: **RS256**(확정 2026-06-09 — auth-server 개인키 서명, BFF 는 공개키만 검증). PEM/키 위치는 `${...}` env
-- [ ] access JWT 발급(TTL `${...}`) + LINA refresh token 발급/검증 유틸
-- [ ] 검증 메서드(서명·만료·issuer) — BFF JWT 검증 필터와 **동일 Claim·키 계약**(`auth-server/CLAUDE.md` §3.2)
-- [ ] `JwtProviderTest`: 발급→검증 라운드트립, 만료/서명위조 거부, Claim 값 보존
-- [ ] **모순 정정**: 기존 plan Feature C "본 라운드는 인터페이스만" → login/callback(Feature 3)이 실제 JWT 를 발급해야 하므로 **본 Feature 에서 실제 발급까지 구현**한다
+- [x] Claim 셋: `userId`(Confluence accountId), `groups`, `role`(`USER`/`ADMIN`), `iss`, `iat`, `exp` — **camelCase**(`backend/rules/auth.md` §2). `groups` 값은 Feature 3 callback 이 AUTH-05(`memberof`)로 조회해 전달(JwtProvider 는 입력받아 서명만). **group 식별자 = `groupId`**(`results[].id`, 2026-06-09 확정 — RAG Qdrant `allowed_groups` 와 동일 표기, `name` 아님) — ✅ 2026-06-11 (`JwtClaims` record + 와이어 claim 이름 테스트로 고정. access 는 계약 claim 셋 그대로, 빈 `groups` 허용)
+- [x] 서명 알고리즘·키: **RS256**(확정 2026-06-09 — auth-server 개인키 서명, BFF 는 공개키만 검증). PEM/키 위치는 `${...}` env — ✅ 2026-06-11 (`JwtProperties` — `LINA_JWT_PRIVATE_KEY`/`PUBLIC_KEY` PEM env, 미주입 시 fail-fast)
+- [x] access JWT 발급(TTL `${...}`) + LINA refresh token 발급/검증 유틸 — ✅ 2026-06-11 (refresh 도 RS256 JWT — `userId`+`tokenType=refresh` claim, 자체 만료. ✅ RS256 JWT 길이 이슈 해소(2026-06-11): `users.access_token`/`refresh_token` VARCHAR(512)→**2048** — `V001` 직접 수정(미적용 단계) + Entity·`docs/db-schema.md` §6.1 정합, 512 초과 토큰 저장 테스트 추가)
+- [x] 검증 메서드(서명·만료·issuer) — BFF JWT 검증 필터와 **동일 Claim·키 계약**(`auth-server/CLAUDE.md` §3.2) — ✅ 2026-06-11 (`verifyAccessToken`/`verifyRefreshToken`, 토큰 타입 교차 사용 거부 포함)
+- [x] `JwtProviderTest`: 발급→검증 라운드트립, 만료/서명위조 거부, Claim 값 보존 — ✅ 2026-06-11 (11건 — 라운드트립·camelCase 와이어 이름·TTL·빈 groups·만료/위조/issuer 거부·타입 교차 거부·키 미주입 fail-fast)
+- [x] **모순 정정**: 기존 plan Feature C "본 라운드는 인터페이스만" → login/callback(Feature 3)이 실제 JWT 를 발급해야 하므로 **본 Feature 에서 실제 발급까지 구현**한다 — ✅ 2026-06-11 (실제 발급·검증 구현 완료)
 
 ---
 

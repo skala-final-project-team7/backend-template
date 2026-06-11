@@ -71,6 +71,26 @@ class UserRepositoryTest {
   }
 
   @Test
+  @DisplayName("RS256 JWT 실측 길이(512자 초과)의 LINA 세션 access/refresh 토큰이 저장된다")
+  void shouldStoreRealisticLengthSessionTokens() {
+    String longAccessJwt = "a".repeat(1500);
+    String longRefreshJwt = "r".repeat(700);
+    userRepository.saveAndFlush(
+        User.builder()
+            .userId("712020:abc")
+            .email("admin@example.com")
+            .role(UserRole.USER)
+            .accessToken(longAccessJwt)
+            .refreshToken(longRefreshJwt)
+            .build());
+    entityManager.clear();
+
+    User found = userRepository.findByUserId("712020:abc").orElseThrow();
+    assertThat(found.getAccessToken()).isEqualTo(longAccessJwt);
+    assertThat(found.getRefreshToken()).isEqualTo(longRefreshJwt);
+  }
+
+  @Test
   @DisplayName("동일 user_id 의 중복 INSERT 는 거부된다(uk_users_user_id)")
   void shouldRejectDuplicateUserId() {
     userRepository.saveAndFlush(user("712020:abc", "first@example.com"));

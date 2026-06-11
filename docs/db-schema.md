@@ -19,6 +19,7 @@
 | 2026-06-10 | MySQL 3단계 스키마를 auth-server 실제 마이그레이션(`V001`~`V003`)에 맞춰 **재정의**(§6). `users` PK=`user_key`(BINARY16 UUID), `user_id`=Confluence accountId(UNIQUE, JWT/RAG `userId`), `email`(UNIQUE) 분리, LINA `access_token` 컬럼. `groups`→**`user_groups`**(1:N, `group_id`=groupId, 로그인 시 `memberof` 적재). Confluence OAuth access/refresh + `cloud_id`→**`user_tokens`**(앱 내 미리보기 라이브 호출, AES-GCM). LINA refresh token 은 후속 | auth-server Feature 1 SQL 확정 |
 | 2026-06-11 | **`admin_atlassian_credential`** 테이블 신설(§6.4, `V004`). admin-key 관리(activate/deactivate) 전용 — `site_url` + `admin_api_token_enc`(AES-GCM, Basic auth). ingestion 콘텐츠 조회는 OAuth Bearer+게이트웨이(`user_tokens`)라 자격증명·URL 체계가 달라 분리. Feature 0 게이트(OAuth2 앱은 admin-key 접근 불가) + 하이브리드 모델(admin-key=API Token/site URL, 콘텐츠 조회=OAuth Bearer/gateway) 확정 반영 | auth-server Feature 0 게이트·#6 |
 | 2026-06-11 | `users` 에 **`refresh_token`**(VARCHAR(512), NULL) 컬럼 선반영(§6.1) — **`V001` 직접 수정**. LINA 세션 refresh token 저장용, 발급/회전 로직은 Feature 4. ⚠️ 이미 적용한 로컬 DB 는 체크섬 불일치 → 재생성(drop&재마이그레이션) 또는 `flyway repair` 필요 | LINA refresh 컬럼 선반영 요청 |
+| 2026-06-11 | `users.access_token`/`refresh_token` **VARCHAR(512) → VARCHAR(2048)** 확장(§6.1) — **`V001` 직접 수정**(미적용 단계라 ALTER 대신 원본 수정). RS256 JWT 는 서명만 base64 ~342자라 groups 포함 access JWT 가 512 초과(Feature 2 발급 구현 중 실측). Confluence 토큰 컬럼(`VARBINARY(2048)`)과 대칭. ⚠️ 이미 적용한 로컬 DB 는 체크섬 불일치 → 재생성 또는 `flyway repair` | auth-server Feature 2 — RS256 토큰 길이 |
 
 ---
 
@@ -211,8 +212,8 @@
 | `name` | VARCHAR(128) | — | 표시 이름 (Confluence 응답에서 저장) |
 | `profile_image_url` | VARCHAR(512) | — | |
 | `role` | ENUM(`USER`, `ADMIN`) | ✅ | 권한 역할. JWT `role` claim 의 **source of truth** (DB 단일). 별도 `admins` 테이블 흡수 |
-| `access_token` | VARCHAR(512) | ✅ | **LINA 발급** access token(세션). Confluence 토큰 아님(§6.2) |
-| `refresh_token` | VARCHAR(512) | — | **LINA 발급** refresh token(세션 갱신). 컬럼 선반영(`V001`, NULL 허용) — 발급/회전(rotating)은 Feature 4 |
+| `access_token` | VARCHAR(2048) | ✅ | **LINA 발급** access token(세션, RS256 JWT). Confluence 토큰 아님(§6.2). 512→2048 확장(2026-06-11, RS256 길이) |
+| `refresh_token` | VARCHAR(2048) | — | **LINA 발급** refresh token(세션 갱신, RS256 JWT). 컬럼 선반영(`V001`, NULL 허용) — 발급/회전(rotating)은 Feature 4 |
 | `last_login_at` | DATETIME (UTC) | — | OAuth callback 시 갱신 |
 | `created_at` | DATETIME (UTC) | ✅ | INSERT 시각 |
 | `updated_at` | DATETIME (UTC) | ✅ | 갱신 시각 (`ON UPDATE CURRENT_TIMESTAMP`) |

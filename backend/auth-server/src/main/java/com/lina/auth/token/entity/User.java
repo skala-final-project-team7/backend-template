@@ -65,12 +65,12 @@ public class User {
   @Column(name = "role", nullable = false, length = 16)
   private UserRole role;
 
-  /** LINA 발급 access token(세션). Confluence 토큰은 UserToken 에 암호화 보관한다. */
-  @Column(name = "access_token", nullable = false, length = 512)
+  /** LINA 발급 access token(세션, RS256 JWT). Confluence 토큰은 UserToken 에 암호화 보관한다. */
+  @Column(name = "access_token", nullable = false, length = 2048)
   private String accessToken;
 
-  /** LINA 발급 refresh token(세션 갱신). V001 선반영 컬럼 — 발급/회전은 Feature 4. */
-  @Column(name = "refresh_token", length = 512)
+  /** LINA 발급 refresh token(세션 갱신, RS256 JWT). V001 선반영 컬럼 — 발급/회전은 Feature 4. */
+  @Column(name = "refresh_token", length = 2048)
   private String refreshToken;
 
   /** 최근 로그인 시각(UTC). OAuth callback 시 갱신된다. */
