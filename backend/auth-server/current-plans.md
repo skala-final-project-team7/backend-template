@@ -11,13 +11,13 @@
 | 단계 | 범위 | 상태 |
 |---|---|---|
 | 1단계 | 프로젝트 초기 셋업 (패키지 구조, 설정, 공통 응답/예외) | ✅ 완료 (2026-05-15, `backend/bff-server/current-plans.md` 1단계 공동 작업) |
-| 3단계 | Confluence OAuth 2.0 Authorization Code Flow + Access/Refresh Token 암호화 저장 + JWT 발급 | 📝 Plan 확정 — 착수 전 결정 5건 완료 (2026-06-09), 코드 착수 대기 |
+| 3단계 | Confluence OAuth 2.0 Authorization Code Flow + Access/Refresh Token 암호화 저장 + JWT 발급 | 📝 Plan 확정 — Feature 0 게이트 종료(2026-06-10, **하이브리드** 자격증명: admin-key=API Token/site URL, 콘텐츠=OAuth/gateway), 착수 전 결정 6건 전부 확정(#6 보관=별도 테이블 `admin_atlassian_credential`, 2026-06-11). 전 Feature 코드 착수 가능 |
 
 ---
 
 # 3단계 — Authorization Server
 
-> 착수 전 **§착수 전 결정 필요** 의 5개 항목을 먼저 확정한다. 참조: `backend/rules/auth.md`, `backend/auth-server/CLAUDE.md`, `docs/api-spec.md` §4-1·§2-5, `docs/db-schema.md` §6, `docs/adr/0001-page-level-acl-source.md`.
+> 착수 전 **§착수 전 결정 필요** 의 항목을 먼저 확정한다(1~6 전부 확정 — #6 admin API Token 보관 = 별도 테이블 `admin_atlassian_credential`, 2026-06-11). 참조: `backend/rules/auth.md`, `backend/auth-server/CLAUDE.md`, `docs/api-spec.md` §4-1·§2-5, `docs/db-schema.md` §6, `docs/adr/0001-page-level-acl-source.md`.
 
 ## 작업 요약 (credential payload 미포함, 2026-06-05 갱신)
 
@@ -51,7 +51,7 @@
 
 - **`offline_access` scope 필수** — refresh_token 발급 조건. authorize 의 `scope` 에 포함한다.
 - **Rotating Refresh Token** — 갱신 시 기존 refresh 가 무효화되고 새 값이 발급된다 → **MySQL 암호화 저장소에 반드시 덮어쓰기**하고 이전 값은 재사용 금지.
-- **scope 충분성 (※ 검증 TODO)** — 노트의 `read:confluence-content.summary` / `...-space.summary` 는 요약 수준이라 **RAG 본문·첨부 수집에 부족할 수 있다**. 실제 필요한 content/attachment 읽기 scope 를 공식 문서로 확정한다.
+- **scope 충분성 (✅ 확정 2026-06-10, 공식 문서)** — 요약 scope 는 본문 미포함이라 부족. 필요 scope: `read:confluence-content.all`(본문), `readonly:content.attachment:confluence`(첨부), `read:content.restriction:confluence`(restriction), `read:confluence-user`(AUTH-05 memberof), `read:confluence-groups`, `read:confluence-space.summary`, `offline_access`. classic·granular 혼용은 dev console 등록 시 재확인.
 - `client_secret` 등은 평문 노출 금지(환경변수/Secret), 토큰 로그 마스킹(Feature 7).
 
 ---
@@ -73,15 +73,15 @@
 ### 신규 — 코드 (`auth-server/src/main/java/com/lina/auth/` 하위)
 - `oauth/` — `AuthController`(`/api/auth/*`), `AtlassianOAuthClient`(AUTH-02/03/04 호출), `OAuthStateService`(state+mode 직렬화/검증), `dto/`(토큰 응답·콜백 등)
 - `jwt/` — `JwtProvider`(발급/검증), `JwtProperties`(서명키·TTL·issuer), `JwtClaims`
-- `token/` — `User`/`UserToken`/`UserGroup` Entity, `*Repository`, `TokenCipher`(AttributeConverter 암호화), `SessionService`(refresh 회전/무효화) — `groups` 는 **`user_groups` 테이블 영속**(로그인 시 AUTH-05 `memberof` 적재). 스페이스 단위 `user_space_acl` 미사용
-- `internal/` — `InternalCredentialController`(`/internal/auth/admin-confluence-credential`), `AdminKeyController`(`/internal/admin/key/{activate,deactivate}`), `AdminKeyClient`(Atlassian admin-key)
+- `token/` — `User`/`UserToken`/`UserGroup`/`AdminAtlassianCredential` Entity, `*Repository`, `TokenCipher`(AttributeConverter 암호화), `SessionService`(refresh 회전/무효화) — `groups` 는 **`user_groups` 테이블 영속**(로그인 시 AUTH-05 `memberof` 적재). 스페이스 단위 `user_space_acl` 미사용. `AdminAtlassianCredential`=admin-key 관리용 `site_url`+`admin_api_token_enc`(§6.4)
+- `internal/` — `InternalCredentialController`(`/internal/auth/admin-confluence-credential`, 콘텐츠 조회용 OAuth accessToken+cloudId 반환), `AdminKeyController`(`/internal/admin/key/{activate,deactivate}`), `AdminKeyClient`(Atlassian admin-key — `admin_atlassian_credential` 의 site URL+API Token Basic auth)
 - (`/api/users/me` 는 auth-server 가 아니라 **BFF** 가 MySQL `users` 를 읽어 서빙 — api-spec §3 흐름도 `users/me → BFF → DB`. §교차 모듈 참조)
 - `config/` — `SecurityConfig`(Bearer 검증 + 내부 API 호출자 제한), `RestClientConfig`(Atlassian RestClient)
 - `support/` — 공통 헬퍼(필요 시)
 
 ### 신규 — DB
-- `auth-server/src/main/resources/db/migration/` — Flyway `V001__create_users.sql`, `V002__create_user_groups.sql`, `V003__create_user_tokens.sql` **(작성 완료 2026-06-10)**. admin seed 는 후속(별도 마이그레이션)
-- `docs/db-schema.md` §6.1~§6.3 (`users`/`user_tokens`/`user_groups`) — **작성 완료 (2026-06-10)**
+- `auth-server/src/main/resources/db/migration/` — Flyway `V001__create_users.sql`, `V002__create_user_groups.sql`, `V003__create_user_tokens.sql` **(작성 완료 2026-06-10)**, `V004__create_admin_atlassian_credential.sql` **(작성 완료 2026-06-11 — admin-key 관리용 `site_url`+`admin_api_token_enc` 테이블)**. admin seed 는 후속(별도 마이그레이션)
+- `docs/db-schema.md` §6.1~§6.4 (`users`/`user_tokens`/`user_groups`/`admin_atlassian_credential`) — **작성 완료** (§6.1~§6.3 2026-06-10, §6.4 + `users.refresh_token` 선반영 2026-06-11)
 
 ### 신규 — 테스트 (`auth-server/src/test/java/com/lina/auth/` 하위)
 - `token/*RepositoryTest`(@DataJpaTest), `jwt/JwtProviderTest`, `oauth/AtlassianOAuthClientTest`(WireMock), `oauth/AuthControllerTest`(MockMvc), `internal/*ControllerTest`, `user/UserControllerTest`
@@ -108,11 +108,18 @@
 - 없음 (검증 노트만 본 plan §확정된 결정 / working-log 에 기록)
 
 #### 체크리스트
-- [ ] 수동으로 admin Confluence OAuth 3LO 1회 수행해 access_token 확보 (`audience=api.atlassian.com`, `offline_access` 포함)
-- [ ] OAuth Bearer + `Atl-Confluence-With-Admin-Key: true` 헤더로 **restriction 걸린 페이지** 1건 `curl` 호출
-- [ ] `200` → 단일 OAuth 자격증명 모델 확정(현 plan 유지). `401/403/404` → admin API Token 별도 보관 모델로 전환하고 Feature 1·5 보강(저장 컬럼/조회 응답에 API Token 추가)
-- [ ] AUTH-01 authorize 의 `scope` 가 RAG 본문/첨부 수집에 충분한지 함께 확인(요약 scope 부족 여부 — §구현 시 주의 TODO)
-- [ ] 결과를 §확정된 결정 표에 1행으로 기록(모델·scope)
+- [x] 모델 판정(`200`→OAuth 유지 / `401/403/404`→API Token 전환) — ✅ **admin API Token 모델 전환 확정(2026-06-10)**, §검증 노트
+- [x] AUTH-01 authorize 의 `scope` 충분성 확인 — ✅ 확정(2026-06-10), §구현 시 주의 'scope 충분성'
+- [x] 결과를 §확정된 결정 표에 1행으로 기록(모델·scope) — ✅ 'admin ingestion 자격증명 모델' 행
+
+> ✅ **게이트 종료(2026-06-10·하이브리드 정정 06-11)** — admin-key 관리 = admin API Token(Basic)/site URL, 콘텐츠 조회 = OAuth Bearer/gateway + Admin Key 헤더. (보관 #6: admin API Token=별도 테이블 `admin_atlassian_credential`, OAuth=`user_tokens`. 확정 2026-06-11.)
+
+#### 검증 노트 (2026-06-10)
+
+- **OAuth2 차단(공식 문서)**: v2 `/admin-key` 는 OAuth2/Forge/Connect 앱 접근 불가 → "저장 OAuth token 으로 admin-key 호출"(기존 Feature 6 전제) 성립 불가. 헤더 자체는 동작(Atlassian 팀 공식 답변 — 커뮤니티의 "미동작" 보고는 일반 사용자 댓글). TTL 기본 10분·`durationInMinutes` 최대 60분, Premium/Enterprise 전용.
+- **라이브 실측(2026-06-02 팀 테스트, 'Confluence Admin Key API 테스트 결과 정리')**: 우리 Premium 사이트에서 API Token Basic auth 로 activate(`POST {site}/wiki/api/v2/admin-key`) `200` → 헤더 포함 시 restriction 페이지 **404→200**(목록 232→237개) → deactivate(`DELETE`) `204`. 권한 없는 페이지는 403 아닌 404.
+- **하이브리드 모델 정정(2026-06-11)**: 게이트 결론(admin-key=API Token)은 **admin-key 관리 호출에만** 적용된다. 두 호출로 분리: **① admin-key 관리** = admin API Token + Basic + **site URL**(`{siteUrl}/wiki/api/v2/admin-key`), siteUrl·token 은 `admin_atlassian_credential` 테이블(§6.4) 보관. **② 콘텐츠 조회**(pages/spaces/restrictions) = admin **OAuth Bearer** + **게이트웨이**(`api.atlassian.com/ex/confluence/{cloudId}/...`) + Admin Key 헤더, OAuth·cloudId 는 `user_tokens` 보관. (앞서 콘텐츠 조회까지 API Token/Basic 으로 적은 것은 과잉정정 — 환원.) 두 base URL 은 통일하지 않는다.
+- **수집측 핸드오프(완료)**: page-level restriction 이 비어도 상위 folder/space 계층으로 제한될 수 있음(실측 5개 중 2개) → page restriction 만으로 ACL 을 만들면 over-permissive(유출 방향). effective 권한 산출은 ingestion 측에서 해결 예정(2026-06-10 확인, ADR 0001 영역) — auth-server 추가 작업 없음.
 
 > **왜 먼저인가:** 이 결과가 Feature 1(저장 스키마)·Feature 5(credential 조회 응답) 설계를 바꾼다. 코드 착수 전 게이트.
 
@@ -121,20 +128,21 @@
 ### Feature 1. MySQL 영속 계층 + 스키마 문서
 
 #### 변경 대상 파일
-- `build.gradle`, `application*.yml`, `docs/db-schema.md` §6.2
-- `db/migration/V001__create_users.sql`, `V002__create_user_groups.sql`, `V003__create_user_tokens.sql` **(작성 완료)**
-- `token/entity/{User,UserGroup,UserToken}.java`, `token/TokenCipher.java`(AttributeConverter), `token/repository/*Repository.java`
+- `build.gradle`, `application*.yml`, `docs/db-schema.md` §6.2·§6.4
+- `db/migration/V001__create_users.sql`, `V002__create_user_groups.sql`, `V003__create_user_tokens.sql`, `V004__create_admin_atlassian_credential.sql` **(작성 완료)**
+- `token/entity/{User,UserGroup,UserToken,AdminAtlassianCredential}.java`, `token/TokenCipher.java`(AttributeConverter), `token/repository/*Repository.java`
 - `token/repository/*RepositoryTest.java`
 
 #### 체크리스트
-- [x] `docs/db-schema.md` §6.1~§6.3 **작성 완료(2026-06-10)**: `users`(PK `user_key` UUID, `user_id`=accountId UNIQUE, `email` UNIQUE, `name`/`profile_image_url`/`role`/LINA `access_token`/`last_login_at`)·`user_groups`(`group_id`=groupId 영속, 복합 PK)·`user_tokens`(`user_key` FK, `confluence_access/refresh_token_enc` AES-GCM, `cloud_id`, `access_token_expires_at`). 스페이스 단위 `user_space_acl` 미사용 — 페이지 ACL 은 수집단계 Qdrant payload(ADR 0001 §2)
+- [x] `docs/db-schema.md` §6.1~§6.4 **작성 완료**: `users`(PK `user_key` UUID, `user_id`=accountId UNIQUE, `email` UNIQUE, `name`/`profile_image_url`/`role`/LINA `access_token`/**`refresh_token` 선반영**/`last_login_at`)·`user_groups`(`group_id`=groupId 영속, 복합 PK)·`user_tokens`(`user_key` FK, `confluence_access/refresh_token_enc` AES-GCM, `cloud_id`, `access_token_expires_at`)·**`admin_atlassian_credential`**(admin-key 관리용 `site_url`+`admin_api_token_enc`, §6.4). 스페이스 단위 `user_space_acl` 미사용 — 페이지 ACL 은 수집단계 Qdrant payload(ADR 0001 §2). (§6.1~§6.3 2026-06-10, §6.4+`refresh_token` 2026-06-11)
 - [ ] `build.gradle`: `spring-boot-starter-data-jpa`, `mysql-connector-j`, `flyway-core`/`flyway-mysql`, 테스트 H2(또는 Testcontainers MySQL)·WireMock
 - [ ] `application*.yml`: datasource/JPA/Flyway, 토큰 암호화 키, Atlassian client-id/secret/redirect-uri, JWT 키/issuer/TTL — **모두 `${...}` 환경변수, 평문 secret 금지**
-- [ ] `users`(PK `user_key` BINARY16 UUID, `user_id`=accountId UNIQUE, `email` UNIQUE, `role` ENUM, LINA `access_token`) / `user_groups`(`group_id`=groupId, 복합 PK·FK CASCADE) / `user_tokens`(`user_key` FK, `confluence_*_token_enc` 암호화, `cloud_id`) Entity + Repository
+- [ ] `users`(PK `user_key` BINARY16 UUID, `user_id`=accountId UNIQUE, `email` UNIQUE, `role` ENUM, LINA `access_token`/`refresh_token`) / `user_groups`(`group_id`=groupId, 복합 PK·FK CASCADE) / `user_tokens`(`user_key` FK, `confluence_*_token_enc` 암호화, `cloud_id`) / `admin_atlassian_credential`(`user_key` FK, `site_url`, `admin_api_token_enc` 암호화) Entity + Repository
 - [ ] **토큰 암호화**: `TokenCipher` AttributeConverter 로 access/refresh 컬럼 암호화 저장(평문 저장 금지). **AES-GCM + env 주입 키**(확정 2026-06-09, 운영 KMS/Vault)
-- [x] Flyway `V001` users·`V002` user_groups·`V003` user_tokens **작성 완료**. **admin seed**(`role='ADMIN'`, 하드코딩)는 **후속**(별도 마이그레이션 — `users.access_token` NOT NULL 이라 placeholder 또는 nullable 검토)
+- [x] Flyway `V001` users(`refresh_token` 선반영)·`V002` user_groups·`V003` user_tokens·**`V004` admin_atlassian_credential** **작성 완료**(V004 2026-06-11). **admin seed**(`role='ADMIN'`, 하드코딩)는 **후속**(별도 마이그레이션 — `users.access_token` NOT NULL 이라 placeholder 또는 nullable 검토)
 - [ ] `user_tokens`(Confluence 토큰) 조회/저장은 `user_key`(FK) 기준, refresh 회전 시 덮어쓰기(이전 값 미보존)
 - [ ] `@DataJpaTest`(H2/Testcontainers): users upsert, role lookup, 토큰 암호화 라운드트립(저장값이 평문이 아님), 만료시각 조회
+- [ ] **(Feature 0·#6 반영)** admin-key 관리 credential 보관 — 별도 테이블 `admin_atlassian_credential`(`site_url`+`admin_api_token_enc`, `V004` CREATE, AES-GCM). `AdminAtlassianCredential` Entity + Repository, `TokenCipher` 재사용. (콘텐츠 조회용 OAuth 토큰·cloudId 는 `user_tokens` 그대로 — admin API Token 과 분리.) 게이트웨이 base URL 은 cloudId 로 런타임 구성
 
 ---
 
@@ -161,7 +169,7 @@
 
 #### 체크리스트
 - [ ] `GET /api/auth/login` — Atlassian authorize 로 `302` 리다이렉트(Wrapper 미적용). `state`(CSRF) 생성·저장, **`mode`/`returnTo` 를 `state` 에 직렬화**(서명 state 또는 서버 세션). `returnTo` 는 **내부 경로만** 허용(오픈 리다이렉트 방지) (`docs/api-spec.md` §4-1)
-- [ ] `GET /api/auth/callback` — `code`/`state` 검증 → AUTH-02 토큰 교환 → AUTH-04 `accessible-resources` 로 cloudId 조회 → **AUTH-05 `memberof` 로 groups(`groupId`=`results[].id`) 조회(페이징 처리)** → `users` upsert(없으면 `role='USER'`) + **`user_groups` 적재**(기존 멤버십 교체) → **Confluence** access/refresh + cloudId **암호화 저장**(`user_tokens`, Feature 1) → **LINA 세션 JWT 발급**(Feature 2, `userId`/`groups`/`role` claim) → `data: { accessToken, refreshToken, expiresAt }` (LINA refreshToken 은 후속 — 이번 단계 미고려)
+- [ ] `GET /api/auth/callback` — `code`/`state` 검증 → AUTH-02 토큰 교환 → AUTH-04 `accessible-resources` 로 cloudId 조회 → **AUTH-05 `memberof` 로 groups(`groupId`=`results[].id`) 조회(페이징 처리)** → `users` upsert(없으면 `role='USER'`) + **`user_groups` 적재**(기존 멤버십 교체) → **Confluence** access/refresh + cloudId **암호화 저장**(`user_tokens`, Feature 1) → **LINA 세션 JWT 발급**(Feature 2, `userId`/`groups`/`role` claim) → `data: { accessToken, refreshToken, expiresAt }` (LINA refreshToken 발급/회전은 Feature 4 — `users.refresh_token` 컬럼은 `V001` 선반영)
 - [ ] AUTH-05 groups 조회: `totalSize > limit`(기본 200) 이면 `start` 페이징으로 전량 수집. 조회 실패/빈 결과 시 정책 결정(빈 `groups` 허용 시 BFF fail-closed 로 RAG 차단되므로 — 로그인은 허용하되 질의 단계에서 차단되는 동작 명시)
 - [ ] **`mode=admin` 게이트**: state 의 mode 가 `admin` 인데 `users.role != ADMIN` 이면 `403 FORBIDDEN`(message "관리자 권한이 없는 계정입니다"), 토큰 미발급 (`docs/api-spec.md` §4-1)
 - [ ] 실패 매핑: `state` 불일치 `400 INVALID_REQUEST`, `code` 무효/Confluence 오류 `401 UNAUTHORIZED`, mode 게이트 `403 FORBIDDEN` — 모든 실패에서 토큰 미발급
@@ -200,6 +208,7 @@
 - [ ] 에러 정책: `adminUserId` 누락 `400`, 사용자/credential 없음 `404`, `role != ADMIN` `403`, refresh `invalid_grant` `401`(+재로그인 필요 상태 기록), Atlassian 일시 장애 `502 EXTERNAL_SERVICE_ERROR`
 - [ ] 응답 access_token 평문은 **내부 API 한정** — 로그/tracing 마스킹(Feature 7) 적용
 - [ ] 테스트: role 분기(403), 만료시 refresh 후 최신 토큰 반환, `refreshToken` 미노출, WireMock 으로 AUTH-03 모킹
+- [ ] **(하이브리드 정정 2026-06-11)** 본 §2-5 API 는 **콘텐츠 조회용 admin OAuth `accessToken` + `cloudId`** 를 반환(Worker 가 Bearer + 게이트웨이로 콘텐츠 조회). `refreshToken` 미반환, 만료 임박 시 AUTH-03 refresh 후 `user_tokens` 갱신해 반환(401/502 에러 유지). **admin API Token 은 본 API 가 반환하지 않음** — admin-key 관리(Feature 6)에서 auth-server 내부 사용
 
 ---
 
@@ -211,8 +220,8 @@
 - `internal/{AdminKeyController,AdminKeyClient}.java`, `internal/AdminKeyControllerTest.java`
 
 #### 체크리스트
-- [ ] `POST /internal/admin/key/activate` — admin 저장 OAuth access_token 으로 Atlassian `POST /api/v2/admin-key` 호출, 만료 시각 응답. (`docs/adr/0001-page-level-acl-source.md` §2.1)
-- [ ] `POST /internal/admin/key/deactivate` — Atlassian admin-key deactivate 호출. **`jobId` 기준 idempotent**(중복 completion event 안전). 60분 TTL 은 fallback
+- [ ] `POST /internal/admin/key/activate` — `admin_atlassian_credential` 의 `site_url`+admin API Token 으로(§6.4) Atlassian **`POST {siteUrl}/wiki/api/v2/admin-key`**(`Authorization: Basic base64(adminEmail:adminApiToken)`, `durationInMinutes` 기본 10분·최대 60분) 호출, `expirationTime` 응답. 실측 `200`(Feature 0 §검증 노트). (`docs/adr/0001-page-level-acl-source.md` §2.1)
+- [ ] `POST /internal/admin/key/deactivate` — Atlassian **`DELETE {siteUrl}/wiki/api/v2/admin-key`**(Basic auth, site URL) 호출, 실측 `204`. **`jobId` 기준 idempotent**(중복 completion event 안전). TTL 은 fallback
 - [ ] 호출 주체 제한(내부 API). BFF completion event consumer / `/api/admin/ingest` 묶음 처리만 호출
 - [ ] 테스트: WireMock 으로 Atlassian admin-key API 모킹, activate 만료시각·deactivate idempotency 검증
 - [ ] (4단계 연계) BFF consumer → deactivate 통합 검증 항목은 4단계 plan 에 추적
@@ -260,8 +269,8 @@
 
 | 리스크 | 영향 | 완화책 |
 |---|---|---|
-| OAuth scope 가 RAG 본문/첨부 수집에 부족(요약 scope) | 수집 단계 실패 | **Feature 0** 에서 공식 문서로 scope 확정, restricted page curl 검증 |
-| 단일 OAuth + Admin Key 헤더 모델이 실제로 restriction 우회 못 함 | 자격증명 모델 재설계 | **Feature 0** 검증 게이트 — 실패 시 API Token 모델로 전환(Feature 1·5 보강) |
+| ~~OAuth scope 가 RAG 본문/첨부 수집에 부족(요약 scope)~~ | 수집 단계 실패 | ✅ **해소(2026-06-10)** — Feature 0 에서 공식 문서로 scope 확정(§확정된 결정) |
+| ~~단일 OAuth + Admin Key 헤더 모델이 실제로 restriction 우회 못 함~~ | 자격증명 모델 재설계 | ✅ **현실화·해소(2026-06-10)** — OAuth2 앱 차단 공식 확인, API Token 모델로 전환 확정(Feature 1·5·6 보강 반영) |
 | 토큰 평문 저장/로그 노출 | 보안 사고 | AttributeConverter 암호화 + 로그 마스킹(Feature 7), `SensitiveConfigurationTest` |
 | Rotating refresh 미덮어쓰기로 이전 토큰 재사용 | 인증 무효화 실패 | refresh 회전 시 저장소 덮어쓰기, 재사용 거부 테스트(Feature 1·4) |
 | `groups` 조회 실패/페이징 누락 | JWT groups 불완전 → 질의 ACL 과소·과대 | groups 출처 확정(AUTH-05 `memberof`, 2026-06-09). `totalSize` 전량 페이징, 조회 실패 시 정책(Feature 3) |
@@ -270,7 +279,7 @@
 
 ## 문서 수정 필요 여부
 
-- `docs/db-schema.md` — §6.1~§6.3(`users`/`user_groups`/`user_tokens`) **작성 완료(2026-06-10)**. 향후 컬럼 변경 시 SQL 마이그레이션과 함께 갱신
+- `docs/db-schema.md` — §6.1~§6.4(`users`/`user_groups`/`user_tokens`/`admin_atlassian_credential`) **작성 완료**(§6.4+`users.refresh_token` 2026-06-11). 향후 컬럼 변경 시 SQL 마이그레이션과 함께 갱신
 - `docs/api-spec.md` — §4-1/§2-5 와 구현 정합성 확인(현재 명세와 일치 예상 → 변경 최소, 불일치 시에만)
 - `docs/architecture.md`, `docs/conventions.md`, `docs/ai/*` — 불필요(정의 구조 준수)
 
@@ -281,7 +290,7 @@
 - [ ] JWT Claim(`userId`/`groups`/`role`/`iss`/`iat`/`exp`)이 BFF 검증 계약과 일치, 서명·만료 검증 동작
 - [ ] `users` upsert + `role` DB 단일 source + 최초 admin seed(Flyway) 동작
 - [ ] `/internal/auth/admin-confluence-credential` 가 role 검증·만료 refresh·credential 반환(refreshToken 미노출)
-- [ ] `docs/db-schema.md` §6.2 작성 완료, Entity 와 일치
+- [ ] `docs/db-schema.md` §6.1~§6.4 작성 완료, Entity 와 일치
 - [ ] `Repository @DataJpaTest` / `JwtProviderTest` / WireMock(AUTH-02/03/04·admin-key) / MockMvc 테스트 통과
 - [ ] 평문 secret 미포함, 인증 우회 코드 없음, 토큰 로그 마스킹
 - [ ] `format`/`lint`/`test`/`verify` 통과, `git diff` 담당 외 파일 미수정
@@ -290,15 +299,16 @@
 
 ## 착수 전 결정 필요 (open — 사용자 확인)
 
-> 아래 5건은 Feature 구조·파일·스키마에 영향을 주므로 **코드 착수 전** 확정한다. 확정 시 §확정된 결정 표로 이동.
+> 아래 항목은 Feature 구조·파일·스키마에 영향을 주므로 **코드 착수 전** 확정한다. 확정 시 §확정된 결정 표로 이동. (1~5 확정 2026-06-09, #6 확정 2026-06-11)
 
 1. ~~`/api/auth/**` gateway 경로 세부~~ — ✅ **확정 = (a)** (2026-06-09): `/api/auth/**` 는 **BFF gateway path-through** 로 auth-server `/api/auth/*` 핸들러에 전달한다(FE 는 BFF 만 본다). OAuth 핸들러는 auth-server 가 호스팅(oauth2-client 보유). `/api/users/me`·`/api/admin/*` 는 BFF 가 MySQL 직접 읽기. auth-server 추가 노출면=`/internal/*`. 아래 §확정된 결정 'FE 진입점·gateway 라우팅' 참조.
 2. ~~`groups` claim 적재 메커니즘~~ — ✅ **해소(2026-06-09, Atlassian 공식 문서 확인)**: callback 에서 **AUTH-05 `memberof` API**(`/wiki/rest/api/user/memberof?accountId=`) 로 groups(`name`+`id`) 조회 → JWT claim 적재. `user_space_acl` RDB 테이블 **미사용**(페이지 ACL 은 수집단계 Qdrant payload). group 식별자 = **`groupId`** 확정(2026-06-09, RAG Qdrant `allowed_groups` 와 동일). 아래 §확정된 결정 'groups/cloudId 취득 경로' 참조.
 3. ~~토큰 암호화 방식~~ — ✅ **확정(2026-06-09)**: AES-GCM + env 주입 키(PoC). 운영 단계 KMS/Vault.
 4. ~~JWT 서명 알고리즘~~ — ✅ **확정(2026-06-09)**: RS256(auth-server 개인키 서명, BFF 공개키 검증 — BFF 비밀키 미보유). 키는 `${...}` env(PEM).
 5. ~~Admin Key 내부 API(Feature 6) 범위~~ — ✅ **확정(2026-06-09)**: 3단계는 내부 API + 단위/WireMock 테스트까지. BFF consumer↔deactivate end-to-end 통합은 4단계(RabbitMQ completion event)와 함께.
+6. ~~admin API Token 보관 위치~~ — ✅ **확정(2026-06-11) = 별도 테이블 `admin_atlassian_credential`**(`site_url` + `admin_api_token_enc`, AES-GCM, `V004` CREATE). admin-key 관리 전용 자격증명이라 콘텐츠 조회용 OAuth(`user_tokens`)와 분리. `TokenCipher` 재사용, adminEmail=`users.email`. (`docs/db-schema.md` §6.4) — ingestion **콘텐츠 조회**는 admin OAuth(`user_tokens`)를 §2-5 내부 API 로 받아 사용(API Token 아님).
 
-> ✅ **착수 전 결정 5건 전부 확정(2026-06-09).** 3단계 코드 착수 가능. (credential push/pull 은 현행 pull 유지 — §위 회의 반영 노트)
+> ✅ 착수 전 결정 6건 전부 확정(1~5: 2026-06-09, #6: 2026-06-11). 3단계 전 Feature 코드 착수 가능. (credential push/pull 은 현행 pull 유지 — §위 회의 반영 노트)
 
 ---
 
@@ -317,7 +327,8 @@
 | JWT 서명 알고리즘 | **RS256** — auth-server 개인키 서명, BFF 는 공개키만으로 검증(비밀키 미보유). 키(PEM)는 `${...}` env | 2026-06-09 |
 | Confluence 토큰 저장 정책 | **PoC 부터 MySQL 암호화 저장**(access/refresh + cloudId, 사용자 단위) — admin-only ingest 가 세션 무관하게 동작하기 위해 callback 시 즉시 영속. 암호화 = **AES-GCM + env 주입 키**(운영 KMS/Vault) | 2026-06-02 (06-09 알고리즘 확정) |
 | Admin Key 내부 API 범위 | 3단계 = `/internal/admin/key/{activate,deactivate}` 내부 API + 단위/WireMock 테스트. BFF consumer↔deactivate **end-to-end 통합은 4단계**(RabbitMQ completion event)와 함께 | 2026-06-09 |
-| admin Confluence access 패턴 | **OAuth Bearer + `Atl-Confluence-With-Admin-Key: true` 헤더**(Admin Key 활성화 후) — admin 도 일반 사용자와 동일하게 Confluence OAuth 3LO 로 로그인하며, ingestion 도 같은 OAuth 토큰 사용(별도 API Token 미보관). **UI 동선** (2026-06-02 회의 확정·06-05 갱신): admin 이 "데이터 인제스천 파이프라인" 버튼 1회 클릭 → BFF `POST /api/admin/ingest` 가 key 미활성 시 auth-server `POST /internal/admin/key/activate` 자동 호출 → RabbitMQ ingest job 발행/`/ml/ingest` 위임 → Data Ingestion Worker 가 내부 credential 조회 → Confluence 호출 → completion event → BFF consumer 가 `POST /internal/admin/key/deactivate` 호출(BE 책임). `POST /api/admin/key/activate` 외부 endpoint 는 수동/테스트용. **3단계 구현 시 검증 게이트 = Feature 0**. (`docs/adr/0001-page-level-acl-source.md` §2.1) | 2026-06-02 (06-05 갱신) |
+| admin Confluence access 패턴 | ⚠️ **자격증명 부분은 아래 'admin ingestion 자격증명 모델' 행(2026-06-10)으로 대체** — UI 동선·activate/deactivate 흐름만 유지: ~~**OAuth Bearer + `Atl-Confluence-With-Admin-Key: true` 헤더**(Admin Key 활성화 후) — admin 도 일반 사용자와 동일하게 Confluence OAuth 3LO 로 로그인하며, ingestion 도 같은 OAuth 토큰 사용(별도 API Token 미보관).~~ **UI 동선** (2026-06-02 회의 확정·06-05 갱신): admin 이 "데이터 인제스천 파이프라인" 버튼 1회 클릭 → BFF `POST /api/admin/ingest` 가 key 미활성 시 auth-server `POST /internal/admin/key/activate` 자동 호출 → RabbitMQ ingest job 발행/`/ml/ingest` 위임 → Data Ingestion Worker 가 내부 credential 조회 → Confluence 호출 → completion event → BFF consumer 가 `POST /internal/admin/key/deactivate` 호출(BE 책임). `POST /api/admin/key/activate` 외부 endpoint 는 수동/테스트용. **3단계 구현 시 검증 게이트 = Feature 0**. (`docs/adr/0001-page-level-acl-source.md` §2.1) | 2026-06-02 (06-05 갱신) |
+| admin ingestion 자격증명 모델·scope (Feature 0 게이트, **하이브리드**) | **두 호출로 분리**: ① **admin-key 관리**(activate/deactivate) = **admin API Token + Basic auth + site URL**(`{siteUrl}/wiki/api/v2/admin-key`) — admin-key REST 는 OAuth2 앱 접근 불가(공식). ② **콘텐츠 조회**(pages/spaces/restrictions) = **admin OAuth accessToken + Bearer + 게이트웨이**(`/ex/confluence/{cloudId}/...`) + Admin Key 헤더. 근거·실측(404→200)은 Feature 0 §검증 노트, scope 셋은 §구현 시 주의. 보관: ① `admin_atlassian_credential`(`site_url`+`admin_api_token_enc`, `V004`/§6.4), ② `user_tokens`(OAuth+`cloud_id`). #6 확정 2026-06-11 | 2026-06-10 (하이브리드·#6 06-11) |
 | FE 진입점·gateway 라우팅 | **BFF 단일 진입점**. `/api/auth/**` 는 BFF gateway **path-through** 로 auth-server 의 `/api/auth/*` 핸들러에 위임((a) 안 확정). `/api/users/me`·`/api/admin/*` 는 BFF→MySQL 직접 읽기. auth-server 추가 노출면=`/internal/*`(credential·admin-key). MySQL 은 3단계부터 공유(auth-server 쓰기, BFF 읽기) | 2026-06-09 |
 | groups/cloudId 취득 경로 | **Atlassian 공식 API 로 별도 취득**(토큰 디코딩 아님). **cloudId**=AUTH-04 `accessible-resources` 의 `id`(멀티사이트 순서 없음·최근 인가 추론 금지). **groups**=AUTH-05 `GET /ex/confluence/{cloudId}/wiki/rest/api/user/memberof?accountId=` 의 `results[].id`(=**`groupId`**, `name` 아님 — RAG `allowed_groups` 정합, 2026-06-09 확정. 페이지네이션 `start`/`limit` 200/`totalSize`). callback 에서 조회해 JWT `groups` claim 적재. **`user_space_acl` RDB 테이블 미사용** — 페이지-단위 ACL 은 수집단계 Qdrant payload(`allowed_groups`/`allowed_users`, ADR 0001 §2). 페이지 ACL 추출은 Confluence Content restrictions API(수집측). | 2026-06-09 |
 | role 결정 정책 | **MySQL `users.role` DB 단일 source** — OAuth callback 시 accountId lookup, 행 없으면 `role='USER'` INSERT, 행 있으면 그 값 사용. JWT `role` claim 은 그 값 그대로 발급. YAML bootstrap 미사용. **최초 admin** 은 Flyway `V001` 하드코딩 INSERT. 별도 `admins` 테이블 미사용(흡수). (`docs/db-schema.md` §6.1) | 2026-06-02 |
