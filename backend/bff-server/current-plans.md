@@ -565,7 +565,7 @@ Credential 처리 원칙:
 
 - [x] BFF ingest 요청 처리에서 `jobId` 생성, Admin Key activate, RabbitMQ ingest job 직접 발행 경계를 확정 및 구현 (`POST /api/admin/ingest` → auth-server activate → RabbitMQ publish)
 - [x] ingest job payload schema 정의: `jobId`, `adminUserId`, `mode`, `requestedAt` 중심. `accessToken`/`refreshToken`/`cloudId` 포함 금지 테스트 추가
-- [ ] Data Ingestion Worker 가 `adminUserId` 로 auth-server 내부 credential 조회 API 에서 admin OAuth accessToken + cloudId + siteUrl 을 함께 조회하는 계약 확인
+- [x] Data Ingestion Worker 가 `adminUserId` 로 auth-server 내부 credential 조회 API 에서 admin OAuth accessToken + cloudId + siteUrl 을 함께 조회하는 계약 확인 — `GET /internal/auth/admin-confluence-credential?adminUserId={id}` → `{ accessToken, cloudId, siteUrl, expiresAt }`, `refreshToken` 미반환, admin API Token 미반환 (`backend/auth-server/current-plans.md` Feature 5, `docs/api-spec.md` §2-5, ADR 0001 §2.1)
 - [ ] completion event consumer 구현 계획 수립: `jobId`, `adminUserId`, `mode`, `status`, `completedAt`, `errorCode`, `message` 수신 후 auth-server Admin Key deactivate 내부 API 호출
 - [ ] `jobId` 기준 중복 completion event idempotency 정책 문서화 및 테스트 항목 추가
 - [ ] BFF 재시작/consumer 장애 시 RabbitMQ durable queue 에 남은 completion event 재처리 정책 문서화
