@@ -19,6 +19,13 @@ dependencies {
 
     implementation 'org.springframework.boot:spring-boot-starter-validation'
 
+    // MySQL 영속 계층 (users/user_groups/user_tokens/admin_atlassian_credential)
+    // 스키마는 Flyway 마이그레이션이 단일 관리 (ddl-auto: none)
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.flywaydb:flyway-core'
+    runtimeOnly 'org.flywaydb:flyway-mysql'
+    runtimeOnly 'com.mysql:mysql-connector-j'
+
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     // /actuator/prometheus 노출용 (런타임에만 필요)
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
@@ -34,6 +41,10 @@ dependencies {
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.security:spring-security-test'
+    // @DataJpaTest 용 인메모리 DB (마이그레이션은 MySQL 문법 — 테스트는 Entity 기반 create-drop)
+    testRuntimeOnly 'com.h2database:h2'
+    // Atlassian OAuth 토큰 교환 모킹 (Feature 3에서 사용, 의존성은 본 Feature에서 선반영)
+    testImplementation 'org.wiremock:wiremock-standalone:3.9.2'
 }
 
 // 실행 모듈: 부팅 가능한 fat jar 생성, 일반 jar 는 불필요하므로 비활성

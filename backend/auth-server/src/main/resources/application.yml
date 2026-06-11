@@ -6,6 +6,24 @@ spring:
   threads:
     virtual:
       enabled: true
+  datasource:
+    url: ${MYSQL_URL:jdbc:mysql://localhost:3306/lina_auth}
+    username: ${MYSQL_USERNAME:}
+    password: ${MYSQL_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      # 스키마는 Flyway 마이그레이션(db/migration)이 단일 관리하고,
+      # 부팅 시 Entity 매핑과 실 스키마를 대조해 entity↔migration drift 를 잡는다(validate)
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          # DATETIME 컬럼을 UTC 기준으로 읽고 쓴다 (docs/db-schema.md §6 — DATETIME (UTC))
+          time_zone: UTC
+  flyway:
+    enabled: true
 
 server:
   port: ${AUTH_SERVER_PORT:8081}

@@ -1,0 +1,23 @@
+# 테스트 전용 설정 — 실 DB/시크릿을 사용하지 않는다.
+spring:
+  datasource:
+    url: jdbc:h2:mem:lina_auth_test;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      # Flyway SQL 은 MySQL 전용 문법 — 테스트는 Entity 기반 스키마 생성
+      ddl-auto: create-drop
+    open-in-view: false
+  flyway:
+    enabled: false
+
+lina:
+  token-encryption:
+    # 테스트 전용 AES-256 키 (base64 32바이트). 실 운영 키는 env 주입 (application.yml)
+    key: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+
+logging:
+  level:
+    com.lina: INFO

@@ -135,14 +135,14 @@
 
 #### 체크리스트
 - [x] `docs/db-schema.md` §6.1~§6.4 **작성 완료**: `users`(PK `user_key` UUID, `user_id`=accountId UNIQUE, `email` UNIQUE, `name`/`profile_image_url`/`role`/LINA `access_token`/**`refresh_token` 선반영**/`last_login_at`)·`user_groups`(`group_id`=groupId 영속, 복합 PK)·`user_tokens`(`user_key` FK, `confluence_access/refresh_token_enc` AES-GCM, `cloud_id`, `access_token_expires_at`)·**`admin_atlassian_credential`**(admin-key 관리용 `site_url`+`admin_api_token_enc`, §6.4). 스페이스 단위 `user_space_acl` 미사용 — 페이지 ACL 은 수집단계 Qdrant payload(ADR 0001 §2). (§6.1~§6.3 2026-06-10, §6.4+`refresh_token` 2026-06-11)
-- [ ] `build.gradle`: `spring-boot-starter-data-jpa`, `mysql-connector-j`, `flyway-core`/`flyway-mysql`, 테스트 H2(또는 Testcontainers MySQL)·WireMock
-- [ ] `application*.yml`: datasource/JPA/Flyway, 토큰 암호화 키, Atlassian client-id/secret/redirect-uri, JWT 키/issuer/TTL — **모두 `${...}` 환경변수, 평문 secret 금지**
-- [ ] `users`(PK `user_key` BINARY16 UUID, `user_id`=accountId UNIQUE, `email` UNIQUE, `role` ENUM, LINA `access_token`/`refresh_token`) / `user_groups`(`group_id`=groupId, 복합 PK·FK CASCADE) / `user_tokens`(`user_key` FK, `confluence_*_token_enc` 암호화, `cloud_id`) / `admin_atlassian_credential`(`user_key` FK, `site_url`, `admin_api_token_enc` 암호화) Entity + Repository
-- [ ] **토큰 암호화**: `TokenCipher` AttributeConverter 로 access/refresh 컬럼 암호화 저장(평문 저장 금지). **AES-GCM + env 주입 키**(확정 2026-06-09, 운영 KMS/Vault)
+- [x] `build.gradle`: `spring-boot-starter-data-jpa`, `mysql-connector-j`, `flyway-core`/`flyway-mysql`, 테스트 H2(또는 Testcontainers MySQL)·WireMock — ✅ 2026-06-11 (H2 + WireMock 선반영)
+- [x] `application*.yml`: datasource/JPA/Flyway, 토큰 암호화 키, Atlassian client-id/secret/redirect-uri, JWT 키/issuer/TTL — **모두 `${...}` 환경변수, 평문 secret 금지** — ✅ 2026-06-11 (datasource `MYSQL_*`/JPA `ddl-auto: validate`/Flyway 추가, 암호화·OAuth·JWT 키는 기존 `${...}` 유지. 테스트는 `src/test/resources/application-test.yml` H2 + 테스트 전용 키)
+- [x] `users`(PK `user_key` BINARY16 UUID, `user_id`=accountId UNIQUE, `email` UNIQUE, `role` ENUM, LINA `access_token`/`refresh_token`) / `user_groups`(`group_id`=groupId, 복합 PK·FK CASCADE) / `user_tokens`(`user_key` FK, `confluence_*_token_enc` 암호화, `cloud_id`) / `admin_atlassian_credential`(`user_key` FK, `site_url`, `admin_api_token_enc` 암호화) Entity + Repository — ✅ 2026-06-11 (`token/entity/*` 4종 + `UserRole`/`UserGroupId`, `token/repository/*` 4종)
+- [x] **토큰 암호화**: `TokenCipher` AttributeConverter 로 access/refresh 컬럼 암호화 저장(평문 저장 금지). **AES-GCM + env 주입 키**(확정 2026-06-09, 운영 KMS/Vault) — ✅ 2026-06-11 (IV 12B‖GCM 암호문, 키 미주입 시 fail-fast, `TokenCipherTest` 6건)
 - [x] Flyway `V001` users(`refresh_token` 선반영)·`V002` user_groups·`V003` user_tokens·**`V004` admin_atlassian_credential** **작성 완료**(V004 2026-06-11). **admin seed**(`role='ADMIN'`, 하드코딩)는 **후속**(별도 마이그레이션 — `users.access_token` NOT NULL 이라 placeholder 또는 nullable 검토)
-- [ ] `user_tokens`(Confluence 토큰) 조회/저장은 `user_key`(FK) 기준, refresh 회전 시 덮어쓰기(이전 값 미보존)
-- [ ] `@DataJpaTest`(H2/Testcontainers): users upsert, role lookup, 토큰 암호화 라운드트립(저장값이 평문이 아님), 만료시각 조회
-- [ ] **(Feature 0·#6 반영)** admin-key 관리 credential 보관 — 별도 테이블 `admin_atlassian_credential`(`site_url`+`admin_api_token_enc`, `V004` CREATE, AES-GCM). `AdminAtlassianCredential` Entity + Repository, `TokenCipher` 재사용. (콘텐츠 조회용 OAuth 토큰·cloudId 는 `user_tokens` 그대로 — admin API Token 과 분리.) 게이트웨이 base URL 은 cloudId 로 런타임 구성
+- [x] `user_tokens`(Confluence 토큰) 조회/저장은 `user_key`(FK) 기준, refresh 회전 시 덮어쓰기(이전 값 미보존) — ✅ 2026-06-11 (`UserToken.rotate()` + 회전 덮어쓰기·1행 유지 테스트)
+- [x] `@DataJpaTest`(H2/Testcontainers): users upsert, role lookup, 토큰 암호화 라운드트립(저장값이 평문이 아님), 만료시각 조회 — ✅ 2026-06-11 (H2, Repository 테스트 14건 — upsert 시 `user_key`/`role` 유지, native query 로 저장 컬럼 평문 아님 검증 포함)
+- [x] **(Feature 0·#6 반영)** admin-key 관리 credential 보관 — 별도 테이블 `admin_atlassian_credential`(`site_url`+`admin_api_token_enc`, `V004` CREATE, AES-GCM). `AdminAtlassianCredential` Entity + Repository, `TokenCipher` 재사용. (콘텐츠 조회용 OAuth 토큰·cloudId 는 `user_tokens` 그대로 — admin API Token 과 분리.) 게이트웨이 base URL 은 cloudId 로 런타임 구성
 
 ---
 
@@ -275,6 +275,7 @@
 | Rotating refresh 미덮어쓰기로 이전 토큰 재사용 | 인증 무효화 실패 | refresh 회전 시 저장소 덮어쓰기, 재사용 거부 테스트(Feature 1·4) |
 | `groups` 조회 실패/페이징 누락 | JWT groups 불완전 → 질의 ACL 과소·과대 | groups 출처 확정(AUTH-05 `memberof`, 2026-06-09). `totalSize` 전량 페이징, 조회 실패 시 정책(Feature 3) |
 | MySQL 운영 인스턴스 미가동 부팅 | 컨텍스트 실패 | Flyway/JPA 기동 전제 — 로컬은 docker MySQL, 헬스/레디니스 분리 |
+| **Flyway V001~V004 미검증**(2026-06-11) — Repository 테스트는 H2 + Entity 기반 create-drop 이라 마이그레이션 SQL 을 실행하지 않음 | 컬럼명/타입 entity↔migration drift 잠복 | `ddl-auto: validate` 로 bootRun(Feature 8, 실 MySQL) 부팅 시 Entity↔실 스키마 대조 — Feature 8 이 마이그레이션 최초 검증 게이트. Testcontainers MySQL 은 ALTER/데이터 이관 마이그레이션이 생기는 시점에 도입 검토 |
 | Admin Key 내부 API 의 4단계 강결합 | 3단계 단독 검증 곤란 | Feature 6 은 인터페이스+WireMock 까지, 통합은 4단계와 함께(범위 권고) |
 
 ## 문서 수정 필요 여부
