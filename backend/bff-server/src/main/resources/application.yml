@@ -63,6 +63,7 @@ lina:
       rabbitmq:
         ingest-exchange: ${ADMIN_INGEST_EXCHANGE:lina.admin.ingest}
         ingest-routing-key: ${ADMIN_INGEST_ROUTING_KEY:admin.ingest.requested}
+        completion-queue: ${ADMIN_INGEST_COMPLETION_QUEUE:lina.admin.ingest.completion}
   jwt:
     issuer: ${LINA_JWT_ISSUER:lina-auth-server}
     public-key: ${LINA_JWT_PUBLIC_KEY:}
