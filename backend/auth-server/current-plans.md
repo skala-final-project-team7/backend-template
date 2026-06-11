@@ -44,7 +44,7 @@
 - **authorize(AUTH-01) 쿼리**: `audience=api.atlassian.com`, `client_id`, `scope`, `redirect_uri`, `state`(CSRF), `response_type=code`, `prompt=consent`. 콜백으로 `code`+`state` 수신.
 - **토큰 교환(AUTH-02)**: body `grant_type=authorization_code` / `client_id` / `client_secret` / `code` / `redirect_uri` → 응답 `access_token` / `expires_in` / `scope`.
 - **토큰 갱신(AUTH-03)**: body `grant_type=refresh_token` / `client_id` / `client_secret` / `refresh_token` → 응답에 **새 `access_token` + 새 `refresh_token`** + `expires_in` / `scope`. 실패 시 `{"error":"invalid_grant"}`.
-- **cloudId(AUTH-04)**: header `Authorization: Bearer {access_token}` → 배열, 각 `{ id(=cloudId), name, url, scopes, avatarUrl }`. 이후 Confluence REST URL: `https://api.atlassian.com/ex/confluence/{cloudId}/rest/api/...`. **공식 주의: 반환 사이트는 순서가 없고 "가장 최근 인가" 식별 용도로 쓰면 안 됨** → 멀티 사이트 시 선택 규칙 필요(PoC 는 단일 사이트 가정, 다중이면 설정값/명시 선택).
+- **cloudId(AUTH-04)**: header `Authorization: Bearer {access_token}` → 배열, 각 `{ id(=cloudId), name, url, scopes, avatarUrl }`. `id`=cloudId 는 callback 에서 `user_tokens` 에 저장. `url`(=브라우저 base URL `https://{site}.atlassian.net`)은 admin-key 관리용으로 `admin_atlassian_credential.site_url`(§6.4)에 보관되며, §2-5 에서 `siteUrl`(JSON) 로 ingestion 에 반환된다(별도 저장 없음). 이후 Confluence REST URL: `https://api.atlassian.com/ex/confluence/{cloudId}/rest/api/...`. **공식 주의: 반환 사이트는 순서가 없고 "가장 최근 인가" 식별 용도로 쓰면 안 됨** → 멀티 사이트 시 선택 규칙 필요(PoC 는 단일 사이트 가정, 다중이면 설정값/명시 선택).
 - **groups(AUTH-05)**: `GET /ex/confluence/{cloudId}/wiki/rest/api/user/memberof?accountId={accountId}` → `results[].{ name, id(groupId) }`. **페이지네이션**(`start`/`limit`(기본 200)/`size`/`totalSize`) — `totalSize > limit` 이면 페이징 처리. 권한: Confluence 사이트 'Can use' global permission. **groups 는 토큰 디코딩이 아니라 본 API 호출로 취득**하며 callback 에서 JWT `groups` claim 에 적재한다. **claim 값 = `id`(groupId)** — `name` 아님(2026-06-09 확정, RAG `allowed_groups` 정합).
 
 ### 구현 시 주의 (노트 기반 — 검증 필요)
@@ -74,7 +74,7 @@
 - `oauth/` — `AuthController`(`/api/auth/*`), `AtlassianOAuthClient`(AUTH-02/03/04 호출), `OAuthStateService`(state+mode 직렬화/검증), `dto/`(토큰 응답·콜백 등)
 - `jwt/` — `JwtProvider`(발급/검증), `JwtProperties`(서명키·TTL·issuer), `JwtClaims`
 - `token/` — `User`/`UserToken`/`UserGroup`/`AdminAtlassianCredential` Entity, `*Repository`, `TokenCipher`(AttributeConverter 암호화), `SessionService`(refresh 회전/무효화) — `groups` 는 **`user_groups` 테이블 영속**(로그인 시 AUTH-05 `memberof` 적재). 스페이스 단위 `user_space_acl` 미사용. `AdminAtlassianCredential`=admin-key 관리용 `site_url`+`admin_api_token_enc`(§6.4)
-- `internal/` — `InternalCredentialController`(`/internal/auth/admin-confluence-credential`, 콘텐츠 조회용 OAuth accessToken+cloudId 반환), `AdminKeyController`(`/internal/admin/key/{activate,deactivate}`), `AdminKeyClient`(Atlassian admin-key — `admin_atlassian_credential` 의 site URL+API Token Basic auth)
+- `internal/` — `InternalCredentialController`(`/internal/auth/admin-confluence-credential`, OAuth accessToken+cloudId+siteUrl 반환), `AdminKeyController`(`/internal/admin/key/{activate,deactivate}`), `AdminKeyClient`(Atlassian admin-key — `admin_atlassian_credential` 의 site URL+API Token Basic auth)
 - (`/api/users/me` 는 auth-server 가 아니라 **BFF** 가 MySQL `users` 를 읽어 서빙 — api-spec §3 흐름도 `users/me → BFF → DB`. §교차 모듈 참조)
 - `config/` — `SecurityConfig`(Bearer 검증 + 내부 API 호출자 제한), `RestClientConfig`(Atlassian RestClient)
 - `support/` — 공통 헬퍼(필요 시)
@@ -203,12 +203,12 @@
 - `internal/InternalCredentialController.java`, `token/SessionService.java`(refresh 재사용), `internal/InternalCredentialControllerTest.java`
 
 #### 체크리스트
-- [ ] `GET /internal/auth/admin-confluence-credential?adminUserId={id}` — `adminUserId` 로 토큰 레코드 조회 → `users.role == ADMIN` 확인 → 저장 `cloudId` 로드 → access token 만료/임박 시 AUTH-03 refresh → DB 최신화 → `{ accessToken, cloudId, expiresAt }` 반환(`refreshToken` 미반환)
+- [ ] `GET /internal/auth/admin-confluence-credential?adminUserId={id}` — `adminUserId` 로 조회 → `users.role == ADMIN` 확인 → `user_tokens`(`accessToken`/`cloudId`) + `admin_atlassian_credential`(`site_url` 컬럼→`siteUrl` JSON) 로드 → access token 만료/임박 시 AUTH-03 refresh → DB 최신화 → `{ accessToken, cloudId, siteUrl, expiresAt }` 반환(`refreshToken` 미반환). siteUrl=`admin_atlassian_credential.site_url` 그대로(별도 저장 없음), ingestion 출처 URL 정규화용·secret 아님
 - [ ] 호출 주체 제한: Data Ingestion Worker 전용(내부 service auth/NetworkPolicy). FE/BFF/외부 차단
 - [ ] 에러 정책: `adminUserId` 누락 `400`, 사용자/credential 없음 `404`, `role != ADMIN` `403`, refresh `invalid_grant` `401`(+재로그인 필요 상태 기록), Atlassian 일시 장애 `502 EXTERNAL_SERVICE_ERROR`
 - [ ] 응답 access_token 평문은 **내부 API 한정** — 로그/tracing 마스킹(Feature 7) 적용
 - [ ] 테스트: role 분기(403), 만료시 refresh 후 최신 토큰 반환, `refreshToken` 미노출, WireMock 으로 AUTH-03 모킹
-- [ ] **(하이브리드 정정 2026-06-11)** 본 §2-5 API 는 **콘텐츠 조회용 admin OAuth `accessToken` + `cloudId`** 를 반환(Worker 가 Bearer + 게이트웨이로 콘텐츠 조회). `refreshToken` 미반환, 만료 임박 시 AUTH-03 refresh 후 `user_tokens` 갱신해 반환(401/502 에러 유지). **admin API Token 은 본 API 가 반환하지 않음** — admin-key 관리(Feature 6)에서 auth-server 내부 사용
+- [ ] **(하이브리드 정정 2026-06-11)** 본 §2-5 API 는 **admin OAuth `accessToken` + `cloudId`(user_tokens) + `siteUrl`(JSON, =`admin_atlassian_credential.site_url` 컬럼)** 을 반환. `accessToken`/`cloudId`=Bearer+게이트웨이 콘텐츠 조회, `siteUrl`=출처 URL absolute 정규화(별도 저장 없이 `site_url` 컬럼 그대로 전달). `refreshToken` 미반환, 만료 임박 시 AUTH-03 refresh 후 `user_tokens` 갱신해 반환(401/502 에러 유지). **admin API Token 은 본 API 가 반환하지 않음** — admin-key 관리(Feature 6)에서 auth-server 내부 사용
 
 ---
 
