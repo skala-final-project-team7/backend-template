@@ -17,6 +17,8 @@
 | 2026-06-02 | MySQL `users` 테이블 정의(§6.1) — `role` 컬럼(`USER`/`ADMIN`) 포함, JWT `role` claim 의 single source. 별도 `admins` 테이블 계획 흡수. 최초 admin 은 마이그레이션 스크립트에 하드코딩 INSERT | 권한 모델 DB 단일화·YAML config 미사용 |
 | 2026-06-02 | `messages.content` 본문 검색 인덱스 권고(§3.2 후속) — `GET /api/conversations/search` (api-spec §1-2 신설) 를 위한 인덱스. PoC 는 `$regex`, 후속에 text index 전환 검토 | 대화 본문 검색 endpoint 도입 |
 | 2026-06-10 | MySQL 3단계 스키마를 auth-server 실제 마이그레이션(`V001`~`V003`)에 맞춰 **재정의**(§6). `users` PK=`user_key`(BINARY16 UUID), `user_id`=Confluence accountId(UNIQUE, JWT/RAG `userId`), `email`(UNIQUE) 분리, LINA `access_token` 컬럼. `groups`→**`user_groups`**(1:N, `group_id`=groupId, 로그인 시 `memberof` 적재). Confluence OAuth access/refresh + `cloud_id`→**`user_tokens`**(앱 내 미리보기 라이브 호출, AES-GCM). LINA refresh token 은 후속 | auth-server Feature 1 SQL 확정 |
+| 2026-06-11 | **`admin_atlassian_credential`** 테이블 신설(§6.4, `V004`). admin-key 관리(activate/deactivate) 전용 — `site_url` + `admin_api_token_enc`(AES-GCM, Basic auth). ingestion 콘텐츠 조회는 OAuth Bearer+게이트웨이(`user_tokens`)라 자격증명·URL 체계가 달라 분리. Feature 0 게이트(OAuth2 앱은 admin-key 접근 불가) + 하이브리드 모델(admin-key=API Token/site URL, 콘텐츠 조회=OAuth Bearer/gateway) 확정 반영 | auth-server Feature 0 게이트·#6 |
+| 2026-06-11 | `users` 에 **`refresh_token`**(VARCHAR(512), NULL) 컬럼 선반영(§6.1) — **`V001` 직접 수정**. LINA 세션 refresh token 저장용, 발급/회전 로직은 Feature 4. ⚠️ 이미 적용한 로컬 DB 는 체크섬 불일치 → 재생성(drop&재마이그레이션) 또는 `flyway repair` 필요 | LINA refresh 컬럼 선반영 요청 |
 
 ---
 
@@ -27,7 +29,7 @@
 | **MongoDB (BFF CRUD)** | `conversations`, `messages`(`sources` 내장), `feedbacks` | BFF 가 읽기/쓰기 | 본 문서 §3 의 정의 대상 |
 | **MongoDB (BFF 읽기 전용)** | `raw_pages`, `raw_attachments`, `attachment_texts`, `chunked_units`, `import_jobs`, `sync_logs` | BFF 는 조회만, 쓰기는 Ingestion/Sync Worker | RAG 파이프라인 입력 데이터 |
 | **MongoDB (RAG 파이프라인 전용)** | `inference_logs`, `audit_logs`, `qca_dataset` | RAG 파이프라인이 관리. BFF 접근 없음 | 본 문서 범위 밖 |
-| **MySQL (3단계)** | `users`(role 포함, §6.1), `user_groups`(§6.3), `user_tokens`(§6.2) | Authorization Server 가 관리 | 2단계에서는 미사용. 별도 `admins` 테이블 계획은 `users.role` 로 흡수(2026-06-02). `groups` 는 로그인 시 Confluence `memberof` 로 조회해 **`user_groups`** 에 적재→JWT claim(`groupId`). **`user_space_acl`(스페이스 단위 권한 테이블) 미사용** — 페이지 ACL 은 Qdrant payload(ADR 0001 §2). |
+| **MySQL (3단계)** | `users`(role 포함, §6.1), `user_groups`(§6.3), `user_tokens`(§6.2), `admin_atlassian_credential`(admin-key 관리, §6.4) | Authorization Server 가 관리 | 2단계에서는 미사용. 별도 `admins` 테이블 계획은 `users.role` 로 흡수(2026-06-02). `groups` 는 로그인 시 Confluence `memberof` 로 조회해 **`user_groups`** 에 적재→JWT claim(`groupId`). **`user_space_acl`(스페이스 단위 권한 테이블) 미사용** — 페이지 ACL 은 Qdrant payload(ADR 0001 §2). |
 
 `backend/CLAUDE.md` §2.2 / §6 의 MongoDB 쓰기 금지 규칙은 위 두 번째 행(RAG 파이프라인 데이터)에 한정된다. 대화/피드백 컬렉션은 BFF 가 정상 CRUD 한다.
 
@@ -209,7 +211,8 @@
 | `name` | VARCHAR(128) | — | 표시 이름 (Confluence 응답에서 저장) |
 | `profile_image_url` | VARCHAR(512) | — | |
 | `role` | ENUM(`USER`, `ADMIN`) | ✅ | 권한 역할. JWT `role` claim 의 **source of truth** (DB 단일). 별도 `admins` 테이블 흡수 |
-| `access_token` | VARCHAR(512) | ✅ | **LINA 발급** access token(세션). Confluence 토큰 아님(§6.2). LINA refresh token 은 후속 라운드 |
+| `access_token` | VARCHAR(512) | ✅ | **LINA 발급** access token(세션). Confluence 토큰 아님(§6.2) |
+| `refresh_token` | VARCHAR(512) | — | **LINA 발급** refresh token(세션 갱신). 컬럼 선반영(`V001`, NULL 허용) — 발급/회전(rotating)은 Feature 4 |
 | `last_login_at` | DATETIME (UTC) | — | OAuth callback 시 갱신 |
 | `created_at` | DATETIME (UTC) | ✅ | INSERT 시각 |
 | `updated_at` | DATETIME (UTC) | ✅ | 갱신 시각 (`ON UPDATE CURRENT_TIMESTAMP`) |
@@ -244,18 +247,18 @@ VALUES (UUID_TO_BIN(UUID()), '712020:91b5112c-...', 'admin@example.com', 'yhlee'
 
 ### 6.2 `user_tokens`
 
-Confluence OAuth access/refresh token + `cloud_id` 저장. **앱 내 Confluence 페이지 미리보기**(라이브 REST 호출)에 사용한다 — 챗(`/ml/query`)은 토큰 불필요. 사용자당 1:1.
+Confluence OAuth access/refresh token + `cloud_id` 저장. **앱 내 Confluence 페이지 미리보기**(라이브 REST 호출) 및 **ingestion 콘텐츠 조회**(OAuth Bearer + 게이트웨이 URL `/ex/confluence/{cloudId}/...`)에 사용한다 — 챗(`/ml/query`)은 토큰 불필요. 사용자당 1:1. (admin-key 관리용 정적 API Token·siteUrl 은 본 테이블이 아니라 §6.4 `admin_atlassian_credential` 에 별도 보관.)
 
 | 컬럼 | 타입 | 필수 | 비고 |
 |---|---|---|---|
 | `user_key` | BINARY(16) **PK**, FK→`users` | ✅ | 1:1. `ON DELETE CASCADE` |
-| `confluence_access_token_enc` | VARBINARY(2048) | ✅ | Confluence OAuth access token. **AES-GCM 암호화**(평문 금지) |
+| `confluence_access_token_enc` | VARBINARY(2048) | ✅ | Confluence OAuth access token. **AES-GCM 암호화**(평문 금지). 미리보기·ingestion 콘텐츠 조회 Bearer |
 | `confluence_refresh_token_enc` | VARBINARY(2048) | ✅ | Confluence OAuth refresh token. **AES-GCM 암호화**. rotating |
-| `cloud_id` | VARCHAR(64) | ✅ | Confluence REST URL(`/ex/confluence/{cloudId}/...`) 구성용. 평문(민감 아님) |
+| `cloud_id` | VARCHAR(64) | ✅ | 게이트웨이 콘텐츠 조회 URL(`api.atlassian.com/ex/confluence/{cloudId}/...`) 구성용. 평문(민감 아님) |
 | `access_token_expires_at` | DATETIME (UTC) | ✅ | access 만료 시각. 임박 시 refresh 로 갱신 |
 | `created_at` / `updated_at` | DATETIME (UTC) | ✅ | |
 
-> Atlassian access token 이 길어 암호화 컬럼은 `VARBINARY(2048)`. 토큰은 OAuth callback 시 적재하고, 만료 임박이면 refresh 로 갱신(rotating — 저장소 덮어쓰기, 이전 값 미보존).
+> Atlassian access token 이 길어 암호화 컬럼은 `VARBINARY(2048)`. OAuth access/refresh 토큰은 callback 시 적재하고, 만료 임박이면 refresh 로 갱신(rotating — 저장소 덮어쓰기, 이전 값 미보존).
 
 ### 6.3 `user_groups`
 
@@ -275,3 +278,15 @@ Confluence OAuth access/refresh token + `cloud_id` 저장. **앱 내 Confluence 
 > groups 를 매 요청 `memberof` 재조회하는 대신 본 테이블에 영속(로그인 시 적재). 스페이스 단위 `user_space_acl` 은 미사용 — 페이지-단위 ACL 은 수집 단계 Qdrant payload (`docs/adr/0001-page-level-acl-source.md` §2).
 
 > **`user_space_acl` 미사용 (2026-06-09 결정).** 사용자 `groups` 는 인증 시 Confluence group 멤버십 API(`memberof`)로 조회해 JWT `groups` claim(**`groupId`**)에 적재하고, 페이지-단위 ACL 은 수집 단계 Qdrant payload(`allowed_groups`/`allowed_users`)에 저장한다 → RDB per-user space ACL 테이블 불필요 (`docs/adr/0001-page-level-acl-source.md` §2).
+
+### 6.4 `admin_atlassian_credential`
+
+admin(role=ADMIN) 의 Atlassian 계정 credential. **Admin Key 수명주기 관리(activate/deactivate) 전용**(`V004`, 2026-06-11). ingestion 의 **콘텐츠 조회**(OAuth Bearer + 게이트웨이)와 자격증명·base URL 이 다르므로 `user_tokens` 와 분리한다.
+
+| 컬럼 | 타입 | 필수 | 비고 |
+|---|---|---|---|
+| `user_key` | BINARY(16) **PK**, FK→`users` | ✅ | admin 사용자. 1:1. `ON DELETE CASCADE` |
+| `site_url` | VARCHAR(255) | ✅ | Admin Key 관리 API base URL. `POST/DELETE {site_url}/wiki/api/v2/admin-key` (콘텐츠 조회 게이트웨이와 별개). accessible-resources(AUTH-04) 응답 `url` 에서 확보 |
+| `admin_api_token_enc` | VARBINARY(2048) | ✅ | Atlassian 계정 발급 API Token. **AES-GCM 암호화**(평문 금지). Basic auth=`base64(users.email:토큰)`. 정적 — 만료/refresh 없음 |
+
+> **왜 별도 테이블인가**: admin-key 관리 API 는 OAuth2 앱 접근 불가(공식)라 **API Token Basic auth**로 호출해야 하고 base URL 도 **site URL**(`{site}.atlassian.net`)이다. 반면 ingestion 콘텐츠 조회는 admin 의 **OAuth Bearer** + 게이트웨이(`/ex/confluence/{cloudId}/...`)를 쓴다(→ `user_tokens`). 자격증명·URL 체계가 달라 분리. adminEmail 은 `users.email` 재사용. (Feature 0 게이트·api-spec §1-4/§2-5)

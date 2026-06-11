@@ -1,8 +1,9 @@
 -- LINA Authorization Server — users 테이블
--- 회원가입 완료 가정. LINA 발급 access token 을 저장한다(refresh token 은 이번 단계 미고려).
+-- 회원가입 완료 가정. LINA 발급 access/refresh token 을 저장한다.
 --   user_id              = Confluence accountId. 문서/JWT/RAG 의 `userId` = 이 값(이메일 아님!). RAG ACL(allowed_users)로 전달.
 --   email                = 로그인 식별자(이메일). LINA access token 파싱 결과로 조회 키.
 --   user_key             = PK. 애플리케이션이 UUID 생성 후 UUID_TO_BIN 으로 저장.
+--   refresh_token        = LINA 세션 refresh token. 컬럼 선반영(NULL 허용) — 발급/회전(rotating)은 Feature 4.
 CREATE TABLE users (
     user_key             BINARY(16)            NOT NULL,
     user_id              VARCHAR(128)          NOT NULL,
@@ -11,6 +12,7 @@ CREATE TABLE users (
     profile_image_url    VARCHAR(512)          NULL,
     role                 ENUM('USER', 'ADMIN') NOT NULL DEFAULT 'USER',
     access_token         VARCHAR(512)          NOT NULL,
+    refresh_token        VARCHAR(512)          NULL,             -- LINA 세션 refresh token(선반영). 발급/회전은 Feature 4
     last_login_at        DATETIME              NULL,             -- OAuth callback 시 갱신
     created_at           DATETIME              NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at           DATETIME              NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
