@@ -566,7 +566,12 @@ Credential 처리 원칙:
 - [x] BFF ingest 요청 처리에서 `jobId` 생성, Admin Key activate, RabbitMQ ingest job 직접 발행 경계를 확정 및 구현 (`POST /api/admin/ingest` → auth-server activate → RabbitMQ publish)
 - [x] ingest job payload schema 정의: `jobId`, `adminUserId`, `mode`, `requestedAt` 중심. `accessToken`/`refreshToken`/`cloudId` 포함 금지 테스트 추가
 - [x] Data Ingestion Worker 가 `adminUserId` 로 auth-server 내부 credential 조회 API 에서 admin OAuth accessToken + cloudId + siteUrl 을 함께 조회하는 계약 확인 — `GET /internal/auth/admin-confluence-credential?adminUserId={id}` → `{ accessToken, cloudId, siteUrl, expiresAt }`, `refreshToken` 미반환, admin API Token 미반환 (`backend/auth-server/current-plans.md` Feature 5, `docs/api-spec.md` §2-5, ADR 0001 §2.1)
-- [ ] completion event consumer 구현 계획 수립: `jobId`, `adminUserId`, `mode`, `status`, `completedAt`, `errorCode`, `message` 수신 후 auth-server Admin Key deactivate 내부 API 호출
+- [x] completion event consumer 구현 계획 수립: RabbitMQ completion event DTO 는 `jobId`, `adminUserId`, `mode`, `status`, `completedAt`, `errorCode`, `message` 로 정의하고, BFF consumer 는 `COMPLETED`/`FAILED` event 를 consume한 뒤 auth-server `POST /internal/admin/key/deactivate` 에 `jobId`/`adminUserId` 를 전달해 Admin Key deactivate 를 위임한다. 성공 또는 idempotent 완료 확인 후 ack 하는 방향이며, 중복 처리·durable queue·retry/DLQ 세부 정책은 아래 후속 체크리스트에서 별도 확정한다. (`docs/api-spec.md` §2-2, ADR 0001 §2.1, `backend/auth-server/current-plans.md` Feature 6)
+  - [ ] completion event DTO 구현 (`jobId`, `adminUserId`, `mode`, `status`, `completedAt`, `errorCode`, `message`)
+  - [ ] auth-server Admin Key deactivate client 구현 (`POST /internal/admin/key/deactivate`, body `jobId`/`adminUserId`)
+  - [ ] RabbitMQ completion event consumer 구현 (`COMPLETED`/`FAILED` event consume → deactivate client 호출)
+  - [ ] consumer ack 경계 구현: deactivate 성공 또는 idempotent 완료 확인 후 ack, 처리 실패 시 후속 retry/DLQ 정책으로 연결
+  - [ ] consumer 단위 테스트 추가: 정상 completion event 수신 시 deactivate 호출, `COMPLETED`/`FAILED` 외 status 처리, 필수 필드 누락 처리
 - [ ] `jobId` 기준 중복 completion event idempotency 정책 문서화 및 테스트 항목 추가
 - [ ] BFF 재시작/consumer 장애 시 RabbitMQ durable queue 에 남은 completion event 재처리 정책 문서화
 - [ ] deactivate 실패 재시도 초안: backoff 적용, 최대 5회 재시도 후 DLQ 이동
