@@ -1,9 +1,12 @@
 package com.lina.bff.admin.messaging;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.lina.bff.admin.client.AuthAdminKeyClient;
+import com.lina.bff.admin.client.AuthAdminKeyClient.AuthAdminKeyException;
 import com.lina.bff.admin.dto.IngestCompletionEvent;
 import java.time.Instant;
 import org.junit.jupiter.api.DisplayName;
@@ -56,5 +59,20 @@ class AdminIngestCompletionConsumerTest {
     consumer.consume(event);
 
     verifyNoInteractions(authAdminKeyClient);
+  }
+
+  @Test
+  @DisplayName("Admin Key deactivate 실패 시 예외를 전파해 RabbitMQ retry/DLQ 경계로 넘긴다")
+  void shouldPropagateDeactivateFailureForRetryOrDlqBoundary() {
+    IngestCompletionEvent event =
+        new IngestCompletionEvent(
+            "job-1", "admin-account-id", "full", "COMPLETED", Instant.now(), null, "done");
+    doThrow(new AuthAdminKeyException("Failed to deactivate Admin Key", new RuntimeException()))
+        .when(authAdminKeyClient)
+        .deactivate("admin-account-id", "job-1");
+
+    assertThatThrownBy(() -> consumer.consume(event)).isInstanceOf(AuthAdminKeyException.class);
+
+    verify(authAdminKeyClient).deactivate("admin-account-id", "job-1");
   }
 }

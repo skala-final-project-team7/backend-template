@@ -570,7 +570,7 @@ Credential 처리 원칙:
   - [x] completion event DTO 구현 (`jobId`, `adminUserId`, `mode`, `status`, `completedAt`, `errorCode`, `message`)
   - [x] auth-server Admin Key deactivate client 구현 (`POST /internal/admin/key/deactivate`, body `jobId`/`adminUserId`)
   - [x] RabbitMQ completion event consumer 구현 (`COMPLETED`/`FAILED` event consume → deactivate client 호출)
-  - [ ] consumer ack 경계 구현: deactivate 성공 또는 idempotent 완료 확인 후 ack, 처리 실패 시 후속 retry/DLQ 정책으로 연결
+  - [x] consumer ack 경계 구현: deactivate 성공 또는 idempotent 완료 확인 후 ack, 처리 실패 시 후속 retry/DLQ 정책으로 연결
   - [ ] consumer 단위 테스트 추가: 정상 completion event 수신 시 deactivate 호출, `COMPLETED`/`FAILED` 외 status 처리, 필수 필드 누락 처리
 - [ ] `jobId` 기준 중복 completion event idempotency 정책 문서화 및 테스트 항목 추가
 - [ ] BFF 재시작/consumer 장애 시 RabbitMQ durable queue 에 남은 completion event 재처리 정책 문서화
