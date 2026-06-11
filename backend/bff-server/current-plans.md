@@ -564,7 +564,7 @@ Credential 처리 원칙:
 - Data Ingestion Worker 는 Confluence 호출 시 `https://api.atlassian.com/ex/confluence/{cloudId}/wiki/api/v2/...` 게이트웨이 URL(cloudId 로 구성) 로 `Authorization: Bearer {admin OAuth accessToken}` + `Atl-Confluence-With-Admin-Key: true` 헤더를 사용한다(Admin Key 는 auth-server 가 admin API Token 으로 사전 활성화).
 
 - [x] BFF ingest 요청 처리에서 `jobId` 생성, Admin Key activate, RabbitMQ ingest job 직접 발행 경계를 확정 및 구현 (`POST /api/admin/ingest` → auth-server activate → RabbitMQ publish)
-- [ ] ingest job payload schema 정의: `jobId`, `adminUserId`, `mode`, `requestedAt` 중심. `accessToken`/`refreshToken`/`cloudId` 포함 금지
+- [x] ingest job payload schema 정의: `jobId`, `adminUserId`, `mode`, `requestedAt` 중심. `accessToken`/`refreshToken`/`cloudId` 포함 금지 테스트 추가
 - [ ] Data Ingestion Worker 가 `adminUserId` 로 auth-server 내부 credential 조회 API 에서 admin OAuth accessToken + cloudId + siteUrl 을 함께 조회하는 계약 확인
 - [ ] completion event consumer 구현 계획 수립: `jobId`, `adminUserId`, `mode`, `status`, `completedAt`, `errorCode`, `message` 수신 후 auth-server Admin Key deactivate 내부 API 호출
 - [ ] `jobId` 기준 중복 completion event idempotency 정책 문서화 및 테스트 항목 추가
