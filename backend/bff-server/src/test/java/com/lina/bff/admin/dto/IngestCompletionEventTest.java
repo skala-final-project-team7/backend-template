@@ -2,6 +2,7 @@ package com.lina.bff.admin.dto;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.time.Instant;
@@ -25,7 +26,7 @@ class IngestCompletionEventTest {
             null,
             "done");
 
-    var payload = objectMapper.readTree(objectMapper.writeValueAsString(event));
+    JsonNode payload = objectMapper.readTree(objectMapper.writeValueAsString(event));
 
     assertThat(payload.fieldNames())
         .toIterable()

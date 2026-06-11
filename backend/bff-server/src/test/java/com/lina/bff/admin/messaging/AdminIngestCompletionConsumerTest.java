@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import com.lina.bff.admin.client.AuthAdminKeyClient;
 import com.lina.bff.admin.client.AuthAdminKeyClient.AuthAdminKeyException;
 import com.lina.bff.admin.dto.IngestCompletionEvent;
+import com.lina.bff.admin.messaging.AdminIngestCompletionConsumer.InvalidCompletionEventException;
 import java.time.Instant;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -74,5 +75,32 @@ class AdminIngestCompletionConsumerTest {
     assertThatThrownBy(() -> consumer.consume(event)).isInstanceOf(AuthAdminKeyException.class);
 
     verify(authAdminKeyClient).deactivate("admin-account-id", "job-1");
+  }
+
+  @Test
+  @DisplayName("jobId 가 누락된 completion event 는 Admin Key deactivate 를 호출하지 않고 실패 처리한다")
+  void shouldRejectCompletionEventWithoutJobId() {
+    IngestCompletionEvent event =
+        new IngestCompletionEvent(
+            null, "admin-account-id", "full", "COMPLETED", Instant.now(), null, "done");
+
+    assertThatThrownBy(() -> consumer.consume(event))
+        .isInstanceOf(InvalidCompletionEventException.class)
+        .hasMessage("completion event jobId is required");
+
+    verifyNoInteractions(authAdminKeyClient);
+  }
+
+  @Test
+  @DisplayName("adminUserId 가 누락된 completion event 는 Admin Key deactivate 를 호출하지 않고 실패 처리한다")
+  void shouldRejectCompletionEventWithoutAdminUserId() {
+    IngestCompletionEvent event =
+        new IngestCompletionEvent("job-1", " ", "full", "FAILED", Instant.now(), null, "failed");
+
+    assertThatThrownBy(() -> consumer.consume(event))
+        .isInstanceOf(InvalidCompletionEventException.class)
+        .hasMessage("completion event adminUserId is required");
+
+    verifyNoInteractions(authAdminKeyClient);
   }
 }

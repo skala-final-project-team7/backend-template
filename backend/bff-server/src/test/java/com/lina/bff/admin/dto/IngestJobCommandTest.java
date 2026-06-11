@@ -2,6 +2,7 @@ package com.lina.bff.admin.dto;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.time.Instant;
@@ -19,7 +20,7 @@ class IngestJobCommandTest {
         new IngestJobCommand(
             "job-1", "admin-account-id", "full", Instant.parse("2026-06-11T00:00:00Z"));
 
-    var payload = objectMapper.readTree(objectMapper.writeValueAsString(command));
+    JsonNode payload = objectMapper.readTree(objectMapper.writeValueAsString(command));
 
     assertThat(payload.fieldNames())
         .toIterable()
