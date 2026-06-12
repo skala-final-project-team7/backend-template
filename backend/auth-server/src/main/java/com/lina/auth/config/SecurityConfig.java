@@ -48,12 +48,16 @@ public class SecurityConfig {
     http.csrf(AbstractHttpConfigurer::disable)
         .sessionManagement(
             session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-        .authorizeHttpRequests(
+                .authorizeHttpRequests(
             auth ->
                 auth.requestMatchers("/api/auth/login", "/api/auth/callback", "/api/auth/refresh")
                     .permitAll()
                     // k8s liveness/readiness probe 용 (application.yml probes.enabled)
                     .requestMatchers("/actuator/health/**")
+                    .permitAll()
+                    // 모니터링 수집용 endpoint (metrics/prometheus) 공개
+                    .requestMatchers(
+                        "/actuator/info", "/actuator/metrics", "/actuator/metrics/**", "/actuator/prometheus")
                     .permitAll()
                     // 외부 차단 — Feature 5/7 에서 내부 호출자 인증(NetworkPolicy/service auth)으로 대체
                     .requestMatchers("/internal/**")
