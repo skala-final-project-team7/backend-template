@@ -123,4 +123,15 @@ public class User {
   public void storeRefreshToken(String refreshToken) {
     this.refreshToken = refreshToken;
   }
+
+  /** 세션 refresh 회전(Feature 4): 새 access/refresh 로 동시 갱신. 이전 refresh 는 재사용 불가가 된다. */
+  public void rotateSessionTokens(String accessToken, String refreshToken) {
+    this.accessToken = accessToken;
+    this.refreshToken = refreshToken;
+  }
+
+  /** logout(Feature 4): 저장 refresh 를 비워 이후 refresh 요청을 거부하게 한다. */
+  public void clearRefreshToken() {
+    this.refreshToken = null;
+  }
 }

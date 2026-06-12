@@ -187,12 +187,13 @@
 #### 변경 대상 파일
 - `oauth/AuthController.java`(엔드포인트 추가), `token/SessionService.java`, `config/SecurityConfig.java`
 - `oauth/AuthControllerTest.java`(refresh/logout 추가)
+- (구현 시 추가 2026-06-12) `config/JwtAuthenticationFilter.java`(Bearer 검증→SecurityContext 적재 — logout 호출자 식별), `oauth/dto/RefreshTokenRequest.java`, `token/entity/User.java` `rotateSessionTokens()`/`clearRefreshToken()` 추가(시그니처 변경 없음), `token/SessionServiceTest.java`
 
 #### 체크리스트
-- [ ] `POST /api/auth/refresh` — LINA refresh token(Body) 검증 → **Rotating**: 새 access JWT + 새 refresh 발급, 이전 refresh 무효화. 만료/무효 시 `401 UNAUTHORIZED`
-- [ ] `POST /api/auth/logout` — `Authorization: Bearer` 로 식별, refresh token 무효화, `data: null`
-- [ ] `SecurityConfig` — `/api/auth/login`·`/api/auth/callback` 은 `permitAll`, `/api/auth/logout` 은 Bearer 필요, `/internal/**` 은 외부 차단
-- [ ] `AuthControllerTest`: refresh 회전·재사용 거부, logout 무효화
+- [x] `POST /api/auth/refresh` — LINA refresh token(Body) 검증 → **Rotating**: 새 access JWT + 새 refresh 발급, 이전 refresh 무효화. 만료/무효 시 `401 UNAUTHORIZED` — ✅ 2026-06-12 (재사용 거부는 JWT 검증 + **`users.refresh_token` 저장값 대조**로 구현 — stateless 검증만으론 회전 후 재사용을 못 잡음. 별도 토큰 테이블 미신설. 권한 claim 은 refresh 시 DB 재조회, 새 access JWT 는 `users.access_token` 에도 갱신)
+- [x] `POST /api/auth/logout` — `Authorization: Bearer` 로 식별, refresh token 무효화, `data: null` — ✅ 2026-06-12 (무효화 = `users.refresh_token` NULL 비움 → 이후 refresh 401)
+- [x] `SecurityConfig` — `/api/auth/login`·`/api/auth/callback` 은 `permitAll`, `/api/auth/logout` 은 Bearer 필요, `/internal/**` 은 외부 차단 — ✅ 2026-06-12 (`/api/auth/refresh` 도 permitAll — Body 의 refresh token 으로 자체 검증. logout Bearer = `JwtAuthenticationFilter` + 401 EntryPoint(공통 ErrorResponse). `/internal/**` 는 `denyAll` — Feature 5/7 에서 내부 호출자 인증으로 대체)
+- [x] `AuthControllerTest`: refresh 회전·재사용 거부, logout 무효화 — ✅ 2026-06-12 (MockMvc 7건 추가 + `SessionServiceTest` 7건 신규: 회전·재사용 거부·logout 후 refresh 거부·미인증/위조 Bearer 401·`/internal/**` 차단. 신규 14건 red→green 확인)
 
 > **`/api/users/me` 는 본 Feature 에서 제외** — api-spec §3 흐름도(`users/me → BFF → DB`)·`/api/admin/* → BFF → MySQL` 기준, **BFF 가 MySQL `users` 를 직접 읽어 서빙**한다. 따라서 users/me 는 BFF 작업(§교차 모듈 참조)이며, auth-server 는 `users` **쓰기**(callback upsert, Feature 3)만 담당한다. MySQL 은 3단계부터 **공유**(auth-server 가 `users`/`user_tokens` 쓰기, BFF 가 `users` 읽기).
 
