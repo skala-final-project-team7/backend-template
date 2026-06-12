@@ -542,6 +542,138 @@
 - 응답은 공통 Wrapper(`ApiResponse`), 시간은 **KST 직렬화**.
 - QCA 매핑: assistant `messageId` → 직전 `user` 메시지 (`backend/rules/domains.md` §2).
 
+### Feature 2. 관리자 대시보드 공통 기반
+
+목표: `/api/admin/*` 대시보드 API 5종이 같은 권한·기간·페이지네이션·응답 규칙을 사용하도록 공통 경계를 먼저 만든다. Admin Key 수집 트리거(`Feature 1`)와 Confluence 미리보기는 본 Feature 범위가 아니다.
+
+#### 변경 대상 파일
+- `backend/bff-server/build.gradle` — MySQL 읽기 의존성(JDBC 또는 JPA) 추가 여부 확정
+- `backend/bff-server/src/main/resources/application*.yml` — BFF read-only MySQL datasource 설정(필요 시)
+- `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/**` — 공통 DTO, query parameter, time/page helper, 권한 경계
+- `backend/bff-server/src/test/java/com/lina/bff/admin/dashboard/**` — 공통 검증 테스트
+- `docs/api-spec.md` — **필요 시에만** §4-2 제안 파라미터 확정 내용 반영
+
+#### 체크리스트
+- [ ] 대시보드 API 패키지 경계 확정: 기존 `admin/ingest` 와 분리해 `admin/dashboard` 하위에 controller/service/repository/dto 배치
+- [ ] `/api/admin/*` ADMIN 권한 가드 적용 방식 확정: JWT `role=ADMIN` 기반 `@PreAuthorize` 또는 SecurityFilterChain matcher. 데모용 `FixedDemoUserProvider` 분기와 production 권한 로직을 섞지 않는다.
+- [ ] 공통 query parameter 확정: `period`(`daily`/`hourly`), `from`/`to`(KST ISO-8601), `page`/`size`; 기본값은 `docs/api-spec.md` §4-2 와 맞춘다.
+- [ ] 기간 파라미터는 KST 입력 → UTC 조회 범위로 변환하고, 응답 timestamp 는 KST 로 직렬화한다.
+- [ ] 페이지네이션 검증 정책 확정: `page >= 0`, `1 <= size <= 100`(또는 확정값), 위반 시 `400 INVALID_REQUEST`.
+- [ ] MySQL 읽기 경계 확정: BFF 가 auth-server 소유 `users`/`user_groups` 를 읽어야 하므로 read-only datasource/계정 사용 원칙을 문서화하고, 쓰기 로직은 만들지 않는다.
+- [ ] MongoDB RAG 파이프라인 컬렉션(`raw_pages`, `chunked_units`, `sync_logs` 등)은 **읽기 전용**으로만 접근한다.
+- [ ] 공통 응답은 `ApiResponse` wrapper 로 통일하고 SSE wrapper 예외 규칙과 혼동하지 않는다.
+- [ ] MockMvc 권한 테스트: 미인증 `401`, 일반 사용자 `403`, ADMIN `200` 경로를 최소 1개 대시보드 endpoint 로 고정한다.
+
+### Feature 3. 관리자 통계 API — `GET /api/admin/stats`
+
+목표: 사용 추이 카드에 필요한 일간 질의 수, 평균 응답 시간, 전체 대화 수, 시간대별 접근 추이를 제공한다.
+
+#### 변경 대상 파일
+- `admin/dashboard/controller/AdminStatsController.java`
+- `admin/dashboard/service/AdminStatsService.java`
+- `admin/dashboard/dto/AdminStatsResponse.java`
+- `admin/dashboard/repository/AdminStatsRepository.java` 또는 Mongo/MySQL 전용 repository
+- `src/test/java/com/lina/bff/admin/dashboard/**/AdminStats*Test.java`
+
+#### 체크리스트
+- [ ] `GET /api/admin/stats` controller 추가, `period`/`from`/`to` 파라미터 수신
+- [ ] `dailyQueryCount`: 지정 기간 내 사용자 질문 메시지 또는 대화 질의 기준 집계 규칙 확정
+- [ ] `avgResponseTime`: 현재 저장 모델에 latency 원천이 없으면 `meta.latency_ms` 저장 여부 또는 `null/0` 정책을 명시하고 후속 이슈로 분리
+- [ ] `totalConversations`: 삭제되지 않은 대화 기준 전체 대화 수 집계
+- [ ] `hourlyAccessTrend`: KST 시간대 기준 `hour`/`count` 배열 반환
+- [ ] 빈 기간/데이터 없음은 0 집계와 빈 배열로 정상 응답한다.
+- [ ] 테스트: 기본 최근 7일, `hourly`/`daily` 분기, KST 경계일, 데이터 없음, 권한 실패
+
+### Feature 4. 관리자 사용자 현황 API — `GET /api/admin/users`
+
+목표: 사용자 총계·일일 활성 사용자 수와 사용자별 접근 가능 데이터/대화 활동 요약을 제공한다.
+
+#### 변경 대상 파일
+- `admin/dashboard/controller/AdminUsersController.java`
+- `admin/dashboard/service/AdminUsersService.java`
+- `admin/dashboard/dto/AdminUsersResponse.java`, `AdminUserSummaryResponse.java`
+- `admin/dashboard/repository/AdminUserReadRepository.java`
+- `src/test/java/com/lina/bff/admin/dashboard/**/AdminUsers*Test.java`
+
+#### 체크리스트
+- [ ] `GET /api/admin/users` controller 추가, `page`/`size` 적용
+- [ ] MySQL `users` 를 read-only 로 조회해 `totalUsers`, 사용자 목록(`userId`, `name`, `lastAccessAt`)을 구성
+- [ ] `dailyActiveUsers` 산정 기준 확정: `last_login_at` 또는 대화/메시지 활동 기준 중 하나로 고정
+- [ ] `conversationCount` 는 MongoDB `conversations` 에서 `userId` 기준 집계
+- [ ] `accessibleSpaceCount`/`accessiblePageCount`/`accessibleAttachmentCount` 산정 원천 확정: 현재 `user_groups` + 수집 payload만으로 정확 집계가 어려우면 Mongo/Qdrant 통계 원천 필요 여부를 명시하고 fallback 정책을 둔다.
+- [ ] 페이지네이션 대상은 `users` 배열이며, 응답에 `page`/`size` 포함 여부는 FE와 확정한다.
+- [ ] 테스트: 사용자 0명, 다중 사용자 정렬, page/size, 활동 기준, 권한 실패
+
+### Feature 5. 관리자 데이터 현황 API — `GET /api/admin/data`
+
+목표: 수집된 Confluence 데이터와 Vector DB 상태를 대시보드 데이터 관리 카드로 제공한다.
+
+#### 변경 대상 파일
+- `admin/dashboard/controller/AdminDataController.java`
+- `admin/dashboard/service/AdminDataService.java`
+- `admin/dashboard/dto/AdminDataResponse.java`
+- `admin/dashboard/repository/AdminDataMongoRepository.java`
+- `src/test/java/com/lina/bff/admin/dashboard/**/AdminData*Test.java`
+
+#### 체크리스트
+- [ ] `GET /api/admin/data` controller 추가
+- [ ] MongoDB 읽기 전용으로 `totalSpaces`, `totalPages`, `totalAttachments`, `totalChunks`, `lastSyncAt` 집계
+- [ ] `vectorDbSize` 원천 확정: Qdrant API 직접 조회, Mongo 저장 통계, 또는 운영 설정값 중 하나로 결정하고 단위를 문자열(`2.3 GB`)로 반환
+- [ ] 수집 데이터가 없으면 모든 count 0, `lastSyncAt=null` 로 정상 응답
+- [ ] RAG 파이프라인 컬렉션에는 쓰기/수정/삭제를 하지 않는 테스트 또는 코드 경계 확인
+- [ ] 테스트: 정상 집계, 빈 DB, `lastSyncAt` KST 변환, 권한 실패
+
+### Feature 6. 관리자 피드백 현황 API — `GET /api/admin/feedback`
+
+목표: 피드백 긍정/부정 비율·추이와 부정 피드백의 QCA 원문을 제공한다.
+
+#### 변경 대상 파일
+- `admin/dashboard/controller/AdminFeedbackController.java`
+- `admin/dashboard/service/AdminFeedbackDashboardService.java`
+- `admin/dashboard/dto/AdminFeedbackResponse.java`, `NegativeFeedbackResponse.java`
+- `admin/dashboard/repository/AdminFeedbackRepository.java`
+- `src/test/java/com/lina/bff/admin/dashboard/**/AdminFeedback*Test.java`
+
+#### 체크리스트
+- [ ] `GET /api/admin/feedback` controller 추가, `period`/`from`/`to`/`page`/`size` 적용
+- [ ] `totalCount`, `likeCount`, `dislikeCount`, `positiveRatio` 집계. `totalCount=0` 이면 `positiveRatio=0` 또는 `null` 중 정책 확정
+- [ ] `trend` 는 KST 날짜/시간 버킷 기준으로 `LIKE`/`DISLIKE` 를 집계
+- [ ] `negativeFeedbacks` 는 `DISLIKE` 피드백만 페이지네이션하고 최신순 정렬
+- [ ] QCA 매핑 구현: feedback `messageId`(assistant) → 동일 conversation 의 직전 `user` 메시지 → `question`, assistant content → `answer`
+- [ ] 피드백 대상 메시지가 삭제/누락된 경우 응답 제외 또는 `question/answer=null` 정책을 확정
+- [ ] 테스트: LIKE/DISLIKE 집계, 0건, 기간 필터, QCA 매핑, 누락 메시지, 권한 실패
+
+### Feature 7. 관리자 동기화 이력 API — `GET /api/admin/sync`
+
+목표: 수집/동기화 작업 이력을 데이터 관리 화면에서 확인할 수 있도록 제공한다.
+
+#### 변경 대상 파일
+- `admin/dashboard/controller/AdminSyncController.java`
+- `admin/dashboard/service/AdminSyncService.java`
+- `admin/dashboard/dto/AdminSyncResponse.java`, `SyncHistoryItemResponse.java`
+- `admin/dashboard/repository/AdminSyncMongoRepository.java`
+- `src/test/java/com/lina/bff/admin/dashboard/**/AdminSync*Test.java`
+
+#### 체크리스트
+- [ ] `GET /api/admin/sync` controller 추가, `from`/`to`/`page`/`size` 적용
+- [ ] MongoDB 읽기 전용으로 `sync_logs` 또는 현행 ingestion job 컬렉션의 실제 필드명을 확인해 `syncId`, `status`, `updatedPages`, `deletedPages`, `duration`, `completedAt` 로 매핑
+- [ ] status 값은 `STARTED`/`IN_PROGRESS`/`COMPLETED`/`FAILED` 등 api-spec enum 과 정합화
+- [ ] `duration` 단위(초/ms)를 확정하고 `docs/api-spec.md` 예시와 맞춘다.
+- [ ] completion event 기반 `/api/admin/ingest` job 과 sync history 가 같은 jobId 를 공유하는지 확인하고, 공유하지 않으면 필드명을 분리한다.
+- [ ] 테스트: 정상 목록, 기간 필터, 페이지네이션, 실패 이력, 빈 목록, 권한 실패
+
+### Feature 8. 관리자 대시보드 통합 검증
+
+목표: Feature 2~7 구현 후 관리자 대시보드 API 5종이 같은 계약·권한·시간 정책을 만족하는지 회귀 검증한다.
+
+#### 체크리스트
+- [ ] `docs/api-spec.md` §4-2 응답 예시와 실제 JSON field name/type 비교
+- [ ] `docs/db-schema.md` 의 Mongo/MySQL 소유권과 BFF 접근 방식(read/write)이 맞는지 재확인
+- [ ] `./gradlew :bff-server:test` 통과
+- [ ] `./scripts/format.sh`, `./scripts/lint.sh`, `./scripts/verify.sh` 통과
+- [ ] FE 담당자에게 `GET /api/admin/*` 5종의 query parameter 기본값, 빈 데이터 응답 형태, 페이지네이션 형태 공유
+- [ ] Auth 담당자에게 BFF read-only MySQL 접근 계정/권한과 JWT ADMIN role claim 계약 확인 요청
+
 ### 데이터 수집 트리거 (관리자용, ADMIN 전용)
 
 | 엔드포인트 | 응답 핵심 | 대상 | 비고 |
