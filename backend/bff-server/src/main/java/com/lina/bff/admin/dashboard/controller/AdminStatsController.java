@@ -6,6 +6,7 @@ import com.lina.bff.admin.dashboard.security.AdminAuthorizationService;
 import com.lina.bff.admin.dashboard.service.AdminStatsService;
 import com.lina.bff.admin.dashboard.support.AdminDashboardQueryParser;
 import com.lina.common.response.ApiResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -30,20 +31,12 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/admin")
+@RequiredArgsConstructor
 public class AdminStatsController {
 
   private final AdminAuthorizationService adminAuthorizationService;
   private final AdminDashboardQueryParser adminDashboardQueryParser;
   private final AdminStatsService adminStatsService;
-
-  public AdminStatsController(
-      AdminAuthorizationService adminAuthorizationService,
-      AdminDashboardQueryParser adminDashboardQueryParser,
-      AdminStatsService adminStatsService) {
-    this.adminAuthorizationService = adminAuthorizationService;
-    this.adminDashboardQueryParser = adminDashboardQueryParser;
-    this.adminStatsService = adminStatsService;
-  }
 
   @GetMapping("/stats")
   public ApiResponse<AdminStatsResponse> getStats(
