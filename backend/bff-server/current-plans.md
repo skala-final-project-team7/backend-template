@@ -635,13 +635,15 @@
 - `src/test/java/com/lina/bff/admin/dashboard/**/AdminFeedback*Test.java`
 
 #### 체크리스트
-- [ ] `GET /api/admin/feedback` controller 추가, `period`/`from`/`to`/`page`/`size` 적용
-- [ ] `totalCount`, `likeCount`, `dislikeCount`, `positiveRatio` 집계. `totalCount=0` 이면 `positiveRatio=0` 또는 `null` 중 정책 확정
-- [ ] `trend` 는 KST 날짜/시간 버킷 기준으로 `LIKE`/`DISLIKE` 를 집계
-- [ ] `negativeFeedbacks` 는 `DISLIKE` 피드백만 페이지네이션하고 최신순 정렬
-- [ ] QCA 매핑 구현: feedback `messageId`(assistant) → 동일 conversation 의 직전 `user` 메시지 → `question`, assistant content → `answer`
-- [ ] 피드백 대상 메시지가 삭제/누락된 경우 응답 제외 또는 `question/answer=null` 정책을 확정
-- [ ] 테스트: LIKE/DISLIKE 집계, 0건, 기간 필터, QCA 매핑, 누락 메시지, 권한 실패
+- [x] `GET /api/admin/feedback` controller 추가, `period`/`from`/`to`/`page`/`size` 적용
+- [x] `totalCount`, `likeCount`, `dislikeCount`, `positiveRatio` 집계. `totalCount=0` 이면 `positiveRatio=0.0` 으로 반환
+- [x] `trend` 는 KST 날짜/시간 버킷 기준으로 `LIKE`/`DISLIKE` 를 집계. `daily` 는 `yyyy-MM-dd`, `hourly` 는 `yyyy-MM-dd'T'HH:00`
+- [x] `negativeFeedbacks` 는 `DISLIKE` 피드백만 페이지네이션하고 최신순 정렬
+- [x] QCA 매핑 구현: feedback `messageId`(assistant) → 동일 conversation 의 직전 `user` 메시지 → `question`, assistant content → `answer`
+- [x] 피드백 대상 assistant 메시지가 삭제/누락된 경우 QCA 목록에서 제외. 직전 user 메시지만 없으면 `question=null`, `answer` 는 유지
+- [x] 테스트: LIKE/DISLIKE 집계, 0건, 기간 필터, QCA 매핑, 누락 메시지, 권한 실패
+
+> Feature 6 구현 완료 (2026-06-12). `AdminFeedbackController`/`AdminFeedbackDashboardService`/`AdminFeedbackRepository` 와 응답 DTO 3종을 추가했다. 집계 범위는 `period/from/to` 로 제한하고, `negativeFeedbacks` 는 `page/size` 로 `DISLIKE` 피드백만 최신순 조회한다. `positiveRatio` 는 `likeCount / totalCount` 를 소수 4자리 반올림하며 0건일 때 `0.0` 으로 고정했다. QCA 는 활성 assistant 메시지만 대상으로 하며, 동일 conversation 의 시간순 활성 메시지에서 대상 assistant 직전 user 본문을 `question`, assistant 본문을 `answer` 로 매핑한다. 대상 assistant 메시지가 삭제/누락되었거나 assistant role 이 아니면 부정 피드백 목록에서 제외하고, 직전 user 메시지만 없으면 `question=null` 로 둔다. 신규 테스트는 controller 권한/파라미터 전달, service 집계·KST daily/hourly 버킷·0건·QCA·누락 메시지 정책을 검증한다.
 
 ### Feature 7. 관리자 동기화 이력 API — `GET /api/admin/sync`
 
