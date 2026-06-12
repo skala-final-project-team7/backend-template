@@ -51,7 +51,7 @@
 
 - **`offline_access` scope 필수** — refresh_token 발급 조건. authorize 의 `scope` 에 포함한다.
 - **Rotating Refresh Token** — 갱신 시 기존 refresh 가 무효화되고 새 값이 발급된다 → **MySQL 암호화 저장소에 반드시 덮어쓰기**하고 이전 값은 재사용 금지.
-- **scope 충분성 (✅ 확정 2026-06-10, 공식 문서)** — 요약 scope 는 본문 미포함이라 부족. 필요 scope: `read:confluence-content.all`(본문), `readonly:content.attachment:confluence`(첨부), `read:content.restriction:confluence`(restriction), `read:confluence-user`(AUTH-05 memberof), `read:confluence-groups`, `read:confluence-space.summary`, `offline_access`. classic·granular 혼용은 dev console 등록 시 재확인.
+- **scope 충분성 (✅ 확정 2026-06-10 → ⚠️ 2026-06-12 classic 통일로 정정)** — 요약 scope 는 본문 미포함이라 부족. **최종 scope(7종): `read:me`(user-info `/me` — Confluence 가 아닌 **User Identity API** 의 scope, 누락 시 `/me` 403 — 라이브 스모크 실측 2026-06-12), `read:confluence-content.all`(본문 + v1 restriction 조회 — `GET /content/{id}/restriction` operation 문서의 공식 classic scope), `readonly:content.attachment:confluence`(첨부 다운로드 — 형태는 granular 같지만 **Classic 표 등재**, 형태 규칙의 예외), `read:confluence-user`(AUTH-05 memberof — operation 문서상 이것 하나로 충분), `read:confluence-groups`, `read:confluence-space.summary`, `offline_access`.** dev console 은 Confluence API 외에 **User Identity API**(`read:me`)도 등록 필요(타 product scope 혼합은 공식 지원 — classic/granular 충돌과 무관). 06-10 셋에서 제거는 **`read:content.restriction:confluence` 단 1개**(유일한 granular — dev console 미등록 granular 를 authorize 에 요청해 거부된 원인. restriction 조회는 위 `content.all` 로 커버되어 기능 손실 없음). **전제: 콘텐츠 조회는 v1 API**(classic↔v1) — 수집측이 v2(`/wiki/api/v2/*`) 사용 시 granular 별도 등록 필요. 최종 검증 방법론(공식): 수집측 실제 호출 operation 목록 확정 후 REST 문서의 operation 별 scope 행으로 대조.
 - `client_secret` 등은 평문 노출 금지(환경변수/Secret), 토큰 로그 마스킹(Feature 7).
 
 ---
@@ -248,8 +248,8 @@
 
 #### 체크리스트
 - [ ] `./scripts/format.sh`/`lint.sh`/`test.sh`/`verify.sh` 성공
-- [ ] `./gradlew :auth-server:bootRun` 기동 확인 (MySQL 연결, Flyway 마이그레이션 적용)
-- [ ] OAuth login→callback→refresh→logout→users/me 라이브 스모크(Atlassian 은 mock/WireMock 또는 실제 3LO 1회) — 정상/실패(400/401/403) 경로
+- [x] `./gradlew :auth-server:bootRun` 기동 확인 (MySQL 연결, Flyway 마이그레이션 적용) — ✅ 2026-06-12 (Feature 4 직후 선행 수행 — 실 MySQL 8.4 도커에서 V001~V004 적용 + `ddl-auto: validate` 통과, drift 없음. 위험 요소 'Flyway 미검증' 해소)
+- [ ] OAuth login→callback→refresh→logout→users/me 라이브 스모크(Atlassian 은 mock/WireMock 또는 실제 3LO 1회) — 정상/실패(400/401/403) 경로 — **⏳ users/me 제외 전부 완료(2026-06-12, 실제 3LO)**: login 302→동의→callback 200(JWT claim: accountId/groupId 3건/USER), refresh 회전 200·**이전 refresh 재사용 401**, logout 200·**logout 후 refresh 401**, Bearer 누락 401, 만료 code 401·위조 state 400, DB 암호화 저장(평문 아님)·`user_groups` 적재 실측 확인. 스모크가 잡은 결함 2건(`read:me` scope 누락 → §구현 시 주의 정정, 토큰 컬럼 2048 truncation → V003 8192 확장) 수정·회귀 테스트 완료. **잔여: users/me(BFF 측 작업 — §교차 모듈 참조) 후 체크**
 - [ ] `docs/api-spec.md` §4-1 / §2-5 명세와 구현 정합성 확인 (불일치 시에만 수정)
 - [ ] `git diff` 기준 의도하지 않은 변경 / 담당 외 파일(bff-server 등) 미수정
 - [ ] `backend/auth-server/CLAUDE.md` §5 + `backend/CLAUDE.md` §7 점검: OAuth 토큰 평문 저장 없음(암호화), Confluence 토큰 FE 미노출, JWT Claim 셋 BFF 일치, 평문 secret 없음, 인증 우회 코드 없음(Test Security Config 사용)
