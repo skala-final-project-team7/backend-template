@@ -4,11 +4,10 @@ import com.lina.auth.oauth.dto.AccessibleResource;
 import com.lina.auth.oauth.dto.AtlassianTokenResponse;
 import com.lina.auth.oauth.dto.AtlassianUserInfo;
 import com.lina.auth.oauth.dto.GroupMembershipPage;
+import com.lina.auth.oauth.dto.TokenExchangeRequest;
 import java.net.URI;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
@@ -49,12 +48,14 @@ public class AtlassianOAuthClient {
 
   /** AUTH-02: authorization_code → Confluence access/refresh 교환. */
   public AtlassianTokenResponse exchangeAuthorizationCode(String code) {
-    Map<String, String> body = new LinkedHashMap<>();
-    body.put("grant_type", "authorization_code");
-    body.put("client_id", properties.getClientId());
-    body.put("client_secret", properties.getClientSecret());
-    body.put("code", code);
-    body.put("redirect_uri", properties.getRedirectUri());
+    TokenExchangeRequest body =
+        TokenExchangeRequest.builder()
+            .grantType("authorization_code")
+            .clientId(properties.getClientId())
+            .clientSecret(properties.getClientSecret())
+            .code(code)
+            .redirectUri(properties.getRedirectUri())
+            .build();
     try {
       return restClient
           .post()
