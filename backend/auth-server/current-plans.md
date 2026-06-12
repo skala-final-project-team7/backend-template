@@ -166,16 +166,17 @@
 #### 변경 대상 파일
 - `oauth/{AuthController,AtlassianOAuthClient,OAuthStateService}.java`, `oauth/dto/*.java`, `config/RestClientConfig.java`
 - `oauth/{AtlassianOAuthClientTest(WireMock),AuthControllerTest(MockMvc)}.java`
+- (구현 시 추가 2026-06-12) `oauth/{OAuthLoginService,OAuthProperties}.java`(오케스트레이션/설정 홀더 분리), `config/SecurityConfig.java`(login·callback permitAll + default deny — logout Bearer·`/internal/**` 제한은 Feature 4/7 에서 확장), `token/entity/User.java` `storeRefreshToken()` 추가(시그니처 변경 없음), `application.yml`(`api-base-uri`/`site-url`/`state-ttl-seconds` — 전부 `${...}`), `oauth/{OAuthStateServiceTest,OAuthLoginServiceTest}.java`
 
 #### 체크리스트
-- [ ] `GET /api/auth/login` — Atlassian authorize 로 `302` 리다이렉트(Wrapper 미적용). `state`(CSRF) 생성·저장, **`mode`/`returnTo` 를 `state` 에 직렬화**(서명 state 또는 서버 세션). `returnTo` 는 **내부 경로만** 허용(오픈 리다이렉트 방지) (`docs/api-spec.md` §4-1)
-- [ ] `GET /api/auth/callback` — `code`/`state` 검증 → AUTH-02 토큰 교환 → AUTH-04 `accessible-resources` 로 cloudId 조회 → **AUTH-05 `memberof` 로 groups(`groupId`=`results[].id`) 조회(페이징 처리)** → `users` upsert(없으면 `role='USER'`) + **`user_groups` 적재**(기존 멤버십 교체) → **Confluence** access/refresh + cloudId **암호화 저장**(`user_tokens`, Feature 1) → **LINA 세션 JWT 발급**(Feature 2, `userId`/`groups`/`role` claim) → `data: { accessToken, refreshToken, expiresAt }` (LINA refreshToken 발급/회전은 Feature 4 — `users.refresh_token` 컬럼은 `V001` 선반영)
-- [ ] AUTH-05 groups 조회: `totalSize > limit`(기본 200) 이면 `start` 페이징으로 전량 수집. 조회 실패/빈 결과 시 정책 결정(빈 `groups` 허용 시 BFF fail-closed 로 RAG 차단되므로 — 로그인은 허용하되 질의 단계에서 차단되는 동작 명시)
-- [ ] **`mode=admin` 게이트**: state 의 mode 가 `admin` 인데 `users.role != ADMIN` 이면 `403 FORBIDDEN`(message "관리자 권한이 없는 계정입니다"), 토큰 미발급 (`docs/api-spec.md` §4-1)
-- [ ] 실패 매핑: `state` 불일치 `400 INVALID_REQUEST`, `code` 무효/Confluence 오류 `401 UNAUTHORIZED`, mode 게이트 `403 FORBIDDEN` — 모든 실패에서 토큰 미발급
-- [ ] `accessible-resources` 멀티 사이트 선택 규칙 — **공식 주의: 반환 순서 없음, "최근 인가" 추론 금지**. PoC 는 단일 사이트 가정, 다중이면 설정값/명시 선택(첫 번째 임의 선택 금지)·기록
-- [ ] Confluence OAuth 토큰은 **응답에 미포함**(서버 보관, `backend/rules/auth.md` §3)
-- [ ] WireMock 으로 AUTH-02/04 모킹, MockMvc 로 login 리다이렉트·callback 성공/실패(400/401/403) 검증. **실제 Atlassian 호출 금지**
+- [x] `GET /api/auth/login` — Atlassian authorize 로 `302` 리다이렉트(Wrapper 미적용). `state`(CSRF) 생성·저장, **`mode`/`returnTo` 를 `state` 에 직렬화**(서명 state 또는 서버 세션). `returnTo` 는 **내부 경로만** 허용(오픈 리다이렉트 방지) (`docs/api-spec.md` §4-1) — ✅ 2026-06-12 (state 는 in-memory 1회용+TTL 보관 — 단일 인스턴스 전제, 다중 인스턴스 시 외부 저장소 교체 필요)
+- [x] `GET /api/auth/callback` — `code`/`state` 검증 → AUTH-02 토큰 교환 → AUTH-04 `accessible-resources` 로 cloudId 조회 → **AUTH-05 `memberof` 로 groups(`groupId`=`results[].id`) 조회(페이징 처리)** → `users` upsert(없으면 `role='USER'`) + **`user_groups` 적재**(기존 멤버십 교체) → **Confluence** access/refresh + cloudId **암호화 저장**(`user_tokens`, Feature 1) → **LINA 세션 JWT 발급**(Feature 2, `userId`/`groups`/`role` claim) → `data: { accessToken, refreshToken, expiresAt }` (LINA refreshToken 발급/회전은 Feature 4 — `users.refresh_token` 컬럼은 `V001` 선반영) — ✅ 2026-06-12 (accountId/email/name 은 user-info `/me` 로 취득. LINA refreshToken 은 응답 계약상 필요해 **발급·`users.refresh_token` 저장까지** 본 Feature 에서 구현 — 회전/무효화는 Feature 4)
+- [x] AUTH-05 groups 조회: `totalSize > limit`(기본 200) 이면 `start` 페이징으로 전량 수집. 조회 실패/빈 결과 시 정책 결정(빈 `groups` 허용 시 BFF fail-closed 로 RAG 차단되므로 — 로그인은 허용하되 질의 단계에서 차단되는 동작 명시) — ✅ 2026-06-12 (**정책 확정: 조회 실패 시 warn 로그 + 빈 `groups` 로 로그인 허용** — api-spec v2.6.0 'groups 빈 배열 허용' 정합, 질의는 user-level/공개 페이지만 매칭)
+- [x] **`mode=admin` 게이트**: state 의 mode 가 `admin` 인데 `users.role != ADMIN` 이면 `403 FORBIDDEN`(message "관리자 권한이 없는 계정입니다"), 토큰 미발급 (`docs/api-spec.md` §4-1) — ✅ 2026-06-12 (게이트는 groups 조회·모든 영속보다 먼저 — 거부 시 INSERT/저장 없음)
+- [x] 실패 매핑: `state` 불일치 `400 INVALID_REQUEST`, `code` 무효/Confluence 오류 `401 UNAUTHORIZED`, mode 게이트 `403 FORBIDDEN` — 모든 실패에서 토큰 미발급 — ✅ 2026-06-12 (`code`/`state` 누락도 `400`)
+- [x] `accessible-resources` 멀티 사이트 선택 규칙 — **공식 주의: 반환 순서 없음, "최근 인가" 추론 금지**. PoC 는 단일 사이트 가정, 다중이면 설정값/명시 선택(첫 번째 임의 선택 금지)·기록 — ✅ 2026-06-12 (단일=자동, 다중=`CONFLUENCE_SITE_URL` 일치 사이트만 선택, 미설정/불일치 시 `500 INTERNAL_ERROR`, 0개 시 `401`)
+- [x] Confluence OAuth 토큰은 **응답에 미포함**(서버 보관, `backend/rules/auth.md` §3) — ✅ 2026-06-12 (응답 미포함 테스트로 고정)
+- [x] WireMock 으로 AUTH-02/04 모킹, MockMvc 로 login 리다이렉트·callback 성공/실패(400/401/403) 검증. **실제 Atlassian 호출 금지** — ✅ 2026-06-12 (WireMock: AUTH-02/04/05+`/me`+페이징, MockMvc 8건, Service 단위 13건, state 5건 — 신규 31건 전부 통과)
 
 > **FE 진입점 정합 (api-spec §3):** FE 단일 진입점은 BFF 다. auth-server 가 `/api/auth/login`·`/api/auth/callback` 핸들러를 호스팅하고 BFF gateway 가 `/api/auth/**` 를 라우팅한다(FE 는 BFF 만 본다). 흐름도 표기는 `GET /api/auth/callback → BFF → Auth Server: code 교환·users upsert·JWT 발급` — 처리 책임은 auth-server. (**BFF gateway path-through (a) 확정 — 2026-06-09**, §확정된 결정 'FE 진입점·gateway 라우팅')
 

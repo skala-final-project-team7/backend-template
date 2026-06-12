@@ -118,4 +118,9 @@ public class User {
     this.accessToken = accessToken;
     this.lastLoginAt = lastLoginAt;
   }
+
+  /** LINA refresh token 저장. 로그인 발급(Feature 3)·회전(Feature 4) 시 덮어쓴다(이전 값 미보존). */
+  public void storeRefreshToken(String refreshToken) {
+    this.refreshToken = refreshToken;
+  }
 }
