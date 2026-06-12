@@ -30,8 +30,12 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-amqp'
 
-    // 대화/메시지/피드백 영속 (MongoDB). MySQL/JPA 는 3단계의 users/tokens/ACL 도입 시 추가
+    // 대화/메시지/피드백 영속 (MongoDB)
     implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
+    // 관리자 대시보드의 auth-server MySQL users/user_groups 읽기 전용 조회
+    implementation 'org.springframework:spring-jdbc'
+    implementation 'com.zaxxer:HikariCP'
+    runtimeOnly 'com.mysql:mysql-connector-j'
 
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
     // /actuator/prometheus 노출용 (런타임에만 필요)

@@ -596,13 +596,13 @@
 - `src/test/java/com/lina/bff/admin/dashboard/**/AdminUsers*Test.java`
 
 #### 체크리스트
-- [ ] `GET /api/admin/users` controller 추가, `page`/`size` 적용
-- [ ] MySQL `users` 를 read-only 로 조회해 `totalUsers`, 사용자 목록(`userId`, `name`, `lastAccessAt`)을 구성
-- [ ] `dailyActiveUsers` 산정 기준 확정: `last_login_at` 또는 대화/메시지 활동 기준 중 하나로 고정
-- [ ] `conversationCount` 는 MongoDB `conversations` 에서 `userId` 기준 집계
-- [ ] `accessibleSpaceCount`/`accessiblePageCount`/`accessibleAttachmentCount` 산정 원천 확정: 현재 `user_groups` + 수집 payload만으로 정확 집계가 어려우면 Mongo/Qdrant 통계 원천 필요 여부를 명시하고 fallback 정책을 둔다.
-- [ ] 페이지네이션 대상은 `users` 배열이며, 응답에 `page`/`size` 포함 여부는 FE와 확정한다.
-- [ ] 테스트: 사용자 0명, 다중 사용자 정렬, page/size, 활동 기준, 권한 실패
+- [x] `GET /api/admin/users` controller 추가, `page`/`size` 적용 — 2026-06-12 구현: `AdminUsersController`, 공통 `AdminDashboardQueryParser` 재사용
+- [x] MySQL `users` 를 read-only 로 조회해 `totalUsers`, 사용자 목록(`userId`, `name`, `lastAccessAt`)을 구성 — 2026-06-12 구현: `lina.admin.dashboard.mysql.*` 조건부 JDBC datasource + `JdbcAdminUserReadRepository`; 로컬 기본값은 MySQL disabled/no-op
+- [x] `dailyActiveUsers` 산정 기준 확정: `last_login_at` 또는 대화/메시지 활동 기준 중 하나로 고정 — 2026-06-12 결정: 요청 기간 `[from,to)` 내 `users.last_login_at` 보유 사용자 수
+- [x] `conversationCount` 는 MongoDB `conversations` 에서 `userId` 기준 집계 — 2026-06-12 구현: `deletedAt=null` 활성 대화만 사용자별 aggregation
+- [x] `accessibleSpaceCount`/`accessiblePageCount`/`accessibleAttachmentCount` 산정 원천 확정: 현재 `user_groups` + 수집 payload만으로 정확 집계가 어려우면 Mongo/Qdrant 통계 원천 필요 여부를 명시하고 fallback 정책을 둔다. — 2026-06-12 결정: 현 RDB 스키마로 정확 산정 불가, Feature 4 응답은 `0` fallback; Feature 5/후속에서 Mongo/Qdrant 통계 원천 확정 필요
+- [x] 페이지네이션 대상은 `users` 배열이며, 응답에 `page`/`size` 포함 여부는 FE와 확정한다. — 2026-06-12 구현: 응답에 `page`, `size` 포함
+- [x] 테스트: 사용자 0명, 다중 사용자 정렬, page/size, 활동 기준, 권한 실패 — 2026-06-12 구현: `AdminUsersServiceTest`, `AdminUsersControllerTest`
 
 ### Feature 5. 관리자 데이터 현황 API — `GET /api/admin/data`
 
