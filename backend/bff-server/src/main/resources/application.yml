@@ -57,6 +57,18 @@ lina:
     request-timeout-ms: ${DATA_INGESTION_TIMEOUT_MS:30000}
   auth-server:
     base-url: ${AUTH_SERVER_BASE_URL:}
+    request-timeout-ms: ${AUTH_SERVER_TIMEOUT_MS:30000}
+  admin:
+    ingest:
+      rabbitmq:
+        ingest-exchange: ${ADMIN_INGEST_EXCHANGE:lina.admin.ingest}
+        ingest-routing-key: ${ADMIN_INGEST_ROUTING_KEY:admin.ingest.requested}
+        completion-queue: ${ADMIN_INGEST_COMPLETION_QUEUE:lina.admin.ingest.completion}
+        completion-dlq: ${ADMIN_INGEST_COMPLETION_DLQ:lina.admin.ingest.completion.dlq}
+        completion-retry-max-attempts: ${ADMIN_INGEST_COMPLETION_RETRY_MAX_ATTEMPTS:5}
+        completion-retry-initial-interval-ms: ${ADMIN_INGEST_COMPLETION_RETRY_INITIAL_INTERVAL_MS:1000}
+        completion-retry-multiplier: ${ADMIN_INGEST_COMPLETION_RETRY_MULTIPLIER:2.0}
+        completion-retry-max-interval-ms: ${ADMIN_INGEST_COMPLETION_RETRY_MAX_INTERVAL_MS:10000}
   jwt:
     issuer: ${LINA_JWT_ISSUER:lina-auth-server}
     public-key: ${LINA_JWT_PUBLIC_KEY:}
