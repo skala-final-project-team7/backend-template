@@ -31,4 +31,7 @@ public interface CurrentUserProvider {
 
   /** RAG Pipeline 검색 컨텍스트로 사용되는 Confluence Space Key. 2단계에서는 고정 데모 스페이스. */
   String getSpaceKey();
+
+  /** 현재 요청 사용자의 애플리케이션 역할. 관리자 API 권한 경계에서 사용한다. */
+  String getRole();
 }

@@ -77,3 +77,4 @@ lina:
     fixed-user-id: ${LINA_DEMO_USER_ID:user-001}
     fixed-groups: ${LINA_DEMO_GROUPS:Cloud-Control-Center}
     fixed-space-key: ${LINA_DEMO_SPACE_KEY:CPC}
+    fixed-role: ${LINA_DEMO_ROLE:ADMIN}

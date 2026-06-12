@@ -11,7 +11,7 @@ class FixedDemoUserProviderTest {
   @DisplayName("설정값 fixed-user-id 를 그대로 반환한다")
   void shouldReturnConfiguredUserId() {
     FixedDemoUserProvider provider =
-        new FixedDemoUserProvider("user-001", "Cloud-Control-Center", "CPC");
+        new FixedDemoUserProvider("user-001", "Cloud-Control-Center", "CPC", "ADMIN");
 
     assertThat(provider.getUserId()).isEqualTo("user-001");
   }
@@ -20,7 +20,7 @@ class FixedDemoUserProviderTest {
   @DisplayName("단일 그룹 문자열을 단일 원소 리스트로 반환한다")
   void shouldReturnSingleGroupAsList() {
     FixedDemoUserProvider provider =
-        new FixedDemoUserProvider("user-001", "Cloud-Control-Center", "CPC");
+        new FixedDemoUserProvider("user-001", "Cloud-Control-Center", "CPC", "ADMIN");
 
     assertThat(provider.getGroups()).containsExactly("Cloud-Control-Center");
   }
@@ -29,7 +29,8 @@ class FixedDemoUserProviderTest {
   @DisplayName("콤마로 구분된 다중 그룹을 분리해 반환한다 (공백 trim)")
   void shouldSplitCommaSeparatedGroups() {
     FixedDemoUserProvider provider =
-        new FixedDemoUserProvider("user-001", "Cloud-Control-Center, Platform-Ops , SRE", "CPC");
+        new FixedDemoUserProvider(
+            "user-001", "Cloud-Control-Center, Platform-Ops , SRE", "CPC", "ADMIN");
 
     assertThat(provider.getGroups()).containsExactly("Cloud-Control-Center", "Platform-Ops", "SRE");
   }
@@ -37,7 +38,7 @@ class FixedDemoUserProviderTest {
   @Test
   @DisplayName("빈/공백 그룹 설정은 빈 리스트로 처리한다")
   void shouldReturnEmptyListWhenGroupsBlank() {
-    FixedDemoUserProvider provider = new FixedDemoUserProvider("user-001", "   ", "CPC");
+    FixedDemoUserProvider provider = new FixedDemoUserProvider("user-001", "   ", "CPC", "ADMIN");
 
     assertThat(provider.getGroups()).isEmpty();
   }
@@ -46,8 +47,17 @@ class FixedDemoUserProviderTest {
   @DisplayName("설정값 fixed-space-key 를 그대로 반환한다")
   void shouldReturnConfiguredSpaceKey() {
     FixedDemoUserProvider provider =
-        new FixedDemoUserProvider("user-001", "Cloud-Control-Center", "CPC");
+        new FixedDemoUserProvider("user-001", "Cloud-Control-Center", "CPC", "ADMIN");
 
     assertThat(provider.getSpaceKey()).isEqualTo("CPC");
+  }
+
+  @Test
+  @DisplayName("설정값 fixed-role 을 그대로 반환한다")
+  void shouldReturnConfiguredRole() {
+    FixedDemoUserProvider provider =
+        new FixedDemoUserProvider("user-001", "Cloud-Control-Center", "CPC", "ADMIN");
+
+    assertThat(provider.getRole()).isEqualTo("ADMIN");
   }
 }
