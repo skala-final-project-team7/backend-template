@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
@@ -33,13 +34,10 @@ import org.springframework.stereotype.Service;
  * </pre>
  */
 @Service
+@RequiredArgsConstructor
 public class AdminStatsService {
 
   private final AdminStatsMongoRepository adminStatsMongoRepository;
-
-  public AdminStatsService(AdminStatsMongoRepository adminStatsMongoRepository) {
-    this.adminStatsMongoRepository = adminStatsMongoRepository;
-  }
 
   public AdminStatsResponse getStats(AdminDashboardQuery query) {
     List<Message> messages =
