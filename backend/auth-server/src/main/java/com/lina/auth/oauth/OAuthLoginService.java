@@ -8,9 +8,7 @@ import com.lina.auth.oauth.dto.AtlassianTokenResponse;
 import com.lina.auth.oauth.dto.AtlassianUserInfo;
 import com.lina.auth.oauth.dto.LoginTokenResponse;
 import com.lina.auth.token.entity.User;
-import com.lina.auth.token.entity.UserGroup;
 import com.lina.auth.token.entity.UserRole;
-import com.lina.auth.token.entity.UserToken;
 import com.lina.auth.token.repository.UserGroupRepository;
 import com.lina.auth.token.repository.UserRepository;
 import com.lina.auth.token.repository.UserTokenRepository;
@@ -24,11 +22,9 @@ import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.util.UriComponentsBuilder;
 import lombok.RequiredArgsConstructor;
 
@@ -69,8 +65,7 @@ public class OAuthLoginService {
   private final JwtProvider jwtProvider;
   private final JwtProperties jwtProperties;
   private final UserRepository userRepository;
-  private final UserGroupRepository userGroupRepository;
-  private final UserTokenRepository userTokenRepository;
+  private final OAuthLoginPersistenceService persistenceService;
 
   /** login: returnTo(내부 경로만)/mode 를 state 로 보관하고 Atlassian authorize URL 을 구성한다(AUTH-01). */
   public URI buildAuthorizationRedirectUri(String mode, String returnTo) {
@@ -90,7 +85,6 @@ public class OAuthLoginService {
   }
 
   /** callback: state 검증부터 JWT 발급까지 처리한다. 실패 시 400/401/403 — 모든 실패에서 토큰 미발급. */
-  @Transactional
   public LoginTokenResponse handleCallback(String code, String state) {
     OAuthStateService.StateData stateData = stateService.consume(state);
 
@@ -112,9 +106,7 @@ public class OAuthLoginService {
         jwtProvider.issueAccessToken(new JwtClaims(userInfo.accountId(), groupIds, role.name()));
     String refreshToken = jwtProvider.issueRefreshToken(userInfo.accountId());
 
-    User user = upsertUser(existingUser, userInfo, accessJwt, refreshToken, now);
-    replaceGroups(user.getUserKey(), groupIds);
-    saveConfluenceTokens(user.getUserKey(), confluenceTokens, site.id(), now);
+    persistenceService.persistLoginState(existingUser, userInfo, accessJwt, refreshToken, groupIds, confluenceTokens, site.id(), now);
 
     return new LoginTokenResponse(accessJwt, refreshToken, accessTokenExpiresAt(now));
   }
@@ -198,67 +190,6 @@ public class OAuthLoginService {
       log.warn("memberof(AUTH-05) 조회 실패 — 빈 groups 로 로그인을 허용한다. accountId={}", accountId, e);
       return List.of();
     }
-  }
-
-  private User upsertUser(
-      Optional<User> existingUser,
-      AtlassianUserInfo userInfo,
-      String accessJwt,
-      String refreshToken,
-      Instant now) {
-    User user =
-        existingUser
-            .map(
-                existing -> {
-                  existing.updateOnLogin(userInfo.name(), userInfo.picture(), accessJwt, now);
-                  return existing;
-                })
-            .orElseGet(
-                () ->
-                    User.builder()
-                        .userId(userInfo.accountId())
-                        .email(userInfo.email())
-                        .name(userInfo.name())
-                        .profileImageUrl(userInfo.picture())
-                        .role(UserRole.USER)
-                        .accessToken(accessJwt)
-                        .lastLoginAt(now)
-                        .build());
-    user.storeRefreshToken(refreshToken);
-    userRepository.save(user);
-    return user;
-  }
-
-  /** 로그인 시 기존 멤버십을 삭제하고 memberof 결과로 교체 적재한다(docs/db-schema.md §6.3). */
-  private void replaceGroups(UUID userKey, List<String> groupIds) {
-    userGroupRepository.deleteByUserKey(userKey);
-    if (!groupIds.isEmpty()) {
-      userGroupRepository.saveAll(
-          groupIds.stream()
-              .map(groupId -> UserGroup.builder().userKey(userKey).groupId(groupId).build())
-              .toList());
-    }
-  }
-
-  /** Confluence OAuth 토큰 + cloudId 암호화 저장. 기존 행이 있으면 rotate 로 덮어쓴다(이전 값 미보존). */
-  private void saveConfluenceTokens(
-      UUID userKey, AtlassianTokenResponse confluenceTokens, String cloudId, Instant now) {
-    Instant expiresAt = now.plusSeconds(confluenceTokens.expiresIn());
-    userTokenRepository
-        .findById(userKey)
-        .ifPresentOrElse(
-            token ->
-                token.rotate(
-                    confluenceTokens.accessToken(), confluenceTokens.refreshToken(), expiresAt),
-            () ->
-                userTokenRepository.save(
-                    UserToken.builder()
-                        .userKey(userKey)
-                        .confluenceAccessToken(confluenceTokens.accessToken())
-                        .confluenceRefreshToken(confluenceTokens.refreshToken())
-                        .cloudId(cloudId)
-                        .accessTokenExpiresAt(expiresAt)
-                        .build()));
   }
 
   /** access JWT 만료 시각(KST, ISO-8601 offset — docs/api-spec.md §4-1 expiresAt). */

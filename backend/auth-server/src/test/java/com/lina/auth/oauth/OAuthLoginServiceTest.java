@@ -72,6 +72,8 @@ class OAuthLoginServiceTest {
             siteUrl);
     JwtProperties jwtProperties =
         new JwtProperties("lina-auth-server", "unused-private", "unused-public", 3600, 1209600);
+    OAuthLoginPersistenceService persistenceService =
+        new OAuthLoginPersistenceService(userRepository, userGroupRepository, userTokenRepository);
     return new OAuthLoginService(
         properties,
         stateService,
@@ -79,8 +81,7 @@ class OAuthLoginServiceTest {
         jwtProvider,
         jwtProperties,
         userRepository,
-        userGroupRepository,
-        userTokenRepository);
+        persistenceService);
   }
 
   // --- login 리다이렉트 ---
