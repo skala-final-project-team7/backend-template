@@ -21,6 +21,8 @@ class AdminRabbitConfigTest {
           .withPropertyValues(
               "lina.admin.ingest.rabbitmq.ingest-exchange=lina.admin.ingest",
               "lina.admin.ingest.rabbitmq.ingest-routing-key=admin.ingest.requested",
+              "lina.admin.ingest.rabbitmq.ingest-queue=lina.data-ingestion.ingest",
+              "lina.admin.ingest.rabbitmq.ingest-dlq=lina.data-ingestion.ingest.dlq",
               "lina.admin.ingest.rabbitmq.completion-queue=lina.admin.ingest.completion",
               "lina.admin.ingest.rabbitmq.completion-dlq=lina.admin.ingest.completion.dlq",
               "lina.admin.ingest.rabbitmq.completion-retry-max-attempts=5",
@@ -34,7 +36,9 @@ class AdminRabbitConfigTest {
     runner.run(
         context -> {
           Queue completionQueue = context.getBean("adminIngestCompletionQueue", Queue.class);
+          Queue ingestQueue = context.getBean("adminIngestQueue", Queue.class);
           Queue dlq = context.getBean("adminIngestCompletionDlq", Queue.class);
+          Queue ingestDlq = context.getBean("adminIngestDlq", Queue.class);
 
           assertThat(completionQueue.isDurable()).isTrue();
           assertThat(completionQueue.getName()).isEqualTo("lina.admin.ingest.completion");
@@ -42,6 +46,12 @@ class AdminRabbitConfigTest {
               .containsEntry("x-dead-letter-routing-key", "lina.admin.ingest.completion.dlq");
           assertThat(dlq.isDurable()).isTrue();
           assertThat(dlq.getName()).isEqualTo("lina.admin.ingest.completion.dlq");
+          assertThat(ingestQueue.isDurable()).isTrue();
+          assertThat(ingestQueue.getName()).isEqualTo("lina.data-ingestion.ingest");
+          assertThat(ingestQueue.getArguments())
+              .containsEntry("x-dead-letter-routing-key", "lina.data-ingestion.ingest.dlq");
+          assertThat(ingestDlq.isDurable()).isTrue();
+          assertThat(ingestDlq.getName()).isEqualTo("lina.data-ingestion.ingest.dlq");
         });
   }
 

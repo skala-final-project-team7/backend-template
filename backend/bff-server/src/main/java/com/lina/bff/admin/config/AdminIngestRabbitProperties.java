@@ -6,6 +6,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record AdminIngestRabbitProperties(
     String ingestExchange,
     String ingestRoutingKey,
+    String ingestQueue,
+    String ingestDlq,
     String completionQueue,
     String completionDlq,
     int completionRetryMaxAttempts,
