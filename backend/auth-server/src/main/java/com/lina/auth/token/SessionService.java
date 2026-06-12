@@ -17,6 +17,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,6 +43,7 @@ import org.springframework.transaction.annotation.Transactional;
  * </pre>
  */
 @Service
+@RequiredArgsConstructor
 public class SessionService {
 
   private static final ZoneId KST = ZoneId.of("Asia/Seoul");
@@ -50,17 +52,6 @@ public class SessionService {
   private final JwtProperties jwtProperties;
   private final UserRepository userRepository;
   private final UserGroupRepository userGroupRepository;
-
-  public SessionService(
-      JwtProvider jwtProvider,
-      JwtProperties jwtProperties,
-      UserRepository userRepository,
-      UserGroupRepository userGroupRepository) {
-    this.jwtProvider = jwtProvider;
-    this.jwtProperties = jwtProperties;
-    this.userRepository = userRepository;
-    this.userGroupRepository = userGroupRepository;
-  }
 
   /** Rotating refresh: 검증·저장값 대조 후 새 access/refresh 발급, 이전 refresh 무효화. 실패 시 401. */
   @Transactional
