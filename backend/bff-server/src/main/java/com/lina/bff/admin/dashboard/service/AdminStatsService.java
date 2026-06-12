@@ -56,6 +56,10 @@ public class AdminStatsService {
   private List<HourlyAccessTrendItem> hourlyAccessTrend(List<Message> userMessages) {
     Map<Integer, Long> countByHour = new TreeMap<>();
     for (Message message : userMessages) {
+      if (message.getCreatedAt() == null) {
+        continue;
+      }
+
       int hour =
           message.getCreatedAt().atZone(AdminDashboardQueryParser.KST).toLocalTime().getHour();
       countByHour.merge(hour, 1L, Long::sum);

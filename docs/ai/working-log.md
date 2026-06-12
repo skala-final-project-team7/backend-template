@@ -5,6 +5,10 @@
 
 ---
 
+## 2026-06-12
+
+- **Admin dashboard 통계 NPE 방지**: `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/service/AdminStatsService.java`에서 `hourlyAccessTrend()`가 `Message.getCreatedAt()` null 값을 방어하지 않아 생길 수 있는 `NullPointerException`을 방지하도록 `createdAt == null` 항목을 필터링해 건너뛰도록 수정했다. 테스트: `:bff-server:test --tests "com.lina.bff.admin.dashboard.service.AdminStatsServiceTest"` 통과, `./gradlew test` 통과.
+
 ## 2026-06-11
 
 - **`siteUrl` — §2-5 응답에 추가(신규 저장 없음, `admin_atlassian_credential.site_url` 전달)**: ingestion 이 Confluence `_links.webui` 상대경로를 absolute 출처 URL 로 정규화(→ Qdrant `webui_link`/RAG `sources[].url`)하도록, Data Ingestion Worker credential lookup(§2-5) 응답에 **`siteUrl`**(JSON, `https://{site}.atlassian.net`)을 추가했다. **새 컬럼/마이그레이션 없음** — 이미 `admin_atlassian_credential.site_url`(DB 컬럼, §6.4, V004)에 있는 값을 §2-5 에서 그대로 반환. **DB 컬럼=`site_url`(snake), JSON 필드=`siteUrl`(camel — 다른 응답 필드 accessToken/cloudId/expiresAt 과 통일).** BFF/FE 는 URL 조합 책임 없음. 콘텐츠 조회 REST 엔 미사용(그쪽은 cloudId 게이트웨이). §2-5 응답 = `{accessToken, cloudId, siteUrl, expiresAt}`. 변경 파일: `docs/api-spec.md`(§1-4/§2-2/§2-5/§3), `docs/db-schema.md`(§6.4), `backend/auth-server/current-plans.md`(AUTH-04·Feature 5·internal), `backend/bff-server/current-plans.md`(④). 검증: `./scripts/verify.sh` 통과.
