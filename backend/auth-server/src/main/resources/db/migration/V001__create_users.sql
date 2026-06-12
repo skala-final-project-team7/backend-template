@@ -11,8 +11,8 @@ CREATE TABLE users (
     name                 VARCHAR(128)          NULL,             -- 표시 이름(Confluence 응답에서 저장)
     profile_image_url    VARCHAR(512)          NULL,
     role                 ENUM('USER', 'ADMIN') NOT NULL DEFAULT 'USER',
-    access_token         VARCHAR(512)          NOT NULL,
-    refresh_token        VARCHAR(512)          NULL,             -- LINA 세션 refresh token(선반영). 발급/회전은 Feature 4
+    access_token         VARCHAR(2048)         NOT NULL,         -- RS256 JWT 는 서명만 ~342자 — 512 로는 부족(2026-06-11 확장)
+    refresh_token        VARCHAR(2048)         NULL,             -- LINA 세션 refresh token(선반영). 발급/회전은 Feature 4
     last_login_at        DATETIME              NULL,             -- OAuth callback 시 갱신
     created_at           DATETIME              NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at           DATETIME              NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

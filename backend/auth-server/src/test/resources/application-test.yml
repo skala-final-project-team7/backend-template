@@ -1,0 +1,64 @@
+# 테스트 전용 설정 — 실 DB/시크릿을 사용하지 않는다.
+spring:
+  datasource:
+    url: jdbc:h2:mem:lina_auth_test;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      # Flyway SQL 은 MySQL 전용 문법 — 테스트는 Entity 기반 스키마 생성
+      ddl-auto: create-drop
+    open-in-view: false
+  flyway:
+    enabled: false
+
+lina:
+  token-encryption:
+    # 테스트 전용 AES-256 키 (base64 32바이트). 실 운영 키는 env 주입 (application.yml)
+    key: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+  jwt:
+    # 테스트 전용 RSA-2048 키쌍 (운영과 무관, 컨텍스트 기동용). 실 운영 키는 env 주입 (application.yml)
+    private-key: |
+      -----BEGIN PRIVATE KEY-----
+      MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCoXy219GjgJKgv
+      QsKZrWfoynuF8gqMFDhQ4d/TlxCppbgdCf7etcnKJqNknEa4RCZXuGxi3ZD6a9lx
+      pkG8uRTfsrXWXH6mXGDl9GXSLVaIvE0Q6Vpm0TYRGuim1+dkCSs9s2CzKHcdyYtg
+      Kuh6tOHudSsUwhisDX7uc1BeRj4B0X2yQCJZ7pG7FxeKcuYsIOKps44qhsw6FyXf
+      e63vSgz0c8wCeaS99iDRnsUmXUT+j1PegljCaHW5s602kzp2bRaw8JMzLGzRD7Ng
+      FDALeAf38Vqsk/CvcDbwcOZwA8fMdk12Jdrp96lnywmc2koJL2pQh7yRct4zn1+H
+      XXGBQHF7AgMBAAECggEABq5UKYKrwK0jsVBkWWW8mEukkCGVEo7g1zDHSWWWpyyo
+      vBo/70VmXuuekyjyU3B81wE958Rj8tPhunU+6Yaskd3NAlcEPYSv4aALhEYBR4a1
+      RiUETc0iaJZZQfmSOHF2skmSXjmOVHPBYI0DUY8o4eXrUjULdpRIg5y2xS7jWf4N
+      7tX62bwiXPLzE8nRNqzFYjRxFFkd+xVGTdG/A50IE+ThtZWsaowIuR1EvvF0+xNb
+      COxTogjaqb8+IML+Ntnfbh40RrIQpEZaAE8tfElHCesfO80hnouhqIK87/+a/TID
+      McJsmcyLD+9BP4uiyBD8xImhn+79gJ+p8lrBmFveXQKBgQDtoELlijk7ZuQRSrQt
+      NYNQ06EAkT6Yxft9bny+hOkymSfqOJ1RfL0nPp5HTmK8EpjT2WOa2XALdsBKoRbK
+      I+73WP+3hBSC0F/M9stOZ3QKU5EkgtYFsSVdYpZUA/saCxl8dEc7+I3W5iaOFInh
+      A5TLAAclDS+MBBpZhUPA67/VpQKBgQC1ZAy5UfMNFFQZOZpMbl9ZIrosQnxLQcda
+      Xf3RzFMAwa5D48/SqsIHlnK/e+oza86FgV5H8LMK9YjuhQjFZFn3YHFiqJyhd1w+
+      8c6WMB9snel5jfhAxMb3RRDRpen3QyizsaCRCmdTXragkQmlpINbYvhhaoJICOnr
+      kxYaATPAnwKBgDQbV3AELmajOlG8YuQi/uejcIOyVdqkV3B64OnaNVS+Fu2aeoza
+      4JORfJ3AR5BcN50E532WPqaU5Le4uUmcNZORtYllciX5UXidiZlowB5fks1Bz3Ky
+      FLJ0ouhLcy2Tz4Pl75Tr/RZpo3y2bkGkSmV1XRu313xJjgmhWmkciRVtAoGAT6aR
+      V8c+fR3SGAmNUcado9x19/1x6vIFgg8H59pbEFf8F9+vYIiPDxnnZWIaY14Rn9pA
+      9kIhvMw4xtQwF82LG++DmpkDvntVTGaOGrEi+2UUIsZOntJJtEblrcm3RVZ+RvnW
+      0hnJaXiLpVJK9CubasO44b4NW2hen41FBUJF4W0CgYEAiNY6XkK1Z+BzNsZML7Q5
+      SmCDLRGEqSXmS9jkgkz0fY4Gm38tfohWqizTUURSMcxPglKOuc40Lj+iPWdF24iQ
+      oGnUxUbSA51qa0RbDPO+SyVFrgCyED0t4ktCMQeR3+7QSSdVMiMMKQp/JK290j5R
+      5cT26DxS0gtIoYG7CXMWUAk=
+      -----END PRIVATE KEY-----
+    public-key: |
+      -----BEGIN PUBLIC KEY-----
+      MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqF8ttfRo4CSoL0LCma1n
+      6Mp7hfIKjBQ4UOHf05cQqaW4HQn+3rXJyiajZJxGuEQmV7hsYt2Q+mvZcaZBvLkU
+      37K11lx+plxg5fRl0i1WiLxNEOlaZtE2ERroptfnZAkrPbNgsyh3HcmLYCroerTh
+      7nUrFMIYrA1+7nNQXkY+AdF9skAiWe6RuxcXinLmLCDiqbOOKobMOhcl33ut70oM
+      9HPMAnmkvfYg0Z7FJl1E/o9T3oJYwmh1ubOtNpM6dm0WsPCTMyxs0Q+zYBQwC3gH
+      9/FarJPwr3A28HDmcAPHzHZNdiXa6fepZ8sJnNpKCS9qUIe8kXLeM59fh11xgUBx
+      ewIDAQAB
+      -----END PUBLIC KEY-----
+
+logging:
+  level:
+    com.lina: INFO
