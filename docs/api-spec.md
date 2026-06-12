@@ -765,7 +765,6 @@ Request Body 없음 (admin API Token 은 서버 측에서 사용).
 
 ```json
 {
-  "eventType": "INGEST_COMPLETED",
   "jobId": "job-uuid-001",
   "adminUserId": "admin-account-id",
   "mode": "full",
@@ -776,7 +775,6 @@ Request Body 없음 (admin API Token 은 서버 측에서 사용).
 }
 ```
 
-- `eventType`: `"INGEST_COMPLETED"` 또는 `"INGEST_FAILED"` (초안)
 - `status`: `"COMPLETED"` | `"FAILED"`
 - 실패 event 는 `errorCode`/`message` 에 credential 이 아닌 오류 요약만 포함한다.
 - BFF consumer 는 completion event 를 consume한 뒤 auth-server `POST /internal/admin/key/deactivate` 를 호출한다.
