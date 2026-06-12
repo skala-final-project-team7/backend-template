@@ -29,6 +29,10 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.AbstractPlatformTransactionManager;
+import org.springframework.transaction.support.DefaultTransactionStatus;
 
 @ExtendWith(MockitoExtension.class)
 class SessionServiceTest {
@@ -38,13 +42,35 @@ class SessionServiceTest {
   @Mock private JwtProvider jwtProvider;
   @Mock private UserRepository userRepository;
   @Mock private UserGroupRepository userGroupRepository;
+  private final PlatformTransactionManager transactionManager =
+      new AbstractPlatformTransactionManager() {
+        @Override
+        protected Object doGetTransaction() {
+          return new Object();
+        }
+
+        @Override
+        protected boolean isExistingTransaction(Object transaction) {
+          return false;
+        }
+
+        @Override
+        protected void doBegin(Object transaction, TransactionDefinition definition) {}
+
+        @Override
+        protected void doCommit(DefaultTransactionStatus status) {}
+
+        @Override
+        protected void doRollback(DefaultTransactionStatus status) {}
+      };
 
   @Captor private ArgumentCaptor<JwtClaims> claimsCaptor;
 
   private SessionService service() {
     JwtProperties jwtProperties =
         new JwtProperties("lina-auth-server", "unused-private", "unused-public", 3600, 1209600);
-    return new SessionService(jwtProvider, jwtProperties, userRepository, userGroupRepository);
+    return new SessionService(
+        jwtProvider, jwtProperties, userRepository, userGroupRepository, transactionManager);
   }
 
   private User userWithRefreshToken(String refreshToken, UserRole role) {

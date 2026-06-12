@@ -20,6 +20,8 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  *
@@ -52,30 +54,17 @@ public class SessionService {
   private final JwtProperties jwtProperties;
   private final UserRepository userRepository;
   private final UserGroupRepository userGroupRepository;
+  private final PlatformTransactionManager transactionManager;
 
   /** Rotating refresh: 검증·저장값 대조 후 새 access/refresh 발급, 이전 refresh 무효화. 실패 시 401. */
-  @Transactional
   public LoginTokenResponse refresh(String refreshToken) {
     String userId = verifyRefreshJwt(refreshToken);
-    User user = findUserOr401(userId);
-    if (user.getRefreshToken() == null || !user.getRefreshToken().equals(refreshToken)) {
-      // 회전 후 이전 토큰 재사용·logout 상태 — stateless 검증으로는 못 잡는 케이스
-      throw new BizException(ErrorCode.UNAUTHORIZED, "유효하지 않은 refresh token 입니다.");
-    }
-
-    List<String> groupIds =
-        userGroupRepository.findByUserKey(user.getUserKey()).stream()
-            .map(UserGroup::getGroupId)
-            .toList();
     Instant now = Instant.now();
-    String newAccessToken =
-        jwtProvider.issueAccessToken(new JwtClaims(userId, groupIds, user.getRole().name()));
-    String newRefreshToken = jwtProvider.issueRefreshToken(userId);
 
-    user.rotateSessionTokens(newAccessToken, newRefreshToken);
-    userRepository.save(user);
+    SessionTokens sessionTokens = rotateSession(userId, refreshToken);
 
-    return new LoginTokenResponse(newAccessToken, newRefreshToken, accessTokenExpiresAt(now));
+    return new LoginTokenResponse(
+        sessionTokens.accessToken(), sessionTokens.refreshToken(), accessTokenExpiresAt(now));
   }
 
   /** logout: users.refresh_token 저장값을 비워 이후 refresh 를 거부한다. */
@@ -107,4 +96,31 @@ public class SessionService {
         .truncatedTo(ChronoUnit.SECONDS)
         .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
   }
+
+  private SessionTokens rotateSession(String userId, String refreshToken) {
+    TransactionTemplate tx = new TransactionTemplate(transactionManager);
+    return tx.execute(
+        status -> {
+          User user = findUserOr401(userId);
+          if (user.getRefreshToken() == null || !user.getRefreshToken().equals(refreshToken)) {
+            // 회전 후 이전 토큰 재사용·logout 상태 — stateless 검증으로는 못 잡는 케이스
+            throw new BizException(ErrorCode.UNAUTHORIZED, "유효하지 않은 refresh token 입니다.");
+          }
+
+          List<String> groupIds =
+              userGroupRepository.findByUserKey(user.getUserKey()).stream()
+                  .map(UserGroup::getGroupId)
+                  .toList();
+          String newAccessToken =
+              jwtProvider.issueAccessToken(new JwtClaims(userId, groupIds, user.getRole().name()));
+          String newRefreshToken = jwtProvider.issueRefreshToken(userId);
+
+          user.rotateSessionTokens(newAccessToken, newRefreshToken);
+          userRepository.save(user);
+
+          return new SessionTokens(newAccessToken, newRefreshToken);
+        });
+  }
+
+  private record SessionTokens(String accessToken, String refreshToken) {}
 }
