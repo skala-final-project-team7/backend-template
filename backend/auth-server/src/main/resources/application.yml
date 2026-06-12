@@ -60,6 +60,12 @@ lina:
       user-info-uri: ${CONFLUENCE_USER_INFO_URI:}
       redirect-uri: ${CONFLUENCE_REDIRECT_URI:}
       scopes: ${CONFLUENCE_SCOPES:}
+      # AUTH-04/05 게이트웨이 base (accessible-resources, memberof)
+      api-base-uri: ${CONFLUENCE_API_BASE_URI:https://api.atlassian.com}
+      # accessible-resources 멀티 사이트 시 명시 선택용 (단일 사이트면 비워둠 — 임의 선택 금지)
+      site-url: ${CONFLUENCE_SITE_URL:}
+    # login→callback 한 사이클 동안 보관하는 state(CSRF) TTL
+    state-ttl-seconds: ${OAUTH_STATE_TTL_SECONDS:600}
   jwt:
     issuer: ${LINA_JWT_ISSUER:lina-auth-server}
     private-key: ${LINA_JWT_PRIVATE_KEY:}

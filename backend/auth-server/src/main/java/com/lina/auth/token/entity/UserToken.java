@@ -46,14 +46,17 @@ public class UserToken {
   @Column(name = "user_key", nullable = false)
   private UUID userKey;
 
-  /** Confluence OAuth access token. AES-GCM 암호화 저장. FE 미노출(서버 보관). */
+  /**
+   * Confluence OAuth access token. AES-GCM 암호화 저장. FE 미노출(서버 보관). 실측상 Atlassian access token 은 2KB
+   * 초과 JWT 라 8192 로 산정(라이브 스모크 2026-06-12 — 2048 에서 truncation 실패).
+   */
   @Convert(converter = TokenCipher.class)
-  @Column(name = "confluence_access_token_enc", nullable = false, length = 2048)
+  @Column(name = "confluence_access_token_enc", nullable = false, length = 8192)
   private String confluenceAccessToken;
 
   /** Confluence OAuth refresh token. AES-GCM 암호화 저장. rotating — 갱신 시 덮어쓰기. */
   @Convert(converter = TokenCipher.class)
-  @Column(name = "confluence_refresh_token_enc", nullable = false, length = 2048)
+  @Column(name = "confluence_refresh_token_enc", nullable = false, length = 8192)
   private String confluenceRefreshToken;
 
   /** 게이트웨이 콘텐츠 조회 URL(api.atlassian.com/ex/confluence/{cloudId}/...) 구성용. 평문(민감 아님). */

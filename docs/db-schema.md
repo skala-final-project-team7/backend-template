@@ -253,13 +253,13 @@ Confluence OAuth access/refresh token + `cloud_id` 저장. **앱 내 Confluence 
 | 컬럼 | 타입 | 필수 | 비고 |
 |---|---|---|---|
 | `user_key` | BINARY(16) **PK**, FK→`users` | ✅ | 1:1. `ON DELETE CASCADE` |
-| `confluence_access_token_enc` | VARBINARY(2048) | ✅ | Confluence OAuth access token. **AES-GCM 암호화**(평문 금지). 미리보기·ingestion 콘텐츠 조회 Bearer |
-| `confluence_refresh_token_enc` | VARBINARY(2048) | ✅ | Confluence OAuth refresh token. **AES-GCM 암호화**. rotating |
+| `confluence_access_token_enc` | VARBINARY(8192) | ✅ | Confluence OAuth access token. **AES-GCM 암호화**(평문 금지). 미리보기·ingestion 콘텐츠 조회 Bearer. 2048→8192 확장(2026-06-12, 라이브 스모크 실측 — Atlassian access token 2KB 초과) |
+| `confluence_refresh_token_enc` | VARBINARY(8192) | ✅ | Confluence OAuth refresh token. **AES-GCM 암호화**. rotating. 2048→8192 확장(2026-06-12) |
 | `cloud_id` | VARCHAR(64) | ✅ | 게이트웨이 콘텐츠 조회 URL(`api.atlassian.com/ex/confluence/{cloudId}/...`) 구성용. 평문(민감 아님) |
 | `access_token_expires_at` | DATETIME (UTC) | ✅ | access 만료 시각. 임박 시 refresh 로 갱신 |
 | `created_at` / `updated_at` | DATETIME (UTC) | ✅ | |
 
-> Atlassian access token 이 길어 암호화 컬럼은 `VARBINARY(2048)`. OAuth access/refresh 토큰은 callback 시 적재하고, 만료 임박이면 refresh 로 갱신(rotating — 저장소 덮어쓰기, 이전 값 미보존).
+> Atlassian access token 은 2KB 초과 JWT(라이브 스모크 실측 2026-06-12) — 암호화 오버헤드(IV 12B+태그 16B) 포함 암호화 컬럼은 `VARBINARY(8192)`. OAuth access/refresh 토큰은 callback 시 적재하고, 만료 임박이면 refresh 로 갱신(rotating — 저장소 덮어쓰기, 이전 값 미보존). V003 직접 수정(2026-06-12, 미배포 단계)이므로 기존 로컬 DB 는 Flyway 체크섬 불일치 — drop 후 재마이그레이션 필요.
 
 ### 6.3 `user_groups`
 

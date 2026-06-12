@@ -51,7 +51,7 @@
 
 - **`offline_access` scope 필수** — refresh_token 발급 조건. authorize 의 `scope` 에 포함한다.
 - **Rotating Refresh Token** — 갱신 시 기존 refresh 가 무효화되고 새 값이 발급된다 → **MySQL 암호화 저장소에 반드시 덮어쓰기**하고 이전 값은 재사용 금지.
-- **scope 충분성 (✅ 확정 2026-06-10, 공식 문서)** — 요약 scope 는 본문 미포함이라 부족. 필요 scope: `read:confluence-content.all`(본문), `readonly:content.attachment:confluence`(첨부), `read:content.restriction:confluence`(restriction), `read:confluence-user`(AUTH-05 memberof), `read:confluence-groups`, `read:confluence-space.summary`, `offline_access`. classic·granular 혼용은 dev console 등록 시 재확인.
+- **scope 충분성 (✅ 확정 2026-06-10 → ⚠️ 2026-06-12 classic 통일로 정정)** — 요약 scope 는 본문 미포함이라 부족. **최종 scope(7종): `read:me`(user-info `/me` — Confluence 가 아닌 **User Identity API** 의 scope, 누락 시 `/me` 403 — 라이브 스모크 실측 2026-06-12), `read:confluence-content.all`(본문 + v1 restriction 조회 — `GET /content/{id}/restriction` operation 문서의 공식 classic scope), `readonly:content.attachment:confluence`(첨부 다운로드 — 형태는 granular 같지만 **Classic 표 등재**, 형태 규칙의 예외), `read:confluence-user`(AUTH-05 memberof — operation 문서상 이것 하나로 충분), `read:confluence-groups`, `read:confluence-space.summary`, `offline_access`.** dev console 은 Confluence API 외에 **User Identity API**(`read:me`)도 등록 필요(타 product scope 혼합은 공식 지원 — classic/granular 충돌과 무관). 06-10 셋에서 제거는 **`read:content.restriction:confluence` 단 1개**(유일한 granular — dev console 미등록 granular 를 authorize 에 요청해 거부된 원인. restriction 조회는 위 `content.all` 로 커버되어 기능 손실 없음). **전제: 콘텐츠 조회는 v1 API**(classic↔v1) — 수집측이 v2(`/wiki/api/v2/*`) 사용 시 granular 별도 등록 필요. 최종 검증 방법론(공식): 수집측 실제 호출 operation 목록 확정 후 REST 문서의 operation 별 scope 행으로 대조.
 - `client_secret` 등은 평문 노출 금지(환경변수/Secret), 토큰 로그 마스킹(Feature 7).
 
 ---
@@ -166,16 +166,17 @@
 #### 변경 대상 파일
 - `oauth/{AuthController,AtlassianOAuthClient,OAuthStateService}.java`, `oauth/dto/*.java`, `config/RestClientConfig.java`
 - `oauth/{AtlassianOAuthClientTest(WireMock),AuthControllerTest(MockMvc)}.java`
+- (구현 시 추가 2026-06-12) `oauth/{OAuthLoginService,OAuthProperties}.java`(오케스트레이션/설정 홀더 분리), `config/SecurityConfig.java`(login·callback permitAll + default deny — logout Bearer·`/internal/**` 제한은 Feature 4/7 에서 확장), `token/entity/User.java` `storeRefreshToken()` 추가(시그니처 변경 없음), `application.yml`(`api-base-uri`/`site-url`/`state-ttl-seconds` — 전부 `${...}`), `oauth/{OAuthStateServiceTest,OAuthLoginServiceTest}.java`
 
 #### 체크리스트
-- [ ] `GET /api/auth/login` — Atlassian authorize 로 `302` 리다이렉트(Wrapper 미적용). `state`(CSRF) 생성·저장, **`mode`/`returnTo` 를 `state` 에 직렬화**(서명 state 또는 서버 세션). `returnTo` 는 **내부 경로만** 허용(오픈 리다이렉트 방지) (`docs/api-spec.md` §4-1)
-- [ ] `GET /api/auth/callback` — `code`/`state` 검증 → AUTH-02 토큰 교환 → AUTH-04 `accessible-resources` 로 cloudId 조회 → **AUTH-05 `memberof` 로 groups(`groupId`=`results[].id`) 조회(페이징 처리)** → `users` upsert(없으면 `role='USER'`) + **`user_groups` 적재**(기존 멤버십 교체) → **Confluence** access/refresh + cloudId **암호화 저장**(`user_tokens`, Feature 1) → **LINA 세션 JWT 발급**(Feature 2, `userId`/`groups`/`role` claim) → `data: { accessToken, refreshToken, expiresAt }` (LINA refreshToken 발급/회전은 Feature 4 — `users.refresh_token` 컬럼은 `V001` 선반영)
-- [ ] AUTH-05 groups 조회: `totalSize > limit`(기본 200) 이면 `start` 페이징으로 전량 수집. 조회 실패/빈 결과 시 정책 결정(빈 `groups` 허용 시 BFF fail-closed 로 RAG 차단되므로 — 로그인은 허용하되 질의 단계에서 차단되는 동작 명시)
-- [ ] **`mode=admin` 게이트**: state 의 mode 가 `admin` 인데 `users.role != ADMIN` 이면 `403 FORBIDDEN`(message "관리자 권한이 없는 계정입니다"), 토큰 미발급 (`docs/api-spec.md` §4-1)
-- [ ] 실패 매핑: `state` 불일치 `400 INVALID_REQUEST`, `code` 무효/Confluence 오류 `401 UNAUTHORIZED`, mode 게이트 `403 FORBIDDEN` — 모든 실패에서 토큰 미발급
-- [ ] `accessible-resources` 멀티 사이트 선택 규칙 — **공식 주의: 반환 순서 없음, "최근 인가" 추론 금지**. PoC 는 단일 사이트 가정, 다중이면 설정값/명시 선택(첫 번째 임의 선택 금지)·기록
-- [ ] Confluence OAuth 토큰은 **응답에 미포함**(서버 보관, `backend/rules/auth.md` §3)
-- [ ] WireMock 으로 AUTH-02/04 모킹, MockMvc 로 login 리다이렉트·callback 성공/실패(400/401/403) 검증. **실제 Atlassian 호출 금지**
+- [x] `GET /api/auth/login` — Atlassian authorize 로 `302` 리다이렉트(Wrapper 미적용). `state`(CSRF) 생성·저장, **`mode`/`returnTo` 를 `state` 에 직렬화**(서명 state 또는 서버 세션). `returnTo` 는 **내부 경로만** 허용(오픈 리다이렉트 방지) (`docs/api-spec.md` §4-1) — ✅ 2026-06-12 (state 는 in-memory 1회용+TTL 보관 — 단일 인스턴스 전제, 다중 인스턴스 시 외부 저장소 교체 필요)
+- [x] `GET /api/auth/callback` — `code`/`state` 검증 → AUTH-02 토큰 교환 → AUTH-04 `accessible-resources` 로 cloudId 조회 → **AUTH-05 `memberof` 로 groups(`groupId`=`results[].id`) 조회(페이징 처리)** → `users` upsert(없으면 `role='USER'`) + **`user_groups` 적재**(기존 멤버십 교체) → **Confluence** access/refresh + cloudId **암호화 저장**(`user_tokens`, Feature 1) → **LINA 세션 JWT 발급**(Feature 2, `userId`/`groups`/`role` claim) → `data: { accessToken, refreshToken, expiresAt }` (LINA refreshToken 발급/회전은 Feature 4 — `users.refresh_token` 컬럼은 `V001` 선반영) — ✅ 2026-06-12 (accountId/email/name 은 user-info `/me` 로 취득. LINA refreshToken 은 응답 계약상 필요해 **발급·`users.refresh_token` 저장까지** 본 Feature 에서 구현 — 회전/무효화는 Feature 4)
+- [x] AUTH-05 groups 조회: `totalSize > limit`(기본 200) 이면 `start` 페이징으로 전량 수집. 조회 실패/빈 결과 시 정책 결정(빈 `groups` 허용 시 BFF fail-closed 로 RAG 차단되므로 — 로그인은 허용하되 질의 단계에서 차단되는 동작 명시) — ✅ 2026-06-12 (**정책 확정: 조회 실패 시 warn 로그 + 빈 `groups` 로 로그인 허용** — api-spec v2.6.0 'groups 빈 배열 허용' 정합, 질의는 user-level/공개 페이지만 매칭)
+- [x] **`mode=admin` 게이트**: state 의 mode 가 `admin` 인데 `users.role != ADMIN` 이면 `403 FORBIDDEN`(message "관리자 권한이 없는 계정입니다"), 토큰 미발급 (`docs/api-spec.md` §4-1) — ✅ 2026-06-12 (게이트는 groups 조회·모든 영속보다 먼저 — 거부 시 INSERT/저장 없음)
+- [x] 실패 매핑: `state` 불일치 `400 INVALID_REQUEST`, `code` 무효/Confluence 오류 `401 UNAUTHORIZED`, mode 게이트 `403 FORBIDDEN` — 모든 실패에서 토큰 미발급 — ✅ 2026-06-12 (`code`/`state` 누락도 `400`)
+- [x] `accessible-resources` 멀티 사이트 선택 규칙 — **공식 주의: 반환 순서 없음, "최근 인가" 추론 금지**. PoC 는 단일 사이트 가정, 다중이면 설정값/명시 선택(첫 번째 임의 선택 금지)·기록 — ✅ 2026-06-12 (단일=자동, 다중=`CONFLUENCE_SITE_URL` 일치 사이트만 선택, 미설정/불일치 시 `500 INTERNAL_ERROR`, 0개 시 `401`)
+- [x] Confluence OAuth 토큰은 **응답에 미포함**(서버 보관, `backend/rules/auth.md` §3) — ✅ 2026-06-12 (응답 미포함 테스트로 고정)
+- [x] WireMock 으로 AUTH-02/04 모킹, MockMvc 로 login 리다이렉트·callback 성공/실패(400/401/403) 검증. **실제 Atlassian 호출 금지** — ✅ 2026-06-12 (WireMock: AUTH-02/04/05+`/me`+페이징, MockMvc 8건, Service 단위 13건, state 5건 — 신규 31건 전부 통과)
 
 > **FE 진입점 정합 (api-spec §3):** FE 단일 진입점은 BFF 다. auth-server 가 `/api/auth/login`·`/api/auth/callback` 핸들러를 호스팅하고 BFF gateway 가 `/api/auth/**` 를 라우팅한다(FE 는 BFF 만 본다). 흐름도 표기는 `GET /api/auth/callback → BFF → Auth Server: code 교환·users upsert·JWT 발급` — 처리 책임은 auth-server. (**BFF gateway path-through (a) 확정 — 2026-06-09**, §확정된 결정 'FE 진입점·gateway 라우팅')
 
@@ -186,12 +187,13 @@
 #### 변경 대상 파일
 - `oauth/AuthController.java`(엔드포인트 추가), `token/SessionService.java`, `config/SecurityConfig.java`
 - `oauth/AuthControllerTest.java`(refresh/logout 추가)
+- (구현 시 추가 2026-06-12) `config/JwtAuthenticationFilter.java`(Bearer 검증→SecurityContext 적재 — logout 호출자 식별), `oauth/dto/RefreshTokenRequest.java`, `token/entity/User.java` `rotateSessionTokens()`/`clearRefreshToken()` 추가(시그니처 변경 없음), `token/SessionServiceTest.java`
 
 #### 체크리스트
-- [ ] `POST /api/auth/refresh` — LINA refresh token(Body) 검증 → **Rotating**: 새 access JWT + 새 refresh 발급, 이전 refresh 무효화. 만료/무효 시 `401 UNAUTHORIZED`
-- [ ] `POST /api/auth/logout` — `Authorization: Bearer` 로 식별, refresh token 무효화, `data: null`
-- [ ] `SecurityConfig` — `/api/auth/login`·`/api/auth/callback` 은 `permitAll`, `/api/auth/logout` 은 Bearer 필요, `/internal/**` 은 외부 차단
-- [ ] `AuthControllerTest`: refresh 회전·재사용 거부, logout 무효화
+- [x] `POST /api/auth/refresh` — LINA refresh token(Body) 검증 → **Rotating**: 새 access JWT + 새 refresh 발급, 이전 refresh 무효화. 만료/무효 시 `401 UNAUTHORIZED` — ✅ 2026-06-12 (재사용 거부는 JWT 검증 + **`users.refresh_token` 저장값 대조**로 구현 — stateless 검증만으론 회전 후 재사용을 못 잡음. 별도 토큰 테이블 미신설. 권한 claim 은 refresh 시 DB 재조회, 새 access JWT 는 `users.access_token` 에도 갱신)
+- [x] `POST /api/auth/logout` — `Authorization: Bearer` 로 식별, refresh token 무효화, `data: null` — ✅ 2026-06-12 (무효화 = `users.refresh_token` NULL 비움 → 이후 refresh 401)
+- [x] `SecurityConfig` — `/api/auth/login`·`/api/auth/callback` 은 `permitAll`, `/api/auth/logout` 은 Bearer 필요, `/internal/**` 은 외부 차단 — ✅ 2026-06-12 (`/api/auth/refresh` 도 permitAll — Body 의 refresh token 으로 자체 검증. logout Bearer = `JwtAuthenticationFilter` + 401 EntryPoint(공통 ErrorResponse). `/internal/**` 는 `denyAll` — Feature 5/7 에서 내부 호출자 인증으로 대체)
+- [x] `AuthControllerTest`: refresh 회전·재사용 거부, logout 무효화 — ✅ 2026-06-12 (MockMvc 7건 추가 + `SessionServiceTest` 7건 신규: 회전·재사용 거부·logout 후 refresh 거부·미인증/위조 Bearer 401·`/internal/**` 차단. 신규 14건 red→green 확인)
 
 > **`/api/users/me` 는 본 Feature 에서 제외** — api-spec §3 흐름도(`users/me → BFF → DB`)·`/api/admin/* → BFF → MySQL` 기준, **BFF 가 MySQL `users` 를 직접 읽어 서빙**한다. 따라서 users/me 는 BFF 작업(§교차 모듈 참조)이며, auth-server 는 `users` **쓰기**(callback upsert, Feature 3)만 담당한다. MySQL 은 3단계부터 **공유**(auth-server 가 `users`/`user_tokens` 쓰기, BFF 가 `users` 읽기).
 
@@ -246,8 +248,8 @@
 
 #### 체크리스트
 - [ ] `./scripts/format.sh`/`lint.sh`/`test.sh`/`verify.sh` 성공
-- [ ] `./gradlew :auth-server:bootRun` 기동 확인 (MySQL 연결, Flyway 마이그레이션 적용)
-- [ ] OAuth login→callback→refresh→logout→users/me 라이브 스모크(Atlassian 은 mock/WireMock 또는 실제 3LO 1회) — 정상/실패(400/401/403) 경로
+- [x] `./gradlew :auth-server:bootRun` 기동 확인 (MySQL 연결, Flyway 마이그레이션 적용) — ✅ 2026-06-12 (Feature 4 직후 선행 수행 — 실 MySQL 8.4 도커에서 V001~V004 적용 + `ddl-auto: validate` 통과, drift 없음. 위험 요소 'Flyway 미검증' 해소)
+- [ ] OAuth login→callback→refresh→logout→users/me 라이브 스모크(Atlassian 은 mock/WireMock 또는 실제 3LO 1회) — 정상/실패(400/401/403) 경로 — **⏳ users/me 제외 전부 완료(2026-06-12, 실제 3LO)**: login 302→동의→callback 200(JWT claim: accountId/groupId 3건/USER), refresh 회전 200·**이전 refresh 재사용 401**, logout 200·**logout 후 refresh 401**, Bearer 누락 401, 만료 code 401·위조 state 400, DB 암호화 저장(평문 아님)·`user_groups` 적재 실측 확인. 스모크가 잡은 결함 2건(`read:me` scope 누락 → §구현 시 주의 정정, 토큰 컬럼 2048 truncation → V003 8192 확장) 수정·회귀 테스트 완료. **잔여: users/me(BFF 측 작업 — §교차 모듈 참조) 후 체크**
 - [ ] `docs/api-spec.md` §4-1 / §2-5 명세와 구현 정합성 확인 (불일치 시에만 수정)
 - [ ] `git diff` 기준 의도하지 않은 변경 / 담당 외 파일(bff-server 등) 미수정
 - [ ] `backend/auth-server/CLAUDE.md` §5 + `backend/CLAUDE.md` §7 점검: OAuth 토큰 평문 저장 없음(암호화), Confluence 토큰 FE 미노출, JWT Claim 셋 BFF 일치, 평문 secret 없음, 인증 우회 코드 없음(Test Security Config 사용)
