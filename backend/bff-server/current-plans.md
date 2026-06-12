@@ -657,12 +657,14 @@
 - `src/test/java/com/lina/bff/admin/dashboard/**/AdminSync*Test.java`
 
 #### 체크리스트
-- [ ] `GET /api/admin/sync` controller 추가, `from`/`to`/`page`/`size` 적용
-- [ ] MongoDB 읽기 전용으로 `sync_logs` 또는 현행 ingestion job 컬렉션의 실제 필드명을 확인해 `syncId`, `status`, `updatedPages`, `deletedPages`, `duration`, `completedAt` 로 매핑
-- [ ] status 값은 `STARTED`/`IN_PROGRESS`/`COMPLETED`/`FAILED` 등 api-spec enum 과 정합화
-- [ ] `duration` 단위(초/ms)를 확정하고 `docs/api-spec.md` 예시와 맞춘다.
-- [ ] completion event 기반 `/api/admin/ingest` job 과 sync history 가 같은 jobId 를 공유하는지 확인하고, 공유하지 않으면 필드명을 분리한다.
-- [ ] 테스트: 정상 목록, 기간 필터, 페이지네이션, 실패 이력, 빈 목록, 권한 실패
+- [x] `GET /api/admin/sync` controller 추가, `from`/`to`/`page`/`size` 적용
+- [x] MongoDB 읽기 전용으로 `sync_logs` 또는 현행 ingestion job 컬렉션의 실제 필드명을 확인해 `syncId`, `status`, `updatedPages`, `deletedPages`, `duration`, `completedAt` 로 매핑
+- [x] status 값은 `STARTED`/`IN_PROGRESS`/`COMPLETED`/`FAILED` 등 api-spec enum 과 정합화
+- [x] `duration` 단위(초/ms)를 확정하고 `docs/api-spec.md` 예시와 맞춘다.
+- [x] completion event 기반 `/api/admin/ingest` job 과 sync history 가 같은 jobId 를 공유하는지 확인하고, 공유하지 않으면 필드명을 분리한다.
+- [x] 테스트: 정상 목록, 기간 필터, 페이지네이션, 실패 이력, 빈 목록, 권한 실패
+
+> Feature 7 구현 완료 (2026-06-12). `AdminSyncController`/`AdminSyncService`/`AdminSyncMongoRepository` 와 `AdminSyncResponse`/`SyncHistoryItemResponse` 를 추가했다. 조회 대상은 RAG/Ingestion 파이프라인의 MongoDB `sync_logs` 컬렉션이며 BFF 는 read-only 로만 접근한다. `from`/`to` 는 `completedAt`/`completed_at`/`finishedAt`/`finished_at`/`updatedAt`/`updated_at` 후보 필드에 기간 필터를 적용하고, `page`/`size` 로 최신순 페이지네이션한다. 응답 `syncId` 는 `syncId`/`sync_id` 우선, completion event 기반 job 과 같은 식별자를 공유하는 경우 `jobId`/`job_id` 를 그대로 노출하며, 없으면 Mongo `_id` 를 fallback 으로 쓴다. `status` 는 `SUCCESS|SUCCEEDED|DONE → COMPLETED`, `ERROR → FAILED`, `RUNNING → IN_PROGRESS` 로 정규화하고 나머지는 uppercase 로 유지한다. `duration` 은 초 단위이며 `duration`/`durationSeconds`/`duration_seconds` 는 그대로, `durationMillis`/`durationMs` 계열은 초로 변환, 값이 없으면 시작/완료 시각 차이로 계산한다. 신규 테스트는 controller 권한/기간/페이지 전달, service 정상·실패·빈 목록·field fallback, repository read-only·컬렉션 없음 경로를 검증한다.
 
 ### Feature 8. 관리자 대시보드 통합 검증
 
