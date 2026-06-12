@@ -30,6 +30,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.util.UriComponentsBuilder;
+import lombok.RequiredArgsConstructor;
 
 /**
  *
@@ -53,6 +54,7 @@ import org.springframework.web.util.UriComponentsBuilder;
  * </pre>
  */
 @Service
+@RequiredArgsConstructor
 public class OAuthLoginService {
 
   private static final Logger log = LoggerFactory.getLogger(OAuthLoginService.class);
@@ -69,25 +71,6 @@ public class OAuthLoginService {
   private final UserRepository userRepository;
   private final UserGroupRepository userGroupRepository;
   private final UserTokenRepository userTokenRepository;
-
-  public OAuthLoginService(
-      OAuthProperties properties,
-      OAuthStateService stateService,
-      AtlassianOAuthClient oauthClient,
-      JwtProvider jwtProvider,
-      JwtProperties jwtProperties,
-      UserRepository userRepository,
-      UserGroupRepository userGroupRepository,
-      UserTokenRepository userTokenRepository) {
-    this.properties = properties;
-    this.stateService = stateService;
-    this.oauthClient = oauthClient;
-    this.jwtProvider = jwtProvider;
-    this.jwtProperties = jwtProperties;
-    this.userRepository = userRepository;
-    this.userGroupRepository = userGroupRepository;
-    this.userTokenRepository = userTokenRepository;
-  }
 
   /** login: returnTo(내부 경로만)/mode 를 state 로 보관하고 Atlassian authorize URL 을 구성한다(AUTH-01). */
   public URI buildAuthorizationRedirectUri(String mode, String returnTo) {
