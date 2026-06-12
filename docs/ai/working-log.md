@@ -7,6 +7,8 @@
 
 ## 2026-06-12
 
+- **Admin dashboard 평균 응답 시간 집계 효율화**: `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/service/AdminStatsService.java`의 `averageResponseTimeSeconds()`에서 `List<Long>`로 응답 시간을 모두 적재한 뒤 평균을 계산하던 방식을, 합계(`responseTimeSum`)와 카운트(`responseTimeCount`) 누적 집계로 변경해 객체 생성과 후처리 비용을 줄였다. 테스트: `:bff-server:test --tests "com.lina.bff.admin.dashboard.service.AdminStatsServiceTest"` 통과, `./gradlew test` 통과.
+
 - **Admin dashboard 통계 NPE 방지**: `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/service/AdminStatsService.java`에서 `hourlyAccessTrend()`가 `Message.getCreatedAt()` null 값을 방어하지 않아 생길 수 있는 `NullPointerException`을 방지하도록 `createdAt == null` 항목을 필터링해 건너뛰도록 수정했다. 테스트: `:bff-server:test --tests "com.lina.bff.admin.dashboard.service.AdminStatsServiceTest"` 통과, `./gradlew test` 통과.
 
 ## 2026-06-11

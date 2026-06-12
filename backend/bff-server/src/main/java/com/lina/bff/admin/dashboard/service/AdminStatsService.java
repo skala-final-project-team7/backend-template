@@ -8,7 +8,6 @@ import com.lina.bff.admin.dashboard.support.AdminDashboardQueryParser;
 import com.lina.bff.chat.entity.Message;
 import com.lina.bff.chat.entity.MessageRole;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -71,36 +70,37 @@ public class AdminStatsService {
 
   private double averageResponseTimeSeconds(List<Message> messages) {
     Map<String, Message> pendingUserMessages = new HashMap<>();
-    List<Long> responseTimes = new ArrayList<>();
+    long responseTimeSum = 0L;
+    long responseTimeCount = 0L;
 
-    messages.stream()
-        .filter(message -> message.getConversationId() != null)
-        .filter(message -> message.getCreatedAt() != null)
-        .forEach(
-            message -> {
-              if (isUserMessage(message)) {
-                pendingUserMessages.put(message.getConversationId(), message);
-                return;
-              }
+    for (Message message : messages) {
+      if (message.getConversationId() == null || message.getCreatedAt() == null) {
+        continue;
+      }
 
-              if (isAssistantMessage(message)) {
-                Message userMessage = pendingUserMessages.remove(message.getConversationId());
-                if (userMessage != null) {
-                  long seconds =
-                      Duration.between(userMessage.getCreatedAt(), message.getCreatedAt())
-                          .toSeconds();
-                  if (seconds >= 0) {
-                    responseTimes.add(seconds);
-                  }
-                }
-              }
-            });
+      if (isUserMessage(message)) {
+        pendingUserMessages.put(message.getConversationId(), message);
+        continue;
+      }
 
-    if (responseTimes.isEmpty()) {
+      if (isAssistantMessage(message)) {
+        Message userMessage = pendingUserMessages.remove(message.getConversationId());
+        if (userMessage != null) {
+          long seconds =
+              Duration.between(userMessage.getCreatedAt(), message.getCreatedAt()).toSeconds();
+          if (seconds >= 0) {
+            responseTimeSum += seconds;
+            responseTimeCount++;
+          }
+        }
+      }
+    }
+
+    if (responseTimeCount == 0) {
       return 0.0;
     }
 
-    double average = responseTimes.stream().mapToLong(Long::longValue).average().orElseThrow();
+    double average = (double) responseTimeSum / responseTimeCount;
     return Math.round(average * 10.0) / 10.0;
   }
 
