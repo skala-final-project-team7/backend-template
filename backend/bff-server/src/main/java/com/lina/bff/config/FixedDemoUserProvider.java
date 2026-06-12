@@ -30,14 +30,17 @@ public class FixedDemoUserProvider implements CurrentUserProvider {
   private final String userId;
   private final List<String> groups;
   private final String spaceKey;
+  private final String role;
 
   public FixedDemoUserProvider(
       @Value("${lina.demo.fixed-user-id}") String userId,
       @Value("${lina.demo.fixed-groups}") String groupsCsv,
-      @Value("${lina.demo.fixed-space-key}") String spaceKey) {
+      @Value("${lina.demo.fixed-space-key}") String spaceKey,
+      @Value("${lina.demo.fixed-role:ADMIN}") String role) {
     this.userId = userId;
     this.groups = parseGroups(groupsCsv);
     this.spaceKey = spaceKey;
+    this.role = role;
   }
 
   private static List<String> parseGroups(String csv) {
@@ -60,5 +63,10 @@ public class FixedDemoUserProvider implements CurrentUserProvider {
   @Override
   public String getSpaceKey() {
     return spaceKey;
+  }
+
+  @Override
+  public String getRole() {
+    return role;
   }
 }

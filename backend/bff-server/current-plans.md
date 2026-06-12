@@ -554,15 +554,15 @@
 - `docs/api-spec.md` — **필요 시에만** §4-2 제안 파라미터 확정 내용 반영
 
 #### 체크리스트
-- [ ] 대시보드 API 패키지 경계 확정: 기존 `admin/ingest` 와 분리해 `admin/dashboard` 하위에 controller/service/repository/dto 배치
-- [ ] `/api/admin/*` ADMIN 권한 가드 적용 방식 확정: JWT `role=ADMIN` 기반 `@PreAuthorize` 또는 SecurityFilterChain matcher. 데모용 `FixedDemoUserProvider` 분기와 production 권한 로직을 섞지 않는다.
-- [ ] 공통 query parameter 확정: `period`(`daily`/`hourly`), `from`/`to`(KST ISO-8601), `page`/`size`; 기본값은 `docs/api-spec.md` §4-2 와 맞춘다.
-- [ ] 기간 파라미터는 KST 입력 → UTC 조회 범위로 변환하고, 응답 timestamp 는 KST 로 직렬화한다.
-- [ ] 페이지네이션 검증 정책 확정: `page >= 0`, `1 <= size <= 100`(또는 확정값), 위반 시 `400 INVALID_REQUEST`.
-- [ ] MySQL 읽기 경계 확정: BFF 가 auth-server 소유 `users`/`user_groups` 를 읽어야 하므로 read-only datasource/계정 사용 원칙을 문서화하고, 쓰기 로직은 만들지 않는다.
-- [ ] MongoDB RAG 파이프라인 컬렉션(`raw_pages`, `chunked_units`, `sync_logs` 등)은 **읽기 전용**으로만 접근한다.
-- [ ] 공통 응답은 `ApiResponse` wrapper 로 통일하고 SSE wrapper 예외 규칙과 혼동하지 않는다.
-- [ ] MockMvc 권한 테스트: 미인증 `401`, 일반 사용자 `403`, ADMIN `200` 경로를 최소 1개 대시보드 endpoint 로 고정한다.
+- [x] 대시보드 API 패키지 경계 확정: 기존 `admin/ingest` 와 분리해 `admin/dashboard` 하위에 controller/service/repository/dto 배치
+- [x] `/api/admin/*` ADMIN 권한 가드 적용 방식 확정: JWT `role=ADMIN` 기반 `@PreAuthorize` 또는 SecurityFilterChain matcher. 데모용 `FixedDemoUserProvider` 분기와 production 권한 로직을 섞지 않는다. — 2026-06-12 구현: `CurrentUserProvider#getRole()` + `AdminAuthorizationService` 경계로 우선 고정, 3단계 JWT provider 교체 시 동일 서비스 재사용
+- [x] 공통 query parameter 확정: `period`(`daily`/`hourly`), `from`/`to`(KST ISO-8601), `page`/`size`; 기본값은 `docs/api-spec.md` §4-2 와 맞춘다.
+- [x] 기간 파라미터는 KST 입력 → UTC 조회 범위로 변환하고, 응답 timestamp 는 KST 로 직렬화한다.
+- [x] 페이지네이션 검증 정책 확정: `page >= 0`, `1 <= size <= 100`(또는 확정값), 위반 시 `400 INVALID_REQUEST`.
+- [x] MySQL 읽기 경계 확정: BFF 가 auth-server 소유 `users`/`user_groups` 를 읽어야 하므로 read-only datasource/계정 사용 원칙을 문서화하고, 쓰기 로직은 만들지 않는다. — 2026-06-12 결정: Feature 2 에서는 datasource 의존성을 추가하지 않고, `users` 구현 Feature 에서 read-only datasource/계정으로 한정 추가
+- [x] MongoDB RAG 파이프라인 컬렉션(`raw_pages`, `chunked_units`, `sync_logs` 등)은 **읽기 전용**으로만 접근한다.
+- [x] 공통 응답은 `ApiResponse` wrapper 로 통일하고 SSE wrapper 예외 규칙과 혼동하지 않는다.
+- [x] MockMvc 권한 테스트: 미인증 `401`, 일반 사용자 `403`, ADMIN `200` 경로를 최소 1개 대시보드 endpoint 로 고정한다.
 
 ### Feature 3. 관리자 통계 API — `GET /api/admin/stats`
 
@@ -576,13 +576,13 @@
 - `src/test/java/com/lina/bff/admin/dashboard/**/AdminStats*Test.java`
 
 #### 체크리스트
-- [ ] `GET /api/admin/stats` controller 추가, `period`/`from`/`to` 파라미터 수신
-- [ ] `dailyQueryCount`: 지정 기간 내 사용자 질문 메시지 또는 대화 질의 기준 집계 규칙 확정
-- [ ] `avgResponseTime`: 현재 저장 모델에 latency 원천이 없으면 `meta.latency_ms` 저장 여부 또는 `null/0` 정책을 명시하고 후속 이슈로 분리
-- [ ] `totalConversations`: 삭제되지 않은 대화 기준 전체 대화 수 집계
-- [ ] `hourlyAccessTrend`: KST 시간대 기준 `hour`/`count` 배열 반환
-- [ ] 빈 기간/데이터 없음은 0 집계와 빈 배열로 정상 응답한다.
-- [ ] 테스트: 기본 최근 7일, `hourly`/`daily` 분기, KST 경계일, 데이터 없음, 권한 실패
+- [x] `GET /api/admin/stats` controller 추가, `period`/`from`/`to` 파라미터 수신 — 2026-06-12 구현: `AdminStatsController`, 공통 `AdminDashboardQueryParser` 재사용
+- [x] `dailyQueryCount`: 지정 기간 내 사용자 질문 메시지 또는 대화 질의 기준 집계 규칙 확정 — 2026-06-12 결정: `messages.role=user`, `deletedAt=null`, `createdAt in [from,to)` 기준 사용자 질문 수
+- [x] `avgResponseTime`: 현재 저장 모델에 latency 원천이 없으면 `meta.latency_ms` 저장 여부 또는 `null/0` 정책을 명시하고 후속 이슈로 분리 — 2026-06-12 구현: 별도 latency 필드 추가 없이 같은 대화의 user 메시지 이후 첫 assistant 메시지까지의 초 단위 평균으로 산정, 매칭 쌍이 없으면 `0.0`
+- [x] `totalConversations`: 삭제되지 않은 대화 기준 전체 대화 수 집계 — 2026-06-12 구현: `conversations.deletedAt=null` 전체 카운트
+- [x] `hourlyAccessTrend`: KST 시간대 기준 `hour`/`count` 배열 반환 — 2026-06-12 구현: 사용자 질문 메시지의 `createdAt`을 KST로 변환해 hour별 non-zero bucket 반환
+- [x] 빈 기간/데이터 없음은 0 집계와 빈 배열로 정상 응답한다.
+- [x] 테스트: 기본 최근 7일, `hourly`/`daily` 분기, KST 경계일, 데이터 없음, 권한 실패 — 2026-06-12 구현: `AdminStatsServiceTest`, `AdminStatsControllerTest`
 
 ### Feature 4. 관리자 사용자 현황 API — `GET /api/admin/users`
 
