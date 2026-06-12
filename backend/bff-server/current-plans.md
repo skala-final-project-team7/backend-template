@@ -576,13 +576,13 @@
 - `src/test/java/com/lina/bff/admin/dashboard/**/AdminStats*Test.java`
 
 #### 체크리스트
-- [ ] `GET /api/admin/stats` controller 추가, `period`/`from`/`to` 파라미터 수신
-- [ ] `dailyQueryCount`: 지정 기간 내 사용자 질문 메시지 또는 대화 질의 기준 집계 규칙 확정
-- [ ] `avgResponseTime`: 현재 저장 모델에 latency 원천이 없으면 `meta.latency_ms` 저장 여부 또는 `null/0` 정책을 명시하고 후속 이슈로 분리
-- [ ] `totalConversations`: 삭제되지 않은 대화 기준 전체 대화 수 집계
-- [ ] `hourlyAccessTrend`: KST 시간대 기준 `hour`/`count` 배열 반환
-- [ ] 빈 기간/데이터 없음은 0 집계와 빈 배열로 정상 응답한다.
-- [ ] 테스트: 기본 최근 7일, `hourly`/`daily` 분기, KST 경계일, 데이터 없음, 권한 실패
+- [x] `GET /api/admin/stats` controller 추가, `period`/`from`/`to` 파라미터 수신 — 2026-06-12 구현: `AdminStatsController`, 공통 `AdminDashboardQueryParser` 재사용
+- [x] `dailyQueryCount`: 지정 기간 내 사용자 질문 메시지 또는 대화 질의 기준 집계 규칙 확정 — 2026-06-12 결정: `messages.role=user`, `deletedAt=null`, `createdAt in [from,to)` 기준 사용자 질문 수
+- [x] `avgResponseTime`: 현재 저장 모델에 latency 원천이 없으면 `meta.latency_ms` 저장 여부 또는 `null/0` 정책을 명시하고 후속 이슈로 분리 — 2026-06-12 구현: 별도 latency 필드 추가 없이 같은 대화의 user 메시지 이후 첫 assistant 메시지까지의 초 단위 평균으로 산정, 매칭 쌍이 없으면 `0.0`
+- [x] `totalConversations`: 삭제되지 않은 대화 기준 전체 대화 수 집계 — 2026-06-12 구현: `conversations.deletedAt=null` 전체 카운트
+- [x] `hourlyAccessTrend`: KST 시간대 기준 `hour`/`count` 배열 반환 — 2026-06-12 구현: 사용자 질문 메시지의 `createdAt`을 KST로 변환해 hour별 non-zero bucket 반환
+- [x] 빈 기간/데이터 없음은 0 집계와 빈 배열로 정상 응답한다.
+- [x] 테스트: 기본 최근 7일, `hourly`/`daily` 분기, KST 경계일, 데이터 없음, 권한 실패 — 2026-06-12 구현: `AdminStatsServiceTest`, `AdminStatsControllerTest`
 
 ### Feature 4. 관리자 사용자 현황 API — `GET /api/admin/users`
 
