@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -37,6 +38,7 @@ import org.springframework.web.util.UriComponentsBuilder;
  * </pre>
  */
 @Component
+@RequiredArgsConstructor
 public class AtlassianOAuthClient {
 
   /** AUTH-05 페이지 크기(Atlassian 기본 200). totalSize 초과분은 start 페이징으로 이어 받는다. */
@@ -44,11 +46,6 @@ public class AtlassianOAuthClient {
 
   private final RestClient restClient;
   private final OAuthProperties properties;
-
-  public AtlassianOAuthClient(RestClient atlassianRestClient, OAuthProperties properties) {
-    this.restClient = atlassianRestClient;
-    this.properties = properties;
-  }
 
   /** AUTH-02: authorization_code → Confluence access/refresh 교환. */
   public AtlassianTokenResponse exchangeAuthorizationCode(String code) {
