@@ -48,7 +48,7 @@ public class AdminStatsMongoRepository {
                     .and("createdAt")
                     .gte(fromInclusive)
                     .lt(toExclusive))
-            .with(Sort.by(Sort.Direction.ASC, "conversationId", "createdAt"));
+            .with(Sort.by(Sort.Direction.ASC, "conversationId", "createdAt", "_id"));
     return mongoTemplate.find(query, Message.class);
   }
 }

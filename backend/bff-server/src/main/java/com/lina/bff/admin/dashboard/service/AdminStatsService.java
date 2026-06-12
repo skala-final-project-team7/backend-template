@@ -9,11 +9,9 @@ import com.lina.bff.chat.entity.Message;
 import com.lina.bff.chat.entity.MessageRole;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.TreeMap;
 import org.springframework.stereotype.Service;
 
@@ -76,10 +74,6 @@ public class AdminStatsService {
     messages.stream()
         .filter(message -> message.getConversationId() != null)
         .filter(message -> message.getCreatedAt() != null)
-        .sorted(
-            Comparator.comparing(Message::getConversationId)
-                .thenComparing(Message::getCreatedAt)
-                .thenComparing(message -> Objects.toString(message.getMessageId(), "")))
         .forEach(
             message -> {
               if (isUserMessage(message)) {
