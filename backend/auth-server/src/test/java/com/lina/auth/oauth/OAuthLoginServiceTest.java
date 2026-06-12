@@ -69,7 +69,8 @@ class OAuthLoginServiceTest {
             "https://app.example.com/auth/callback",
             "read:confluence-user offline_access",
             "https://api.atlassian.com",
-            siteUrl);
+            siteUrl,
+            600);
     JwtProperties jwtProperties =
         new JwtProperties("lina-auth-server", "unused-private", "unused-public", 3600, 1209600);
     OAuthLoginPersistenceService persistenceService =

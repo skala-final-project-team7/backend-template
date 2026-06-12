@@ -220,7 +220,8 @@ class AtlassianOAuthClientTest {
             "https://app.example.com/auth/callback",
             "read:confluence-user offline_access",
             baseUrl,
-            "");
+            "",
+            600);
     RestClient restClient =
         RestClient.builder().requestFactory(new SimpleClientHttpRequestFactory()).build();
     return new AtlassianOAuthClient(restClient, properties);

@@ -7,8 +7,8 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import lombok.RequiredArgsConstructor;
 
 /**
  *
@@ -31,17 +31,14 @@ import org.springframework.stereotype.Service;
  * </pre>
  */
 @Service
+@RequiredArgsConstructor
 public class OAuthStateService {
 
   private static final int STATE_BYTES = 32;
 
   private final SecureRandom secureRandom = new SecureRandom();
   private final Map<String, StoredState> store = new ConcurrentHashMap<>();
-  private final long stateTtlSeconds;
-
-  public OAuthStateService(@Value("${lina.oauth.state-ttl-seconds:600}") long stateTtlSeconds) {
-    this.stateTtlSeconds = stateTtlSeconds;
-  }
+  private final OAuthProperties properties;
 
   /** state 발급 + mode/returnTo 보관. */
   public String generate(String mode, String returnTo) {
@@ -51,7 +48,8 @@ public class OAuthStateService {
     String state = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     store.put(
         state,
-        new StoredState(new StateData(mode, returnTo), Instant.now().plusSeconds(stateTtlSeconds)));
+        new StoredState(
+            new StateData(mode, returnTo), Instant.now().plusSeconds(properties.getStateTtlSeconds())));
     return state;
   }
 

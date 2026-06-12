@@ -52,6 +52,9 @@ public class OAuthProperties {
   /** 멀티 사이트 시 선택할 사이트 base URL. 미설정이면 단일 사이트만 허용(임의 선택 금지). */
   private final String siteUrl;
 
+  /** login→callback 상태(state) TTL(초). */
+  private final long stateTtlSeconds;
+
   public OAuthProperties(
       @Value("${lina.oauth.confluence.client-id}") String clientId,
       @Value("${lina.oauth.confluence.client-secret}") String clientSecret,
@@ -61,7 +64,8 @@ public class OAuthProperties {
       @Value("${lina.oauth.confluence.redirect-uri}") String redirectUri,
       @Value("${lina.oauth.confluence.scopes}") String scopes,
       @Value("${lina.oauth.confluence.api-base-uri}") String apiBaseUri,
-      @Value("${lina.oauth.confluence.site-url}") String siteUrl) {
+      @Value("${lina.oauth.confluence.site-url}") String siteUrl,
+      @Value("${lina.oauth.state-ttl-seconds:600}") long stateTtlSeconds) {
     this.clientId = clientId;
     this.clientSecret = clientSecret;
     this.authorizationUri = authorizationUri;
@@ -71,5 +75,6 @@ public class OAuthProperties {
     this.scopes = scopes;
     this.apiBaseUri = apiBaseUri;
     this.siteUrl = siteUrl;
+    this.stateTtlSeconds = stateTtlSeconds;
   }
 }
