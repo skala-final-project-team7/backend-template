@@ -89,6 +89,21 @@ class UserTokenRepositoryTest {
   }
 
   @Test
+  @DisplayName("실제 Atlassian 크기(2KB 초과)의 토큰도 잘림 없이 저장된다 — 라이브 스모크 회귀(2026-06-12)")
+  void shouldPersistRealWorldSizedTokens() {
+    // 실측: Atlassian access token 은 2KB 를 넘는 JWT — 암호화(+28B) 후 VARBINARY(2048) 초과로 INSERT 실패했다
+    String longAccessToken = "conf-access-".repeat(400); // 4,800자
+    String longRefreshToken = "conf-refresh-".repeat(300); // 3,900자
+
+    userTokenRepository.saveAndFlush(token(longAccessToken, longRefreshToken, EXPIRES_AT));
+    entityManager.clear();
+
+    UserToken found = userTokenRepository.findById(USER_KEY).orElseThrow();
+    assertThat(found.getConfluenceAccessToken()).isEqualTo(longAccessToken);
+    assertThat(found.getConfluenceRefreshToken()).isEqualTo(longRefreshToken);
+  }
+
+  @Test
   @DisplayName("access token 만료 시각이 저장되고 user_key 로 조회된다")
   void shouldPersistAccessTokenExpiry() {
     userTokenRepository.saveAndFlush(token("conf-access-1", "conf-refresh-1", EXPIRES_AT));
