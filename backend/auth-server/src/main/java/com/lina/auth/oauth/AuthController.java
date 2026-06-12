@@ -3,14 +3,14 @@ package com.lina.auth.oauth;
 import com.lina.auth.oauth.dto.LoginTokenResponse;
 import com.lina.auth.oauth.dto.RefreshTokenRequest;
 import com.lina.auth.token.SessionService;
-import com.lina.common.exception.BizException;
-import com.lina.common.exception.ErrorCode;
 import com.lina.common.response.ApiResponse;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import java.net.URI;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -40,6 +40,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/auth")
+@Validated
 public class AuthController {
 
   private final OAuthLoginService loginService;
@@ -62,14 +63,8 @@ public class AuthController {
   /** code/state 로 세션을 교환한다. 실패 매핑: state 불일치 400 / Confluence 오류 401 / admin 게이트 403. */
   @GetMapping("/callback")
   public ApiResponse<LoginTokenResponse> callback(
-      @RequestParam(value = "code", required = false) String code,
-      @RequestParam(value = "state", required = false) String state) {
-    if (code == null || code.isBlank()) {
-      throw new BizException(ErrorCode.INVALID_REQUEST, "code 는 필수입니다.");
-    }
-    if (state == null || state.isBlank()) {
-      throw new BizException(ErrorCode.INVALID_REQUEST, "state 는 필수입니다.");
-    }
+      @RequestParam @NotBlank String code,
+      @RequestParam @NotBlank String state) {
     return ApiResponse.success(loginService.handleCallback(code, state), "로그인 성공");
   }
 
