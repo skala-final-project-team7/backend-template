@@ -616,12 +616,12 @@
 - `src/test/java/com/lina/bff/admin/dashboard/**/AdminData*Test.java`
 
 #### 체크리스트
-- [ ] `GET /api/admin/data` controller 추가
-- [ ] MongoDB 읽기 전용으로 `totalSpaces`, `totalPages`, `totalAttachments`, `totalChunks`, `lastSyncAt` 집계
-- [ ] `vectorDbSize` 원천 확정: Qdrant API 직접 조회, Mongo 저장 통계, 또는 운영 설정값 중 하나로 결정하고 단위를 문자열(`2.3 GB`)로 반환
-- [ ] 수집 데이터가 없으면 모든 count 0, `lastSyncAt=null` 로 정상 응답
-- [ ] RAG 파이프라인 컬렉션에는 쓰기/수정/삭제를 하지 않는 테스트 또는 코드 경계 확인
-- [ ] 테스트: 정상 집계, 빈 DB, `lastSyncAt` KST 변환, 권한 실패
+- [x] `GET /api/admin/data` controller 추가 — 2026-06-12 구현: `AdminDataController`, 공통 ADMIN 권한 경계 재사용
+- [x] MongoDB 읽기 전용으로 `totalSpaces`, `totalPages`, `totalAttachments`, `totalChunks`, `lastSyncAt` 집계 — 2026-06-12 구현: `raw_pages` distinct space, `raw_pages`/`raw_attachments`/`chunked_units` count, `sync_logs` 최신 시각 조회
+- [x] `vectorDbSize` 원천 확정: Qdrant API 직접 조회, Mongo 저장 통계, 또는 운영 설정값 중 하나로 결정하고 단위를 문자열(`2.3 GB`)로 반환 — 2026-06-12 결정: Qdrant 용량 API/저장 통계 원천 미확정으로 운영 설정값 `ADMIN_DASHBOARD_VECTOR_DB_SIZE` 사용, 기본값 `0 B`
+- [x] 수집 데이터가 없으면 모든 count 0, `lastSyncAt=null` 로 정상 응답한다.
+- [x] RAG 파이프라인 컬렉션에는 쓰기/수정/삭제를 하지 않는 테스트 또는 코드 경계 확인 — 2026-06-12 구현: repository 는 `MongoTemplate` read 메서드만 사용, 테스트에서 save/remove 미호출 검증
+- [x] 테스트: 정상 집계, 빈 DB, `lastSyncAt` KST 변환, 권한 실패 — 2026-06-12 구현: `AdminDataServiceTest`, `AdminDataControllerTest`, `AdminDataMongoRepositoryTest`
 
 ### Feature 6. 관리자 피드백 현황 API — `GET /api/admin/feedback`
 

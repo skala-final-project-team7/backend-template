@@ -60,6 +60,9 @@ lina:
     request-timeout-ms: ${AUTH_SERVER_TIMEOUT_MS:30000}
   admin:
     dashboard:
+      data:
+        # Qdrant 실제 용량 원천이 확정되기 전까지 운영 설정값으로 표시한다.
+        vector-db-size: ${ADMIN_DASHBOARD_VECTOR_DB_SIZE:0 B}
       mysql:
         enabled: ${ADMIN_DASHBOARD_MYSQL_ENABLED:false}
         jdbc-url: ${ADMIN_DASHBOARD_MYSQL_JDBC_URL:}

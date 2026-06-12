@@ -27,7 +27,10 @@ import org.springframework.jdbc.core.simple.JdbcClient;
  * </pre>
  */
 @Configuration
-@EnableConfigurationProperties(AdminDashboardMySqlProperties.class)
+@EnableConfigurationProperties({
+  AdminDashboardMySqlProperties.class,
+  AdminDashboardDataProperties.class
+})
 public class AdminDashboardMySqlConfig {
 
   @Bean(destroyMethod = "close")
