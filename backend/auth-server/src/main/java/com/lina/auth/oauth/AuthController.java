@@ -63,8 +63,7 @@ public class AuthController {
   /** code/state 로 세션을 교환한다. 실패 매핑: state 불일치 400 / Confluence 오류 401 / admin 게이트 403. */
   @GetMapping("/callback")
   public ApiResponse<LoginTokenResponse> callback(
-      @RequestParam @NotBlank String code,
-      @RequestParam @NotBlank String state) {
+      @RequestParam @NotBlank String code, @RequestParam @NotBlank String state) {
     return ApiResponse.success(loginService.handleCallback(code, state), "로그인 성공");
   }
 

@@ -74,3 +74,7 @@ lina:
     refresh-token-ttl-seconds: ${LINA_JWT_REFRESH_TTL:1209600}
   token-encryption:
     key: ${LINA_TOKEN_ENCRYPTION_KEY:}
+  internal:
+    # /internal/** 내부 호출자(service auth) 공유 키 — X-Internal-Api-Key 헤더 대조.
+    # 미설정 시 내부 API 전부 거부(fail-closed). NetworkPolicy 와 병행(Feature 5/7)
+    api-key: ${INTERNAL_API_KEY:}

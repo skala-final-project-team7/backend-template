@@ -867,6 +867,10 @@ ML 서버는 책임이 다른 두 파이프라인으로 분리되어 있으며, 
 | ------------- | ------ | -------- | ------------------------------------------------------------------------------- |
 | `adminUserId` | String | ✅       | RabbitMQ ingest job payload 의 `adminUserId`. credential 자체가 아닌 사용자 식별자 |
 
+| Header               | Type   | Required | Description                                                                                  |
+| -------------------- | ------ | -------- | -------------------------------------------------------------------------------------------- |
+| `X-Internal-Api-Key` | String | ✅       | 내부 호출자(service auth) 공유 키(`${INTERNAL_API_KEY}`). 누락/불일치 시 `401`, 사용자 JWT 로는 `403` (2026-06-12, Feature 5 구현) |
+
 **Response (200 OK)**
 
 ```json
@@ -897,7 +901,7 @@ ML 서버는 책임이 다른 두 파이프라인으로 분리되어 있으며, 
 
 **보안 원칙**
 
-- 호출 주체는 Data Ingestion Worker 로 제한한다(NetworkPolicy 또는 내부 service auth).
+- 호출 주체는 Data Ingestion Worker 로 제한한다(NetworkPolicy 또는 내부 service auth). 응용 계층 인증은 `X-Internal-Api-Key` 헤더(env 주입 공유 키, 미설정 시 fail-closed 전부 거부)로 구현되어 있으며 NetworkPolicy 와 병행한다.
 - 응답 body 로그/tracing 은 마스킹하거나 수집하지 않는다.
 - RabbitMQ job/completion payload 에 `accessToken`/`refreshToken`/`cloudId` 를 넣지 않는다.
 

@@ -203,14 +203,15 @@
 
 #### 변경 대상 파일
 - `internal/InternalCredentialController.java`, `token/SessionService.java`(refresh 재사용), `internal/InternalCredentialControllerTest.java`
+- (구현 시 추가 2026-06-12) `internal/InternalCredentialService.java`(Confluence AUTH-03 refresh 는 LINA 세션 담당인 SessionService 재사용 대신 **별도 서비스**로 구현 — §용어 구분 표의 토큰 분리 정합), `internal/dto/AdminConfluenceCredentialResponse.java`, `config/InternalApiKeyFilter.java`(내부 호출자 인증), `config/SecurityConfig.java`(`/internal/auth/**` ROLE_INTERNAL + 403 AccessDeniedHandler), `oauth/AtlassianOAuthClient.java`(AUTH-03 `refreshAccessToken` + `InvalidGrantException`), `oauth/dto/TokenExchangeRequest.java`(`refreshToken` 필드·NON_NULL), `application*.yml`(`lina.internal.api-key=${INTERNAL_API_KEY}`), `internal/InternalCredentialServiceTest.java`, `oauth/AtlassianOAuthClientTest.java`(AUTH-03 3건)
 
 #### 체크리스트
-- [ ] `GET /internal/auth/admin-confluence-credential?adminUserId={id}` — `adminUserId` 로 조회 → `users.role == ADMIN` 확인 → `user_tokens`(`accessToken`/`cloudId`) + `admin_atlassian_credential`(`site_url` 컬럼→`siteUrl` JSON) 로드 → access token 만료/임박 시 AUTH-03 refresh → DB 최신화 → `{ accessToken, cloudId, siteUrl, expiresAt }` 반환(`refreshToken` 미반환). siteUrl=`admin_atlassian_credential.site_url` 그대로(별도 저장 없음), ingestion 출처 URL 정규화용·secret 아님
-- [ ] 호출 주체 제한: Data Ingestion Worker 전용(내부 service auth/NetworkPolicy). FE/BFF/외부 차단
-- [ ] 에러 정책: `adminUserId` 누락 `400`, 사용자/credential 없음 `404`, `role != ADMIN` `403`, refresh `invalid_grant` `401`(+재로그인 필요 상태 기록), Atlassian 일시 장애 `502 EXTERNAL_SERVICE_ERROR`
-- [ ] 응답 access_token 평문은 **내부 API 한정** — 로그/tracing 마스킹(Feature 7) 적용
-- [ ] 테스트: role 분기(403), 만료시 refresh 후 최신 토큰 반환, `refreshToken` 미노출, WireMock 으로 AUTH-03 모킹
-- [ ] **(하이브리드 정정 2026-06-11)** 본 §2-5 API 는 **admin OAuth `accessToken` + `cloudId`(user_tokens) + `siteUrl`(JSON, =`admin_atlassian_credential.site_url` 컬럼)** 을 반환. `accessToken`/`cloudId`=Bearer+게이트웨이 콘텐츠 조회, `siteUrl`=출처 URL absolute 정규화(별도 저장 없이 `site_url` 컬럼 그대로 전달). `refreshToken` 미반환, 만료 임박 시 AUTH-03 refresh 후 `user_tokens` 갱신해 반환(401/502 에러 유지). **admin API Token 은 본 API 가 반환하지 않음** — admin-key 관리(Feature 6)에서 auth-server 내부 사용
+- [x] `GET /internal/auth/admin-confluence-credential?adminUserId={id}` — `adminUserId` 로 조회 → `users.role == ADMIN` 확인 → `user_tokens`(`accessToken`/`cloudId`) + `admin_atlassian_credential`(`site_url` 컬럼→`siteUrl` JSON) 로드 → access token 만료/임박 시 AUTH-03 refresh → DB 최신화 → `{ accessToken, cloudId, siteUrl, expiresAt }` 반환(`refreshToken` 미반환). siteUrl=`admin_atlassian_credential.site_url` 그대로(별도 저장 없음), ingestion 출처 URL 정규화용·secret 아님 — ✅ 2026-06-12 (§2-5 raw JSON 계약. 만료 임박 skew 60초, rotating 덮어쓰기·외부 호출은 트랜잭션 밖 — SessionService 와 동일 원칙)
+- [x] 호출 주체 제한: Data Ingestion Worker 전용(내부 service auth/NetworkPolicy). FE/BFF/외부 차단 — ✅ 2026-06-12 (`X-Internal-Api-Key` 헤더 ↔ `${INTERNAL_API_KEY}` 상수시간 비교, 키 미설정 시 fail-closed 전부 거부. `/internal/auth/**`=ROLE_INTERNAL, 사용자 JWT 는 403, 잔여 `/internal/**` denyAll 유지(Feature 6 미개방). api-spec §2-5 헤더 계약 반영)
+- [x] 에러 정책: `adminUserId` 누락 `400`, 사용자/credential 없음 `404`, `role != ADMIN` `403`, refresh `invalid_grant` `401`(+재로그인 필요 상태 기록), Atlassian 일시 장애 `502 EXTERNAL_SERVICE_ERROR` — ✅ 2026-06-12 (invalid_grant 는 `InvalidGrantException` 으로 구분, warn 로그 기록 — 토큰 원문 미포함·userId 만)
+- [x] 응답 access_token 평문은 **내부 API 한정** — 로그/tracing 마스킹(Feature 7) 적용 — ✅ 2026-06-12 (응답 body 미로깅·토큰 로그 없음 확인. 전역 마스킹 규칙은 Feature 7 에서 일괄)
+- [x] 테스트: role 분기(403), 만료시 refresh 후 최신 토큰 반환, `refreshToken` 미노출, WireMock 으로 AUTH-03 모킹 — ✅ 2026-06-12 (신규 24건 red→green: MockMvc 11건 — **내부 키 없는 외부 호출 401·위조 키 401·사용자 Bearer 403 전부 토큰 미반환** 포함, Service 단위 10건, AUTH-03 WireMock 3건. 전체 101건 통과)
+- [x] **(하이브리드 정정 2026-06-11)** 본 §2-5 API 는 **admin OAuth `accessToken` + `cloudId`(user_tokens) + `siteUrl`(JSON, =`admin_atlassian_credential.site_url` 컬럼)** 을 반환. `accessToken`/`cloudId`=Bearer+게이트웨이 콘텐츠 조회, `siteUrl`=출처 URL absolute 정규화(별도 저장 없이 `site_url` 컬럼 그대로 전달). `refreshToken` 미반환, 만료 임박 시 AUTH-03 refresh 후 `user_tokens` 갱신해 반환(401/502 에러 유지). **admin API Token 은 본 API 가 반환하지 않음** — admin-key 관리(Feature 6)에서 auth-server 내부 사용 — ✅ 2026-06-12 (응답 DTO 에 refreshToken/adminApiToken 필드 자체 없음 — 구조적 차단)
 
 ---
 
@@ -218,14 +219,21 @@
 
 > **범위 권고:** 이 Feature 는 4단계 `/api/admin/ingest`·RabbitMQ completion event 와 강결합한다. **3단계에서는 내부 API 구현 + 단위/WireMock 테스트까지**, BFF consumer ↔ deactivate end-to-end 통합 검증은 4단계 Feature 1(RabbitMQ completion event) 과 함께 수행한다. (**범위 확정 — 2026-06-09**, §확정된 결정 'Admin Key 내부 API 범위')
 
+> **BFF 측 계약 선머지(2026-06-12 확인):** 본 API 의 호출자(BFF `AuthAdminKeyClient`·completion event consumer)는 PR #21(`feat/#17/admin-key-deactivate`)로 **이미 main 에 머지**되어 있다. 아래 요청 계약·idempotency·TTL 항목은 그 구현과 대조해 정합화한 것이다(`bff-server/current-plans.md` 4단계 Feature 1). Feature 6 구현 전까지 BFF `/api/admin/ingest` → activate 호출은 `/internal/**` denyAll 에 막혀 실패하는 것이 정상.
+
 #### 변경 대상 파일
-- `internal/{AdminKeyController,AdminKeyClient}.java`, `internal/AdminKeyControllerTest.java`
+- `internal/{AdminKeyController,AdminKeyClient}.java`, `internal/dto/*.java`(activate/deactivate 요청), `internal/AdminKeyControllerTest.java`
+- `application*.yml`(`durationInMinutes` 설정 외부화)
 
 #### 체크리스트
-- [ ] `POST /internal/admin/key/activate` — `admin_atlassian_credential` 의 `site_url`+admin API Token 으로(§6.4) Atlassian **`POST {siteUrl}/wiki/api/v2/admin-key`**(`Authorization: Basic base64(adminEmail:adminApiToken)`, `durationInMinutes` 기본 10분·최대 60분) 호출, `expirationTime` 응답. 실측 `200`(Feature 0 §검증 노트). (`docs/adr/0001-page-level-acl-source.md` §2.1)
-- [ ] `POST /internal/admin/key/deactivate` — Atlassian **`DELETE {siteUrl}/wiki/api/v2/admin-key`**(Basic auth, site URL) 호출, 실측 `204`. **`jobId` 기준 idempotent**(중복 completion event 안전). TTL 은 fallback
+- [ ] **요청 계약(BFF 머지 구현 정합)**: activate/deactivate 모두 `POST` + JSON body **`{ adminUserId, jobId }`** — BFF `AdminKeyActivateRequest`/`AdminKeyDeactivateRequest` 와 동일. `adminUserId`(=accountId)로 `users`(`role==ADMIN` 검증, `email`=Basic auth ID)·`admin_atlassian_credential`(site URL+API Token) 조회. 응답 body 는 BFF 가 무시(`toBodilessEntity`)하므로 `expirationTime` 반환은 유지하되 계약 비의존
+- [ ] `POST /internal/admin/key/activate` — `admin_atlassian_credential` 의 `site_url`+admin API Token 으로(§6.4) Atlassian **`POST {siteUrl}/wiki/api/v2/admin-key`**(`Authorization: Basic base64(adminEmail:adminApiToken)`) 호출, `expirationTime` 응답. 실측 `200`(Feature 0 §검증 노트). **반복 호출 안전** — BFF 는 미활성 확인 없이 ingest 마다 무조건 activate 호출(머지된 `AdminIngestService`). (`docs/adr/0001-page-level-acl-source.md` §2.1)
+- [ ] **`durationInMinutes` = 60분(최대값) 요청, 설정(`${...}`) 외부화** — BFF 운영 문서가 "Admin Key **60분 TTL** = consumer/DLQ 복구 실패 시 최종 fallback" 으로 60분을 전제(bff plan 4단계 Feature 1·수동 activate `activatedUntil` 60분). Atlassian 자체 기본값 10분으로 두면 10분 초과 수집 job 중간에 키 만료 → 제한 페이지가 403 아닌 **404 로 조용히 누락**(Feature 0 실측). (확정 2026-06-12, §확정된 결정)
+- [ ] `POST /internal/admin/key/deactivate` — Atlassian **`DELETE {siteUrl}/wiki/api/v2/admin-key`**(Basic auth, site URL) 호출, 실측 `204`. **`jobId` 기준 idempotent**(중복 completion event 안전) — BFF 계약상 중복 `jobId` 는 **두 번째 Atlassian DELETE 없이 2xx 성공** 응답(4xx 금지 — BFF 의 DLQ 이동 조건에 걸림). TTL 은 fallback
+- [ ] idempotency 저장: 처리된 `jobId` 는 **in-memory TTL store**(단일 인스턴스 전제 — Feature 3 `OAuthStateService` 의 in-memory state 와 동일 전제, 다중 인스턴스 시 외부 저장소 교체). Admin Key TTL(60분)이 fallback 이므로 entry TTL 도 그 이상이면 충분, 별도 테이블 미신설
+- [ ] 에러 정책: body 필수 필드(`adminUserId`/`jobId`) 누락 `400`, 사용자/credential 없음 `404`, `role != ADMIN` `403`, Atlassian 일시 장애 `502 EXTERNAL_SERVICE_ERROR`. 단 **중복 `jobId` deactivate 는 에러가 아닌 2xx**(위 idempotency)
 - [ ] 호출 주체 제한(내부 API). BFF completion event consumer / `/api/admin/ingest` 묶음 처리만 호출
-- [ ] 테스트: WireMock 으로 Atlassian admin-key API 모킹, activate 만료시각·deactivate idempotency 검증
+- [ ] 테스트: WireMock 으로 Atlassian admin-key API 모킹, activate `durationInMinutes=60` 전송·만료시각 검증, activate 반복 호출 안전, deactivate idempotency(중복 jobId → Atlassian DELETE 1회·2xx), 에러 매핑(400/403/404/502)
 - [ ] (4단계 연계) BFF consumer → deactivate 통합 검증 항목은 4단계 plan 에 추적
 
 ---
@@ -335,4 +343,5 @@
 | FE 진입점·gateway 라우팅 | **BFF 단일 진입점**. `/api/auth/**` 는 BFF gateway **path-through** 로 auth-server 의 `/api/auth/*` 핸들러에 위임((a) 안 확정). `/api/users/me`·`/api/admin/*` 는 BFF→MySQL 직접 읽기. auth-server 추가 노출면=`/internal/*`(credential·admin-key). MySQL 은 3단계부터 공유(auth-server 쓰기, BFF 읽기) | 2026-06-09 |
 | groups/cloudId 취득 경로 | **Atlassian 공식 API 로 별도 취득**(토큰 디코딩 아님). **cloudId**=AUTH-04 `accessible-resources` 의 `id`(멀티사이트 순서 없음·최근 인가 추론 금지). **groups**=AUTH-05 `GET /ex/confluence/{cloudId}/wiki/rest/api/user/memberof?accountId=` 의 `results[].id`(=**`groupId`**, `name` 아님 — RAG `allowed_groups` 정합, 2026-06-09 확정. 페이지네이션 `start`/`limit` 200/`totalSize`). callback 에서 조회해 JWT `groups` claim 적재. **`user_space_acl` RDB 테이블 미사용** — 페이지-단위 ACL 은 수집단계 Qdrant payload(`allowed_groups`/`allowed_users`, ADR 0001 §2). 페이지 ACL 추출은 Confluence Content restrictions API(수집측). | 2026-06-09 |
 | role 결정 정책 | **MySQL `users.role` DB 단일 source** — OAuth callback 시 accountId lookup, 행 없으면 `role='USER'` INSERT, 행 있으면 그 값 사용. JWT `role` claim 은 그 값 그대로 발급. YAML bootstrap 미사용. **최초 admin** 은 Flyway `V001` 하드코딩 INSERT. 별도 `admins` 테이블 미사용(흡수). (`docs/db-schema.md` §6.1) | 2026-06-02 |
+| Admin Key activate TTL·요청 계약 | activate 는 `durationInMinutes` **60분(최대값)** 으로 요청(설정 외부화) — BFF 운영 문서(4단계 Feature 1)의 "60분 TTL = 최종 fallback" 전제 정합, 기본 10분이면 장기 수집 중 키 만료 → 제한 페이지 silent 404 누락. 요청 body 는 activate/deactivate 모두 `{ adminUserId, jobId }`(PR #21 선머지된 BFF `AuthAdminKeyClient` 계약). deactivate 중복 `jobId` 는 Atlassian DELETE 재호출 없이 2xx(in-memory jobId store, 단일 인스턴스 전제) | 2026-06-12 |
 | (예정) Refresh Token 갱신 정책 | LINA 세션 refresh = Rotating(Feature 4). Confluence refresh = AUTH-03 Rotating(Feature 5). 저장/TTL 세부는 Feature 2/4 착수 시 확정 | — |
