@@ -5,6 +5,7 @@ import com.lina.bff.chat.entity.Message;
 import java.time.Instant;
 import java.util.List;
 import org.springframework.data.domain.Sort;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -29,13 +30,10 @@ import org.springframework.stereotype.Repository;
  * </pre>
  */
 @Repository
+@RequiredArgsConstructor
 public class AdminStatsMongoRepository {
 
   private final MongoTemplate mongoTemplate;
-
-  public AdminStatsMongoRepository(MongoTemplate mongoTemplate) {
-    this.mongoTemplate = mongoTemplate;
-  }
 
   public long countActiveConversations() {
     Query query = Query.query(Criteria.where("deletedAt").is(null));
