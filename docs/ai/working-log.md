@@ -14,6 +14,12 @@
   - 추가 인덱스: `idx_conversations_user_active` (`{ userId:1, deletedAt:1 }`)  
     목적: `AdminUserMongoRepository.countActiveConversationsByUserIds(...)`에서 사용자별 활성 대화 수 집계를 위한 `$match` 선별 인덱스 보완.
 
+- **관리자 사용자 수 조회 `$in` 배치 분할 튜닝**: `AdminUserMongoRepository.countActiveConversationsByUserIds(...)`에서 `userIds`를 `distinct` 처리 후 500개 단위로 쪼개 `$in` 조회를 수행하도록 변경했다.  
+  - 단일 쿼리의 `$in` 과부하를 줄이고, 요청 데이터 급증 시 MongoDB 쿼리 오버헤드/타임아웃 리스크를 완화하기 위한 사전 튜닝이다.  
+  - 중복 userId는 제거 후 집계하며, 각 배치 결과는 `merge`로 병합해 중복 누적에도 안전하게 처리한다.  
+  - 운영 가이드: userIds 입력이 매우 클 경우에도 배치 크기 상한 유지가 성능과 안정성 균형에 유리.
+  - 변경 파일: `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/repository/AdminUserMongoRepository.java`
+
 - **관리자 대시보드/인입 API 컨트롤러 응답 형식 확장성 반영**: `ApiResponse` 래퍼 형식은 유지하면서 반환 타입을 `ResponseEntity<ApiResponse<T>>`로 통일했다. 변경 대상은 관리자 대시보드 전용 컨트롤러 5개(`AdminDataController`, `AdminUsersController`, `AdminStatsController`, `AdminFeedbackController`, `AdminSyncController`)와 관리자 수집 API 컨트롤러 `AdminIngestController`이다. 각 핸들러는 `ResponseEntity.ok(...)`로 감싸서 성공 응답을 반환한다.
   - 수정 파일:
     - `backend/bff-server/src/main/java/com/lina/bff/admin/controller/AdminIngestController.java`

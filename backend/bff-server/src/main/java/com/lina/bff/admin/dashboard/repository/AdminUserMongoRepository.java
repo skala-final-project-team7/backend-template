@@ -2,6 +2,7 @@ package com.lina.bff.admin.dashboard.repository;
 
 import com.lina.bff.chat.entity.Conversation;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -32,12 +33,33 @@ import org.springframework.stereotype.Repository;
 public class AdminUserMongoRepository {
 
   private final MongoTemplate mongoTemplate;
+  private static final int USER_ID_BATCH_SIZE = 500;
 
   public AdminUserMongoRepository(MongoTemplate mongoTemplate) {
     this.mongoTemplate = mongoTemplate;
   }
 
   public Map<String, Long> countActiveConversationsByUserIds(List<String> userIds) {
+    if (userIds.isEmpty()) {
+      return Collections.emptyMap();
+    }
+    List<String> deduplicatedUserIds =
+        userIds.stream().distinct().collect(Collectors.toList());
+    if (deduplicatedUserIds.isEmpty()) {
+      return Collections.emptyMap();
+    }
+
+    Map<String, Long> conversationCounts = new HashMap<>();
+    for (int offset = 0; offset < deduplicatedUserIds.size(); offset += USER_ID_BATCH_SIZE) {
+      int end = Math.min(offset + USER_ID_BATCH_SIZE, deduplicatedUserIds.size());
+      List<String> batch = deduplicatedUserIds.subList(offset, end);
+      countActiveConversationsByUserIdsBatch(batch).forEach(
+          (userId, count) -> conversationCounts.merge(userId, count, Long::sum));
+    }
+    return conversationCounts;
+  }
+
+  private Map<String, Long> countActiveConversationsByUserIdsBatch(List<String> userIds) {
     if (userIds.isEmpty()) {
       return Collections.emptyMap();
     }
