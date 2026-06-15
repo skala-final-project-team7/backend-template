@@ -1,5 +1,7 @@
 package com.lina.auth.internal.dto;
 
+import com.lina.auth.support.SensitiveValues;
+
 /**
  * §2-5 내부 credential 조회 응답(wrapper 미적용 raw JSON). refreshToken·admin API Token 은 필드 자체를 두지 않아 노출을
  * 구조적으로 차단한다. accessToken 평문은 내부 API 한정 — 본문 로그/tracing 금지.
@@ -10,4 +12,19 @@ package com.lina.auth.internal.dto;
  * @param expiresAt access token 만료 시각(KST ISO-8601 offset — api-spec Common 시간 표기)
  */
 public record AdminConfluenceCredentialResponse(
-    String accessToken, String cloudId, String siteUrl, String expiresAt) {}
+    String accessToken, String cloudId, String siteUrl, String expiresAt) {
+
+  /** accessToken 원문 로그 노출 방지 — cloudId/siteUrl/expiresAt(secret 아님)은 디버그용으로 유지. */
+  @Override
+  public String toString() {
+    return "AdminConfluenceCredentialResponse[accessToken="
+        + SensitiveValues.mask(accessToken)
+        + ", cloudId="
+        + cloudId
+        + ", siteUrl="
+        + siteUrl
+        + ", expiresAt="
+        + expiresAt
+        + "]";
+  }
+}
