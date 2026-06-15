@@ -7,6 +7,13 @@
 
 ## 2026-06-15
 
+- **`conversations` 사용자 집계 쿼리용 인덱스 추가**: 관리자 사용자 현황 집계에서 `userId IN (...)` + `deletedAt == null` 패턴을 더 직접적으로 커버하도록 MongoDB 인덱스를 추가했다.
+  - 변경 파일:
+    - `backend/bff-server/src/main/java/com/lina/bff/chat/entity/Conversation.java`
+    - `docs/db-schema.md`
+  - 추가 인덱스: `idx_conversations_user_active` (`{ userId:1, deletedAt:1 }`)  
+    목적: `AdminUserMongoRepository.countActiveConversationsByUserIds(...)`에서 사용자별 활성 대화 수 집계를 위한 `$match` 선별 인덱스 보완.
+
 - **관리자 대시보드/인입 API 컨트롤러 응답 형식 확장성 반영**: `ApiResponse` 래퍼 형식은 유지하면서 반환 타입을 `ResponseEntity<ApiResponse<T>>`로 통일했다. 변경 대상은 관리자 대시보드 전용 컨트롤러 5개(`AdminDataController`, `AdminUsersController`, `AdminStatsController`, `AdminFeedbackController`, `AdminSyncController`)와 관리자 수집 API 컨트롤러 `AdminIngestController`이다. 각 핸들러는 `ResponseEntity.ok(...)`로 감싸서 성공 응답을 반환한다.
   - 수정 파일:
     - `backend/bff-server/src/main/java/com/lina/bff/admin/controller/AdminIngestController.java`

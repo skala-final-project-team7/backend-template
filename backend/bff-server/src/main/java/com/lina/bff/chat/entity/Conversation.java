@@ -34,6 +34,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @CompoundIndex(
     name = "idx_conversations_user_active_recent",
     def = "{'userId': 1, 'deletedAt': 1, 'isPinned': -1, 'lastMessageAt': -1}")
+@CompoundIndex(name = "idx_conversations_user_active", def = "{'userId': 1, 'deletedAt': 1}")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Conversation {
