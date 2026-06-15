@@ -38,9 +38,9 @@
 
 | 관리 항목 | 데이터 소스 | 상세 내용 |
 |---|---|---|
-| 인원 관리 | MySQL | 일일/전체 사용자 현황, 사용자별 활동 요약 |
-| 데이터 관리 | MongoDB (읽기) | 전체 스페이스 수, 전체 페이지 수, 최종 동기화 일시 |
-| 사용 추이 | MySQL | 일별/시간대별 접속 추이, 일간 질의 수 추이 |
-| 피드백 관리 | MySQL | 긍정/부정 비율, 부정적 피드백 응답 원문 조회 |
+| 인원 관리 | MySQL read-only + MongoDB read-only | auth `users` 기본 정보와 BFF/RAG Mongo 집계(대화 수, 접근 가능 스페이스/페이지/첨부 수) |
+| 데이터 관리 | MongoDB read-only | `raw_pages`/`raw_attachments`/`chunked_units`/`sync_logs` 기반 전체 스페이스 수, 전체 페이지 수, 최종 동기화 일시 |
+| 사용 추이 | MongoDB read-only | BFF `messages`/`conversations` 기반 일간 질의 수, 평균 응답 시간, 시간대별 접속 추이 |
+| 피드백 관리 | MongoDB read-only | BFF `feedbacks`/`messages` 기반 긍정/부정 비율, 부정적 피드백 QCA 원문 조회 |
 
 - 시스템 에러, 개발자 레벨의 상세 로그는 대시보드에 포함하지 않는다.

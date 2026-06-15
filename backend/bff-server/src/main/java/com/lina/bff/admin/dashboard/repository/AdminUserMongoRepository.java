@@ -43,8 +43,7 @@ public class AdminUserMongoRepository {
     if (userIds.isEmpty()) {
       return Collections.emptyMap();
     }
-    List<String> deduplicatedUserIds =
-        userIds.stream().distinct().collect(Collectors.toList());
+    List<String> deduplicatedUserIds = userIds.stream().distinct().collect(Collectors.toList());
     if (deduplicatedUserIds.isEmpty()) {
       return Collections.emptyMap();
     }
@@ -53,8 +52,8 @@ public class AdminUserMongoRepository {
     for (int offset = 0; offset < deduplicatedUserIds.size(); offset += USER_ID_BATCH_SIZE) {
       int end = Math.min(offset + USER_ID_BATCH_SIZE, deduplicatedUserIds.size());
       List<String> batch = deduplicatedUserIds.subList(offset, end);
-      countActiveConversationsByUserIdsBatch(batch).forEach(
-          (userId, count) -> conversationCounts.merge(userId, count, Long::sum));
+      countActiveConversationsByUserIdsBatch(batch)
+          .forEach((userId, count) -> conversationCounts.merge(userId, count, Long::sum));
     }
     return conversationCounts;
   }

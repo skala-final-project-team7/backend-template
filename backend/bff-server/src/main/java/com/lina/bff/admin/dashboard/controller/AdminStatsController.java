@@ -46,6 +46,7 @@ public class AdminStatsController {
       @RequestParam(required = false) String to) {
     adminAuthorizationService.requireAdmin();
     AdminDashboardQuery query = adminDashboardQueryParser.parse(period, from, to, null, null);
-    return ResponseEntity.ok(ApiResponse.success(adminStatsService.getStats(query), "관리자 통계 조회 성공"));
+    return ResponseEntity.ok(
+        ApiResponse.success(adminStatsService.getStats(query), "서비스 통계 조회 성공"));
   }
 }
