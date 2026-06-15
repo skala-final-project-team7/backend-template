@@ -68,7 +68,7 @@ class AdminStatsControllerTest {
                 .param("to", "2026-06-11T00:00:00+09:00"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.isSuccess").value(true))
-        .andExpect(jsonPath("$.message").value("관리자 통계 조회 성공"))
+        .andExpect(jsonPath("$.message").value("서비스 통계 조회 성공"))
         .andExpect(jsonPath("$.data.dailyQueryCount").value(12))
         .andExpect(jsonPath("$.data.avgResponseTime").value(3.5))
         .andExpect(jsonPath("$.data.totalConversations").value(20))

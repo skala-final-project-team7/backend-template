@@ -1094,9 +1094,9 @@ FE 는 보관한 access/refresh 토큰을 폐기하고, BFF 는 Authorization Se
 | `GET /api/admin/feedback` | 긍정/부정 비율, 부정 피드백 원문, 피드백 추이       |
 | `GET /api/admin/sync`     | 동기화 이력 (성공/실패/소요 시간)                   |
 
-> **공통 — 권한**: `/api/admin/*` 는 **ADMIN 역할 전용**이다. 미인증 시 `401`(`errorCode: UNAUTHORIZED`), 일반 사용자(USER) 접근 시 `403`(`errorCode: FORBIDDEN`). 모든 응답은 공통 Wrapper 를 적용한다. 항목별 데이터 소스는 `backend/rules/domains.md` §4 참조(인원·사용추이·피드백=MySQL, 데이터=MongoDB 읽기). 기획서 §6.7 의 관리 항목(인원/데이터/사용추이/피드백)에 대응한다.
+> **공통 — 권한**: `/api/admin/*` 는 **ADMIN 역할 전용**이다. 미인증 시 `401`(`errorCode: UNAUTHORIZED`), 일반 사용자(USER) 접근 시 `403`(`errorCode: FORBIDDEN`). 모든 응답은 공통 Wrapper 를 적용한다. 항목별 데이터 소스는 `backend/rules/domains.md` §4 참조(사용자 기본 정보=auth MySQL read-only, 대화·피드백·수집 데이터=MongoDB read-only 집계). 기획서 §6.7 의 관리 항목(인원/데이터/사용추이/피드백)에 대응한다.
 
-**공통 Query Parameter (제안 — 6주차 확정)**
+**공통 Query Parameter (6주차 구현 확정)**
 
 | Key | Type | Required | Default | Description |
 |-----|------|----------|---------|-------------|
@@ -1104,7 +1104,7 @@ FE 는 보관한 access/refresh 토큰을 폐기하고, BFF 는 Authorization Se
 | `from` / `to` | string (ISO-8601, KST) | N | 최근 7일 | 기간 필터 — `stats` / `feedback` / `sync` |
 | `page` / `size` | int | N | `0` / `20` | 목록 페이지네이션 — `users` / `feedback` / `sync` |
 
-> 위 파라미터·기본값은 **제안**이며 6주차 구현 시 확정한다.
+> `from` / `to` 를 생략하면 BFF 기준 현재 시각(KST)의 최근 7일을 사용한다. `size` 는 1~100 범위만 허용한다.
 
 **`GET /api/admin/stats` Response**
 
@@ -1135,22 +1135,27 @@ FE 는 보관한 access/refresh 토큰을 폐기하고, BFF 는 Authorization Se
   "data": {
     "totalUsers": 48,
     "dailyActiveUsers": 12,
+    "page": 0,
+    "size": 20,
     "users": [
       {
         "userId": "712020:91b5112c-7b2a-4c3d-8e9f-0a1b2c3d4e5f",
         "name": "이다연",
+        "email": "dayeon@example.com",
+        "role": "USER",
+        "profileImageUrl": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/...",
+        "lastAccessAt": "2026-05-20T18:00:00+09:00",
+        "conversationCount": 35,
         "accessibleSpaceCount": 5,
         "accessiblePageCount": 320,
-        "accessibleAttachmentCount": 48,
-        "conversationCount": 35,
-        "lastAccessAt": "2026-05-20T18:00:00+09:00"
+        "accessibleAttachmentCount": 48
       }
     ]
   }
 }
 ```
 
-- `users` 는 `page` / `size` 페이지네이션 대상이다. `accessibleSpaceCount` / `accessiblePageCount` / `accessibleAttachmentCount` 는 사용자가 접근 가능한(ACL) 스페이스·페이지·첨부 수(기획서 §6.7 인원 관리).
+- `users` 는 `page` / `size` 페이지네이션 대상이며 응답에도 적용된 `page` / `size` 를 반환한다. 사용자 기본 정보는 auth MySQL read-only 조회, `conversationCount` 는 BFF `conversations` MongoDB 집계, `accessibleSpaceCount` / `accessiblePageCount` / `accessibleAttachmentCount` 는 수집 데이터 MongoDB 집계다.
 
 **`GET /api/admin/data` Response**
 

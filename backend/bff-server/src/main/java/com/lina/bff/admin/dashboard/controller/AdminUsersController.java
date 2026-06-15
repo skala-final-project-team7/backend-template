@@ -49,6 +49,6 @@ public class AdminUsersController {
     adminAuthorizationService.requireAdmin();
     AdminDashboardQuery query = adminDashboardQueryParser.parse(period, from, to, page, size);
     return ResponseEntity.ok(
-        ApiResponse.success(adminUsersService.getUsers(query), "관리자 사용자 현황 조회 성공"));
+        ApiResponse.success(adminUsersService.getUsers(query), "사용자 현황 조회 성공"));
   }
 }

@@ -85,7 +85,7 @@ class AdminUsersControllerTest {
                 .param("to", "2026-06-11T00:00:00+09:00"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.isSuccess").value(true))
-        .andExpect(jsonPath("$.message").value("관리자 사용자 현황 조회 성공"))
+        .andExpect(jsonPath("$.message").value("사용자 현황 조회 성공"))
         .andExpect(jsonPath("$.data.totalUsers").value(5))
         .andExpect(jsonPath("$.data.dailyActiveUsers").value(2))
         .andExpect(jsonPath("$.data.page").value(0))

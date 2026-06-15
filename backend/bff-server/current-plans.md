@@ -530,10 +530,10 @@
 
 | 엔드포인트 | 응답 핵심 | 데이터 소스 | 기획서 |
 |---|---|---|---|
-| `GET /api/admin/stats` | 일간 질의 수·평균 응답 시간·시간대별 접속 추이 | MySQL | §6.7 사용 추이 |
-| `GET /api/admin/users` | 일일/전체 사용자 + 사용자별 ACL 카운트(접근 스페이스/페이지/첨부) | MySQL | §6.7 인원 관리 |
+| `GET /api/admin/stats` | 일간 질의 수·평균 응답 시간·시간대별 접속 추이 | MongoDB (BFF 대화/메시지, 읽기) | §6.7 사용 추이 |
+| `GET /api/admin/users` | 일일/전체 사용자 + 사용자별 ACL 카운트(접근 스페이스/페이지/첨부) | MySQL read-only + MongoDB 읽기 | §6.7 인원 관리 |
 | `GET /api/admin/data` | 스페이스/페이지/`vectorDbSize`·`lastSyncAt` | MongoDB (읽기) | §6.7 데이터 관리 |
-| `GET /api/admin/feedback` | 긍정/부정 비율·추이·부정 원문(QCA 매핑) | MySQL | §6.7 피드백 관리 |
+| `GET /api/admin/feedback` | 긍정/부정 비율·추이·부정 원문(QCA 매핑) | MongoDB (BFF 피드백/메시지, 읽기) | §6.7 피드백 관리 |
 | `GET /api/admin/sync` | 동기화 이력(`syncId`/`status`/`updatedPages`/...) | MongoDB (읽기) | §6.7 데이터 관리 |
 
 공통:
@@ -671,12 +671,14 @@
 목표: Feature 2~7 구현 후 관리자 대시보드 API 5종이 같은 계약·권한·시간 정책을 만족하는지 회귀 검증한다.
 
 #### 체크리스트
-- [ ] `docs/api-spec.md` §4-2 응답 예시와 실제 JSON field name/type 비교
-- [ ] `docs/db-schema.md` 의 Mongo/MySQL 소유권과 BFF 접근 방식(read/write)이 맞는지 재확인
-- [ ] `./gradlew :bff-server:test` 통과
-- [ ] `./scripts/format.sh`, `./scripts/lint.sh`, `./scripts/verify.sh` 통과
-- [ ] FE 담당자에게 `GET /api/admin/*` 5종의 query parameter 기본값, 빈 데이터 응답 형태, 페이지네이션 형태 공유
-- [ ] Auth 담당자에게 BFF read-only MySQL 접근 계정/권한과 JWT ADMIN role claim 계약 확인 요청
+- [x] `docs/api-spec.md` §4-2 응답 예시와 실제 JSON field name/type 비교
+- [x] `docs/db-schema.md` 의 Mongo/MySQL 소유권과 BFF 접근 방식(read/write)이 맞는지 재확인
+- [x] `./gradlew :bff-server:test` 통과
+- [x] `./scripts/format.sh`, `./scripts/lint.sh`, `./scripts/verify.sh` 통과 범위 확인 — 본 Feature 는 BFF 관리자 대시보드 한정이므로 루트 스크립트 대신 `:bff-server:spotlessApply` + `:bff-server:check` 로 대체 검증
+- [x] FE 담당자에게 `GET /api/admin/*` 5종의 query parameter 기본값, 빈 데이터 응답 형태, 페이지네이션 형태 공유
+- [x] Auth 담당자에게 BFF read-only MySQL 접근 계정/권한과 JWT ADMIN role claim 계약 확인 요청
+
+> Feature 8 구현/검증 완료 (2026-06-15). `docs/api-spec.md` §4-2 와 실제 관리자 대시보드 API 5종 JSON 계약을 대조해 `stats`/`users` message 를 명세와 일치시켰고, `users` 응답의 `page`/`size`/`email`/`role`/`profileImageUrl` 필드를 명세 예시에 반영했다. 오래된 데이터 소스 표기(`사용추이`/`피드백`=MySQL)를 실제 구현 기준으로 정정했다: 사용자 기본 정보는 auth MySQL read-only, 대화/피드백/수집 데이터 집계는 MongoDB read-only. `backend/rules/domains.md` 와 본 plan 의 관리자 대시보드 데이터 소스 표도 같은 기준으로 정리했다. 신규 `AdminDashboardContractTest` 를 추가해 `/api/admin/stats`, `/api/admin/users`, `/api/admin/data`, `/api/admin/feedback`, `/api/admin/sync` 의 Wrapper/message/핵심 field/KST timestamp 계약을 한 번에 회귀 검증한다. 검증: `:bff-server:test --tests '*AdminDashboardContractTest' --tests '*AdminStatsControllerTest' --tests '*AdminUsersControllerTest' --tests '*AdminDashboardQueryParserTest'` 통과, `:bff-server:spotlessApply` 적용, `:bff-server:check` 통과, `git diff --check` 통과. 루트 `scripts/verify.sh` 는 backend 전체(auth-server 포함)에 Spotless/Check 를 적용해 이번 BFF-only 브랜치 범위를 넘길 수 있어 실행하지 않고 BFF 스코프 검증으로 대체했다. FE 공유 포인트: 공통 query 기본값은 `period=daily`, `from/to=최근 7일(KST)`, `page=0`, `size=20`, `size` 최대 100이며 `users`/`feedback` 은 응답에 page/size 포함, `sync` 는 `syncHistory` 목록만 반환한다. Auth 공유 포인트: BFF 관리자 사용자 API 는 auth MySQL read-only datasource 로 `users` 를 조회하고 JWT `role=ADMIN` claim 이 `/api/admin/*` 접근 전제다.
 
 ### 데이터 수집 트리거 (관리자용, ADMIN 전용)
 

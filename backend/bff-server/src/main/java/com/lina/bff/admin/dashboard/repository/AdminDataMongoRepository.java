@@ -118,9 +118,8 @@ public class AdminDataMongoRepository {
   }
 
   private static Criteria buildNonNullAndNonEmptyCriteria(String fieldName) {
-    return new Criteria().andOperator(
-        Criteria.where(fieldName).ne(null),
-        Criteria.where(fieldName).ne(""));
+    return new Criteria()
+        .andOperator(Criteria.where(fieldName).ne(null), Criteria.where(fieldName).ne(""));
   }
 
   private static Instant toInstant(Object value) {
