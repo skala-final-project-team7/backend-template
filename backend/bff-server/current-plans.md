@@ -596,13 +596,13 @@
 - `src/test/java/com/lina/bff/admin/dashboard/**/AdminUsers*Test.java`
 
 #### 체크리스트
-- [ ] `GET /api/admin/users` controller 추가, `page`/`size` 적용
-- [ ] MySQL `users` 를 read-only 로 조회해 `totalUsers`, 사용자 목록(`userId`, `name`, `lastAccessAt`)을 구성
-- [ ] `dailyActiveUsers` 산정 기준 확정: `last_login_at` 또는 대화/메시지 활동 기준 중 하나로 고정
-- [ ] `conversationCount` 는 MongoDB `conversations` 에서 `userId` 기준 집계
-- [ ] `accessibleSpaceCount`/`accessiblePageCount`/`accessibleAttachmentCount` 산정 원천 확정: 현재 `user_groups` + 수집 payload만으로 정확 집계가 어려우면 Mongo/Qdrant 통계 원천 필요 여부를 명시하고 fallback 정책을 둔다.
-- [ ] 페이지네이션 대상은 `users` 배열이며, 응답에 `page`/`size` 포함 여부는 FE와 확정한다.
-- [ ] 테스트: 사용자 0명, 다중 사용자 정렬, page/size, 활동 기준, 권한 실패
+- [x] `GET /api/admin/users` controller 추가, `page`/`size` 적용 — 2026-06-12 구현: `AdminUsersController`, 공통 `AdminDashboardQueryParser` 재사용
+- [x] MySQL `users` 를 read-only 로 조회해 `totalUsers`, 사용자 목록(`userId`, `name`, `lastAccessAt`)을 구성 — 2026-06-12 구현: `lina.admin.dashboard.mysql.*` 조건부 JDBC datasource + `JdbcAdminUserReadRepository`; 로컬 기본값은 MySQL disabled/no-op
+- [x] `dailyActiveUsers` 산정 기준 확정: `last_login_at` 또는 대화/메시지 활동 기준 중 하나로 고정 — 2026-06-12 결정: 요청 기간 `[from,to)` 내 `users.last_login_at` 보유 사용자 수
+- [x] `conversationCount` 는 MongoDB `conversations` 에서 `userId` 기준 집계 — 2026-06-12 구현: `deletedAt=null` 활성 대화만 사용자별 aggregation
+- [x] `accessibleSpaceCount`/`accessiblePageCount`/`accessibleAttachmentCount` 산정 원천 확정: 현재 `user_groups` + 수집 payload만으로 정확 집계가 어려우면 Mongo/Qdrant 통계 원천 필요 여부를 명시하고 fallback 정책을 둔다. — 2026-06-12 결정: 현 RDB 스키마로 정확 산정 불가, Feature 4 응답은 `0` fallback; Feature 5/후속에서 Mongo/Qdrant 통계 원천 확정 필요
+- [x] 페이지네이션 대상은 `users` 배열이며, 응답에 `page`/`size` 포함 여부는 FE와 확정한다. — 2026-06-12 구현: 응답에 `page`, `size` 포함
+- [x] 테스트: 사용자 0명, 다중 사용자 정렬, page/size, 활동 기준, 권한 실패 — 2026-06-12 구현: `AdminUsersServiceTest`, `AdminUsersControllerTest`
 
 ### Feature 5. 관리자 데이터 현황 API — `GET /api/admin/data`
 
@@ -616,12 +616,12 @@
 - `src/test/java/com/lina/bff/admin/dashboard/**/AdminData*Test.java`
 
 #### 체크리스트
-- [ ] `GET /api/admin/data` controller 추가
-- [ ] MongoDB 읽기 전용으로 `totalSpaces`, `totalPages`, `totalAttachments`, `totalChunks`, `lastSyncAt` 집계
-- [ ] `vectorDbSize` 원천 확정: Qdrant API 직접 조회, Mongo 저장 통계, 또는 운영 설정값 중 하나로 결정하고 단위를 문자열(`2.3 GB`)로 반환
-- [ ] 수집 데이터가 없으면 모든 count 0, `lastSyncAt=null` 로 정상 응답
-- [ ] RAG 파이프라인 컬렉션에는 쓰기/수정/삭제를 하지 않는 테스트 또는 코드 경계 확인
-- [ ] 테스트: 정상 집계, 빈 DB, `lastSyncAt` KST 변환, 권한 실패
+- [x] `GET /api/admin/data` controller 추가 — 2026-06-12 구현: `AdminDataController`, 공통 ADMIN 권한 경계 재사용
+- [x] MongoDB 읽기 전용으로 `totalSpaces`, `totalPages`, `totalAttachments`, `totalChunks`, `lastSyncAt` 집계 — 2026-06-12 구현: `raw_pages` distinct space, `raw_pages`/`raw_attachments`/`chunked_units` count, `sync_logs` 최신 시각 조회
+- [x] `vectorDbSize` 원천 확정: Qdrant API 직접 조회, Mongo 저장 통계, 또는 운영 설정값 중 하나로 결정하고 단위를 문자열(`2.3 GB`)로 반환 — 2026-06-12 결정: Qdrant 용량 API/저장 통계 원천 미확정으로 운영 설정값 `ADMIN_DASHBOARD_VECTOR_DB_SIZE` 사용, 기본값 `0 B`
+- [x] 수집 데이터가 없으면 모든 count 0, `lastSyncAt=null` 로 정상 응답한다.
+- [x] RAG 파이프라인 컬렉션에는 쓰기/수정/삭제를 하지 않는 테스트 또는 코드 경계 확인 — 2026-06-12 구현: repository 는 `MongoTemplate` read 메서드만 사용, 테스트에서 save/remove 미호출 검증
+- [x] 테스트: 정상 집계, 빈 DB, `lastSyncAt` KST 변환, 권한 실패 — 2026-06-12 구현: `AdminDataServiceTest`, `AdminDataControllerTest`, `AdminDataMongoRepositoryTest`
 
 ### Feature 6. 관리자 피드백 현황 API — `GET /api/admin/feedback`
 
@@ -635,13 +635,15 @@
 - `src/test/java/com/lina/bff/admin/dashboard/**/AdminFeedback*Test.java`
 
 #### 체크리스트
-- [ ] `GET /api/admin/feedback` controller 추가, `period`/`from`/`to`/`page`/`size` 적용
-- [ ] `totalCount`, `likeCount`, `dislikeCount`, `positiveRatio` 집계. `totalCount=0` 이면 `positiveRatio=0` 또는 `null` 중 정책 확정
-- [ ] `trend` 는 KST 날짜/시간 버킷 기준으로 `LIKE`/`DISLIKE` 를 집계
-- [ ] `negativeFeedbacks` 는 `DISLIKE` 피드백만 페이지네이션하고 최신순 정렬
-- [ ] QCA 매핑 구현: feedback `messageId`(assistant) → 동일 conversation 의 직전 `user` 메시지 → `question`, assistant content → `answer`
-- [ ] 피드백 대상 메시지가 삭제/누락된 경우 응답 제외 또는 `question/answer=null` 정책을 확정
-- [ ] 테스트: LIKE/DISLIKE 집계, 0건, 기간 필터, QCA 매핑, 누락 메시지, 권한 실패
+- [x] `GET /api/admin/feedback` controller 추가, `period`/`from`/`to`/`page`/`size` 적용
+- [x] `totalCount`, `likeCount`, `dislikeCount`, `positiveRatio` 집계. `totalCount=0` 이면 `positiveRatio=0.0` 으로 반환
+- [x] `trend` 는 KST 날짜/시간 버킷 기준으로 `LIKE`/`DISLIKE` 를 집계. `daily` 는 `yyyy-MM-dd`, `hourly` 는 `yyyy-MM-dd'T'HH:00`
+- [x] `negativeFeedbacks` 는 `DISLIKE` 피드백만 페이지네이션하고 최신순 정렬
+- [x] QCA 매핑 구현: feedback `messageId`(assistant) → 동일 conversation 의 직전 `user` 메시지 → `question`, assistant content → `answer`
+- [x] 피드백 대상 assistant 메시지가 삭제/누락된 경우 QCA 목록에서 제외. 직전 user 메시지만 없으면 `question=null`, `answer` 는 유지
+- [x] 테스트: LIKE/DISLIKE 집계, 0건, 기간 필터, QCA 매핑, 누락 메시지, 권한 실패
+
+> Feature 6 구현 완료 (2026-06-12). `AdminFeedbackController`/`AdminFeedbackDashboardService`/`AdminFeedbackRepository` 와 응답 DTO 3종을 추가했다. 집계 범위는 `period/from/to` 로 제한하고, `negativeFeedbacks` 는 `page/size` 로 `DISLIKE` 피드백만 최신순 조회한다. `positiveRatio` 는 `likeCount / totalCount` 를 소수 4자리 반올림하며 0건일 때 `0.0` 으로 고정했다. QCA 는 활성 assistant 메시지만 대상으로 하며, 동일 conversation 의 시간순 활성 메시지에서 대상 assistant 직전 user 본문을 `question`, assistant 본문을 `answer` 로 매핑한다. 대상 assistant 메시지가 삭제/누락되었거나 assistant role 이 아니면 부정 피드백 목록에서 제외하고, 직전 user 메시지만 없으면 `question=null` 로 둔다. 신규 테스트는 controller 권한/파라미터 전달, service 집계·KST daily/hourly 버킷·0건·QCA·누락 메시지 정책을 검증한다.
 
 ### Feature 7. 관리자 동기화 이력 API — `GET /api/admin/sync`
 
@@ -655,12 +657,14 @@
 - `src/test/java/com/lina/bff/admin/dashboard/**/AdminSync*Test.java`
 
 #### 체크리스트
-- [ ] `GET /api/admin/sync` controller 추가, `from`/`to`/`page`/`size` 적용
-- [ ] MongoDB 읽기 전용으로 `sync_logs` 또는 현행 ingestion job 컬렉션의 실제 필드명을 확인해 `syncId`, `status`, `updatedPages`, `deletedPages`, `duration`, `completedAt` 로 매핑
-- [ ] status 값은 `STARTED`/`IN_PROGRESS`/`COMPLETED`/`FAILED` 등 api-spec enum 과 정합화
-- [ ] `duration` 단위(초/ms)를 확정하고 `docs/api-spec.md` 예시와 맞춘다.
-- [ ] completion event 기반 `/api/admin/ingest` job 과 sync history 가 같은 jobId 를 공유하는지 확인하고, 공유하지 않으면 필드명을 분리한다.
-- [ ] 테스트: 정상 목록, 기간 필터, 페이지네이션, 실패 이력, 빈 목록, 권한 실패
+- [x] `GET /api/admin/sync` controller 추가, `from`/`to`/`page`/`size` 적용
+- [x] MongoDB 읽기 전용으로 `sync_logs` 또는 현행 ingestion job 컬렉션의 실제 필드명을 확인해 `syncId`, `status`, `updatedPages`, `deletedPages`, `duration`, `completedAt` 로 매핑
+- [x] status 값은 `STARTED`/`IN_PROGRESS`/`COMPLETED`/`FAILED` 등 api-spec enum 과 정합화
+- [x] `duration` 단위(초/ms)를 확정하고 `docs/api-spec.md` 예시와 맞춘다.
+- [x] completion event 기반 `/api/admin/ingest` job 과 sync history 가 같은 jobId 를 공유하는지 확인하고, 공유하지 않으면 필드명을 분리한다.
+- [x] 테스트: 정상 목록, 기간 필터, 페이지네이션, 실패 이력, 빈 목록, 권한 실패
+
+> Feature 7 구현 완료 (2026-06-12). `AdminSyncController`/`AdminSyncService`/`AdminSyncMongoRepository` 와 `AdminSyncResponse`/`SyncHistoryItemResponse` 를 추가했다. 조회 대상은 RAG/Ingestion 파이프라인의 MongoDB `sync_logs` 컬렉션이며 BFF 는 read-only 로만 접근한다. `from`/`to` 는 `completedAt`/`completed_at`/`finishedAt`/`finished_at`/`updatedAt`/`updated_at` 후보 필드에 기간 필터를 적용하고, `page`/`size` 로 최신순 페이지네이션한다. 응답 `syncId` 는 `syncId`/`sync_id` 우선, completion event 기반 job 과 같은 식별자를 공유하는 경우 `jobId`/`job_id` 를 그대로 노출하며, 없으면 Mongo `_id` 를 fallback 으로 쓴다. `status` 는 `SUCCESS|SUCCEEDED|DONE → COMPLETED`, `ERROR → FAILED`, `RUNNING → IN_PROGRESS` 로 정규화하고 나머지는 uppercase 로 유지한다. `duration` 은 초 단위이며 `duration`/`durationSeconds`/`duration_seconds` 는 그대로, `durationMillis`/`durationMs` 계열은 초로 변환, 값이 없으면 시작/완료 시각 차이로 계산한다. 신규 테스트는 controller 권한/기간/페이지 전달, service 정상·실패·빈 목록·field fallback, repository read-only·컬렉션 없음 경로를 검증한다.
 
 ### Feature 8. 관리자 대시보드 통합 검증
 

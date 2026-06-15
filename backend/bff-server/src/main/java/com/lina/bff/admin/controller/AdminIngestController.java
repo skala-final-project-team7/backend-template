@@ -6,6 +6,7 @@ import com.lina.bff.admin.service.AdminIngestService;
 import com.lina.common.response.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -19,8 +20,8 @@ public class AdminIngestController {
   private final AdminIngestService adminIngestService;
 
   @PostMapping("/ingest")
-  public ApiResponse<AdminIngestResponse> startIngest(
+  public ResponseEntity<ApiResponse<AdminIngestResponse>> startIngest(
       @Valid @RequestBody(required = false) AdminIngestRequest request) {
-    return ApiResponse.success(adminIngestService.startIngest(request));
+    return ResponseEntity.ok(ApiResponse.success(adminIngestService.startIngest(request)));
   }
 }
