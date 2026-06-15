@@ -1,0 +1,93 @@
+package com.lina.auth.token;
+
+import com.lina.auth.token.entity.AdminAtlassianCredential;
+import com.lina.auth.token.entity.User;
+import com.lina.auth.token.entity.UserRole;
+import com.lina.auth.token.repository.AdminAtlassianCredentialRepository;
+import com.lina.auth.token.repository.UserRepository;
+import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ *
+ *
+ * <pre>
+ * --------------------------------------------------
+ * 작성자 : LINA Backend Team
+ * 작성목적 : 최초 admin 사전 seed(로그인 전 주입, docs/db-schema.md §6.1). 부팅 시 env(AdminSeedProperties)
+ *           가 설정돼 있으면 users(role=ADMIN, access_token='ADMIN_PLACEHOLDER') 와
+ *           admin_atlassian_credential(site_url + 평문 API Token→저장 시 TokenCipher 암호화)을 멱등 INSERT 한다.
+ *           access_token 은 NOT NULL 이라 로그인 전 placeholder 더미값(첫 로그인 시 실제 JWT 로 덮어씀).
+ *           user_tokens(OAuth)는 로그인 산물이라 seed 대상이 아니다 → Feature 6(admin-key)은 seed 만으로
+ *           동작, Feature 5(credential 조회)는 admin 1회 로그인 후 동작. 미설정·기존행이면 건너뛴다.
+ * 작성일 : 2026-06-15
+ * 변경사항 내역 (날짜, 변경목적, 변경내용 순)
+ *   - 2026-06-15, 최초 작성, 3단계 admin seed
+ * --------------------------------------------------
+ * [호환성]
+ *   - JDK 21 LTS
+ *   - Spring Boot 3.3.x (ApplicationRunner — 컨텍스트 기동 완료 후 1회 실행)
+ * --------------------------------------------------
+ * </pre>
+ */
+@Component
+@RequiredArgsConstructor
+public class AdminSeeder implements ApplicationRunner {
+
+  /** LINA 세션 JWT placeholder — seed 는 로그인 전이라 미발급, 첫 로그인 시 실제 access JWT 로 덮어쓴다. */
+  private static final String ACCESS_TOKEN_PLACEHOLDER = "ADMIN_PLACEHOLDER";
+
+  private static final Logger log = LoggerFactory.getLogger(AdminSeeder.class);
+
+  private final AdminSeedProperties properties;
+  private final UserRepository userRepository;
+  private final AdminAtlassianCredentialRepository adminCredentialRepository;
+
+  @Override
+  public void run(ApplicationArguments args) {
+    seed();
+  }
+
+  /** 멱등 seed. 토큰 원문은 로그에 남기지 않는다(식별자만). */
+  @Transactional
+  public void seed() {
+    if (!properties.isConfigured()) {
+      log.info("admin seed 미설정 — 건너뜀(lina.admin-seed.* env 미주입)");
+      return;
+    }
+
+    User admin =
+        userRepository
+            .findByUserId(properties.getAccountId())
+            .orElseGet(() -> userRepository.save(buildAdminUser()));
+
+    if (adminCredentialRepository.findById(admin.getUserKey()).isEmpty()) {
+      adminCredentialRepository.save(buildCredential(admin.getUserKey()));
+      log.info("admin_atlassian_credential seed 완료 — userId={}", admin.getUserId());
+    }
+  }
+
+  private User buildAdminUser() {
+    return User.builder()
+        .userId(properties.getAccountId())
+        .email(properties.getEmail())
+        .name(properties.getName())
+        .role(UserRole.ADMIN)
+        .accessToken(ACCESS_TOKEN_PLACEHOLDER)
+        .build();
+  }
+
+  private AdminAtlassianCredential buildCredential(UUID userKey) {
+    return AdminAtlassianCredential.builder()
+        .userKey(userKey)
+        .siteUrl(properties.getSiteUrl())
+        .adminApiToken(properties.getApiToken())
+        .build();
+  }
+}

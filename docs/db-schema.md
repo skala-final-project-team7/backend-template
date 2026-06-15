@@ -227,20 +227,25 @@
 - 행 없음 → `INSERT (..., role = 'USER')` 기본 / 행 있음 → 그 `role` 사용
 - JWT `role` claim 으로 발급 — **config 분기 없이 DB 단일 source**(YAML bootstrap 미사용)
 
-**최초 admin seed (PoC) — 로그인 전 사전 주입 (2026-06-12 확정)**
+**최초 admin seed (PoC) — 로그인 전 사전 주입 (2026-06-12 확정, 06-15 구현)**
 
-admin 은 **로그인 전에 DB 에 미리 채운다**. 첫 배포 Flyway 마이그레이션에서 `users`(role=ADMIN) 와 `admin_atlassian_credential`(§6.4) 을 함께 seed 한다. accountId(`user_id`)·`email`·`site_url` 은 admin 의 Atlassian 계정에서 미리 확보한 값으로 하드코딩 INSERT 한다.
+admin 은 **로그인 전에 DB 에 미리 채운다**. 부팅 시 **`AdminSeeder`(`ApplicationRunner`)**가 env(`lina.admin-seed.*`)로 주입된 admin 정보로 `users`(role=ADMIN) 와 `admin_atlassian_credential`(§6.4)을 **멱등 INSERT** 한다(행 있으면 skip, env 미설정이면 skip — 로컬 등 admin 불필요 환경 대응).
 
-- **`access_token` 은 `'ADMIN_PLACEHOLDER'` 더미값으로 INSERT**(NOT NULL 유지 — 스키마 변경 없음). admin seed 는 로그인 전이라 LINA 세션 JWT 가 아직 없고, 첫 로그인 시 진짜 JWT 로 덮어쓴다.
-- **`admin_api_token_enc`(§6.4)는 평문 SQL 로 넣지 않는다** — AES-GCM 암호화 컬럼이라 평문 INSERT 불가, 암호문을 마이그레이션에 하드코딩하면 secret 이 git 에 남는다. 대신 **앱 기동 seeder**(`ApplicationRunner`)가 env(k8s Secret) 의 평문 API Token 을 `TokenCipher` 로 암호화해 행이 없을 때 INSERT 한다 → git 에 secret 미포함. `site_url` 등 평문 컬럼은 Flyway SQL 로 함께 seed.
+- **`access_token` 은 `'ADMIN_PLACEHOLDER'` 더미값**(NOT NULL 유지 — 스키마 변경 없음). seed 는 로그인 전이라 LINA 세션 JWT 가 아직 없고, 첫 로그인 시 진짜 JWT 로 덮어쓴다.
+- **`admin_api_token_enc`(§6.4)는 평문 주입 → 저장 시 `TokenCipher` 암호화**. seeder 가 평문 API Token 을 엔티티에 담아 save 하면 JPA converter 가 암호화한다 → 암호문이 git/SQL 에 남지 않는다. **api-token 만 secret → env(k8s Secret)**.
 - **`user_tokens`(§6.2)는 사전 seed 대상이 아니다** — Confluence OAuth access/refresh·cloudId 는 admin 의 **첫 로그인(OAuth callback)** 시점에 채워진다(로그인 산물). 따라서 admin-key activate/deactivate(§6.4 사용, Feature 6)는 사전 seed 만으로 동작하지만, credential 조회(Feature 5)는 admin 1회 로그인 후 동작한다.
 
-```sql
--- users seed (Flyway, 평문). access_token 은 NOT NULL 이라 더미값 INSERT
-INSERT INTO users (user_key, user_id, email, name, role, access_token)
-VALUES (UUID_TO_BIN(UUID()), '712020:91b5112c-...', 'admin@example.com', 'yhlee', 'ADMIN', 'ADMIN_PLACEHOLDER');
--- admin_atlassian_credential 의 site_url 도 Flyway 로 함께 seed,
--- admin_api_token_enc 는 앱 기동 seeder 가 env 토큰을 TokenCipher 로 암호화해 INSERT (§6.4)
+> **왜 Flyway SQL 이 아니라 ApplicationRunner 인가**: `admin_atlassian_credential` 은 `site_url` + `admin_api_token_enc` 가 **한 행**(둘 다 NOT NULL)인데 `api_token` 이 AES-GCM 암호화 컬럼이라 **Flyway 평문 SQL 로 그 행을 만들 수 없다**(암호화는 JPA converter 책임, 암호문 SQL 하드코딩은 secret git 노출). 그래서 그 행은 seeder 가 INSERT 한다. `users` 도 같은 seeder 가 처리해 메커니즘을 하나로 둔다(admin seed 전용 Flyway 마이그레이션 불필요). **seed 값은 전부 env 주입**(`lina.admin-seed.*`) — admin 식별정보(accountId/email/site_url)를 git 에 남기지 않고 한 묶음(k8s Secret/ConfigMap)으로 관리, api-token 은 secret.
+
+```
+# env (k8s Secret/ConfigMap)
+LINA_ADMIN_ACCOUNT_ID = 712020:91b5112c-...   # users.user_id (Confluence accountId)
+LINA_ADMIN_EMAIL      = admin@example.com      # users.email, admin-key Basic auth ID
+LINA_ADMIN_NAME       = LINA Admin             # users.name
+LINA_ADMIN_SITE_URL   = https://your-site.atlassian.net   # admin_atlassian_credential.site_url
+LINA_ADMIN_API_TOKEN  = (secret)               # admin_api_token_enc (저장 시 TokenCipher 암호화)
+# → AdminSeeder 가 users(role=ADMIN, access_token='ADMIN_PLACEHOLDER') + admin_atlassian_credential 멱등 INSERT
+#   (하나라도 비면 skip)
 ```
 
 **별도 `admins` 테이블 미사용** — `users.role` 컬럼으로 흡수(2026-06-02 결정).
