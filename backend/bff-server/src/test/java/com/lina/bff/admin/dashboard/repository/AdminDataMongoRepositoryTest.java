@@ -3,13 +3,13 @@ package com.lina.bff.admin.dashboard.repository;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.util.Date;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.bson.Document;
 import org.junit.jupiter.api.DisplayName;
@@ -18,6 +18,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.AggregationResults;
 import org.springframework.data.mongodb.core.query.Query;
 
 @ExtendWith(MockitoExtension.class)
@@ -32,12 +34,15 @@ class AdminDataMongoRepositoryTest {
     when(mongoTemplate.collectionExists("raw_attachments")).thenReturn(true);
     when(mongoTemplate.collectionExists("chunked_units")).thenReturn(true);
     when(mongoTemplate.collectionExists("sync_logs")).thenReturn(true);
+
+    AggregationResults<Document> aggregationResults = mock(AggregationResults.class);
+    when(aggregationResults.getUniqueMappedResult()).thenReturn(new Document("count", 5L));
+    when(mongoTemplate.aggregate(any(Aggregation.class), eq("raw_pages"), eq(Document.class)))
+        .thenReturn(aggregationResults);
+
     when(mongoTemplate.count(any(Query.class), eq("raw_pages"))).thenReturn(1230L);
     when(mongoTemplate.count(any(Query.class), eq("raw_attachments"))).thenReturn(187L);
     when(mongoTemplate.count(any(Query.class), eq("chunked_units"))).thenReturn(8940L);
-    when(mongoTemplate.findDistinct(
-            any(Query.class), eq("spaceId"), eq("raw_pages"), eq(String.class)))
-        .thenReturn(List.of("SPACE-A", "SPACE-B", "SPACE-C", "SPACE-D", "SPACE-E"));
     when(mongoTemplate.findOne(any(Query.class), eq(Document.class), eq("sync_logs")))
         .thenReturn(new Document("completedAt", Date.from(Instant.parse("2026-05-20T08:00:00Z"))));
 
@@ -50,6 +55,28 @@ class AdminDataMongoRepositoryTest {
     assertThat(snapshot.lastSyncAt()).isEqualTo(Instant.parse("2026-05-20T08:00:00Z"));
     verify(mongoTemplate, never()).save(any(Object.class));
     verify(mongoTemplate, never()).remove(any(Query.class), any(String.class));
+  }
+
+  @Test
+  @DisplayName("distinct 결과가 없으면 공간 집계를 0으로 처리한다")
+  void shouldReturnZeroWhenDistinctCountIsZero() {
+    when(mongoTemplate.collectionExists("raw_pages")).thenReturn(true);
+    when(mongoTemplate.collectionExists("raw_attachments")).thenReturn(false);
+    when(mongoTemplate.collectionExists("chunked_units")).thenReturn(false);
+    when(mongoTemplate.collectionExists("sync_logs")).thenReturn(false);
+
+    AggregationResults<Document> aggregationResults = mock(AggregationResults.class);
+    when(aggregationResults.getUniqueMappedResult()).thenReturn(new Document("count", 0L));
+    when(mongoTemplate.aggregate(any(Aggregation.class), eq("raw_pages"), eq(Document.class)))
+        .thenReturn(aggregationResults);
+
+    AdminDataSnapshot snapshot = new AdminDataMongoRepository(mongoTemplate).getSnapshot();
+
+    assertThat(snapshot.totalSpaces()).isZero();
+    assertThat(snapshot.totalPages()).isZero();
+    assertThat(snapshot.totalAttachments()).isZero();
+    assertThat(snapshot.totalChunks()).isZero();
+    assertThat(snapshot.lastSyncAt()).isNull();
   }
 
   @Test

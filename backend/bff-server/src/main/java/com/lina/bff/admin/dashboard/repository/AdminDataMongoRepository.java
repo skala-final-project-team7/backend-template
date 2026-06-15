@@ -10,6 +10,8 @@ import java.util.Objects;
 import org.bson.Document;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.AggregationResults;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Repository;
@@ -79,10 +81,15 @@ public class AdminDataMongoRepository {
   }
 
   private long countDistinctNonNull(String collectionName, String fieldName) {
-    Query query = buildNonNullAndNonEmptyQuery(fieldName);
-    return mongoTemplate.findDistinct(query, fieldName, collectionName, String.class).stream()
-        .filter(Objects::nonNull)
-        .count();
+    Aggregation aggregation =
+        Aggregation.newAggregation(
+            Aggregation.match(buildNonNullAndNonEmptyCriteria(fieldName)),
+            Aggregation.group(fieldName),
+            Aggregation.count().as("count"));
+    AggregationResults<Document> result =
+        mongoTemplate.aggregate(aggregation, collectionName, Document.class);
+    Document count = result.getUniqueMappedResult();
+    return count == null ? 0L : ((Number) count.get("count")).longValue();
   }
 
   private Instant findLastSyncAt() {
@@ -107,10 +114,13 @@ public class AdminDataMongoRepository {
   }
 
   private static Query buildNonNullAndNonEmptyQuery(String fieldName) {
-    return Query.query(
-        new Criteria().andOperator(
-            Criteria.where(fieldName).ne(null),
-            Criteria.where(fieldName).ne("")));
+    return Query.query(buildNonNullAndNonEmptyCriteria(fieldName));
+  }
+
+  private static Criteria buildNonNullAndNonEmptyCriteria(String fieldName) {
+    return new Criteria().andOperator(
+        Criteria.where(fieldName).ne(null),
+        Criteria.where(fieldName).ne(""));
   }
 
   private static Instant toInstant(Object value) {

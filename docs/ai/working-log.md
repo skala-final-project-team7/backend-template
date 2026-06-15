@@ -7,6 +7,12 @@
 
 ## 2026-06-15
 
+- **관리자 대시보드 `spaceId` 중복 카운트 메모리 부담 완화**: `AdminDataMongoRepository.countDistinctNonNull()`에서 `findDistinct + stream count` 방식으로 결과 전체를 JVM으로 가져오던 구현을 MongoDB 집계 파이프라인(`$match` → `$group` → `$count`)으로 변경해 서버 메모리 사용을 줄였다.
+  - `count != null/빈 문자열` 조건은 `buildNonNullAndNonEmptyCriteria`로 재사용하고, 집계 결과의 `count`만 받아와 반환한다.
+  - 변경 파일: `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/repository/AdminDataMongoRepository.java`
+  - 테스트 변경 파일: `backend/bff-server/src/test/java/com/lina/bff/admin/dashboard/repository/AdminDataMongoRepositoryTest.java` (`findDistinct` 목업 제거, `aggregate` 결과 스텁 기반 확인, 결과 0 케이스 보강)
+  - 검증: `cd backend && ./gradlew test` (`BUILD SUCCESSFUL`)
+
 - **관리자 대시보드 sync_logs 마지막 동기화 시각 파싱 안정화**: `AdminDataMongoRepository.toInstant(Object)`가 문자열 시간을 `Instant.parse`만 시도하던 방식으로 인해 형식 불일치 시 `DateTimeParseException`이 상위로 전파되던 부분을 보완했다.
   - `parseStringToInstant()`를 도입해 `Instant.parse` 실패 시 `OffsetDateTime.parse` → `ZonedDateTime.parse` 순으로 폴백하고, 최종 실패 시 `null`로 처리해 `/api/admin/data`에서 집계값 계산이 500으로 단락되지 않도록 했다.
   - 테스트 파일에서 잘못된 시간 문자열 입력이 있어도 예외 없이 유효한 다음 필드 값으로 fallback 하거나 `null`을 안전하게 반환하는 동작을 확인하는 단위 테스트를 추가했다.
