@@ -6,6 +6,7 @@ import com.lina.bff.admin.dashboard.security.AdminAuthorizationService;
 import com.lina.bff.admin.dashboard.service.AdminUsersService;
 import com.lina.bff.admin.dashboard.support.AdminDashboardQueryParser;
 import com.lina.common.response.ApiResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -31,20 +32,12 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/admin")
+@RequiredArgsConstructor
 public class AdminUsersController {
 
   private final AdminAuthorizationService adminAuthorizationService;
   private final AdminDashboardQueryParser adminDashboardQueryParser;
   private final AdminUsersService adminUsersService;
-
-  public AdminUsersController(
-      AdminAuthorizationService adminAuthorizationService,
-      AdminDashboardQueryParser adminDashboardQueryParser,
-      AdminUsersService adminUsersService) {
-    this.adminAuthorizationService = adminAuthorizationService;
-    this.adminDashboardQueryParser = adminDashboardQueryParser;
-    this.adminUsersService = adminUsersService;
-  }
 
   @GetMapping("/users")
   public ResponseEntity<ApiResponse<AdminUsersResponse>> getUsers(

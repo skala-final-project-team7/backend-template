@@ -11,6 +11,7 @@ import com.lina.bff.admin.dashboard.support.AdminDashboardQueryParser;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
@@ -31,17 +32,11 @@ import org.springframework.stereotype.Service;
  * </pre>
  */
 @Service
+@RequiredArgsConstructor
 public class AdminUsersService {
 
   private final AdminUserReadRepository adminUserReadRepository;
   private final AdminUserMongoRepository adminUserMongoRepository;
-
-  public AdminUsersService(
-      AdminUserReadRepository adminUserReadRepository,
-      AdminUserMongoRepository adminUserMongoRepository) {
-    this.adminUserReadRepository = adminUserReadRepository;
-    this.adminUserMongoRepository = adminUserMongoRepository;
-  }
 
   public AdminUsersResponse getUsers(AdminDashboardQuery query) {
     AdminUserPage userPage =

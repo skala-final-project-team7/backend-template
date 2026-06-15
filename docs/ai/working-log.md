@@ -7,6 +7,12 @@
 
 ## 2026-06-15
 
+- **관리자 사용자 현황 API 생성자 의존성 주입 리팩터링**: `AdminUsersService`와 연결된 `AdminUsersController`에서 생성자 코드를 제거하고 Lombok `@RequiredArgsConstructor`로 통일했다.
+  - 변경 파일:
+    - `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/service/AdminUsersService.java`
+    - `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/controller/AdminUsersController.java`
+  - 검증: `backend/`에서 `./gradlew test` 실행 (`BUILD SUCCESSFUL`).
+
 - **`conversations` 사용자 집계 쿼리용 인덱스 추가**: 관리자 사용자 현황 집계에서 `userId IN (...)` + `deletedAt == null` 패턴을 더 직접적으로 커버하도록 MongoDB 인덱스를 추가했다.
   - 변경 파일:
     - `backend/bff-server/src/main/java/com/lina/bff/chat/entity/Conversation.java`
