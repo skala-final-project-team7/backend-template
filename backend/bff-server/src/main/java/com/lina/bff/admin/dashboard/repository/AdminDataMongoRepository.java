@@ -1,6 +1,9 @@
 package com.lina.bff.admin.dashboard.repository;
 
+import java.time.DateTimeException;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZonedDateTime;
 import java.util.Date;
 import java.util.List;
 import java.util.Objects;
@@ -118,8 +121,28 @@ public class AdminDataMongoRepository {
       return date.toInstant();
     }
     if (value instanceof String text && !text.isBlank()) {
-      return Instant.parse(text);
+      return parseStringToInstant(text);
     }
     return null;
+  }
+
+  private static Instant parseStringToInstant(String value) {
+    try {
+      return Instant.parse(value);
+    } catch (DateTimeException first) {
+      return parseStringToInstantWithFallback(value);
+    }
+  }
+
+  private static Instant parseStringToInstantWithFallback(String value) {
+    try {
+      return OffsetDateTime.parse(value).toInstant();
+    } catch (DateTimeException second) {
+      try {
+        return ZonedDateTime.parse(value).toInstant();
+      } catch (DateTimeException third) {
+        return null;
+      }
+    }
   }
 }
