@@ -11,7 +11,7 @@
 | 단계 | 범위 | 상태 |
 |---|---|---|
 | 1단계 | 프로젝트 초기 셋업 (패키지 구조, 설정, 공통 응답/예외) | ✅ 완료 (2026-05-15, `backend/bff-server/current-plans.md` 1단계 공동 작업) |
-| 3단계 | Confluence OAuth 2.0 Authorization Code Flow + Access/Refresh Token 암호화 저장 + JWT 발급 | 📝 Plan 확정 — Feature 0 게이트 종료(2026-06-10, **하이브리드** 자격증명: admin-key=API Token/site URL, 콘텐츠=OAuth/gateway), 착수 전 결정 6건 전부 확정(#6 보관=별도 테이블 `admin_atlassian_credential`, 2026-06-11). 전 Feature 코드 착수 가능 |
+| 3단계 | Confluence OAuth 2.0 Authorization Code Flow + Access/Refresh Token 암호화 저장 + JWT 발급 | 🚧 진행 — Feature 0(게이트)·1(영속)·2(JWT)·3(login/callback)·4(세션)·**5(credential 조회 API)** 코드 **구현 완료**. **Feature 6**(admin-key activate/deactivate — activate 가 핵심 미구현)·7(보안 운영)·8(검증) 잔여. 실 연동 잔여: `X-Internal-Api-Key`↔Ingestion 합의·admin seed 구현(설계 확정 — 로그인 전 사전 seed)·users/me(BFF). (게이트 종료 2026-06-10 하이브리드, 착수 전 결정 6건 전부 확정) |
 
 ---
 
@@ -139,7 +139,7 @@
 - [x] `application*.yml`: datasource/JPA/Flyway, 토큰 암호화 키, Atlassian client-id/secret/redirect-uri, JWT 키/issuer/TTL — **모두 `${...}` 환경변수, 평문 secret 금지** — ✅ 2026-06-11 (datasource `MYSQL_*`/JPA `ddl-auto: validate`/Flyway 추가, 암호화·OAuth·JWT 키는 기존 `${...}` 유지. 테스트는 `src/test/resources/application-test.yml` H2 + 테스트 전용 키)
 - [x] `users`(PK `user_key` BINARY16 UUID, `user_id`=accountId UNIQUE, `email` UNIQUE, `role` ENUM, LINA `access_token`/`refresh_token`) / `user_groups`(`group_id`=groupId, 복합 PK·FK CASCADE) / `user_tokens`(`user_key` FK, `confluence_*_token_enc` 암호화, `cloud_id`) / `admin_atlassian_credential`(`user_key` FK, `site_url`, `admin_api_token_enc` 암호화) Entity + Repository — ✅ 2026-06-11 (`token/entity/*` 4종 + `UserRole`/`UserGroupId`, `token/repository/*` 4종)
 - [x] **토큰 암호화**: `TokenCipher` AttributeConverter 로 access/refresh 컬럼 암호화 저장(평문 저장 금지). **AES-GCM + env 주입 키**(확정 2026-06-09, 운영 KMS/Vault) — ✅ 2026-06-11 (IV 12B‖GCM 암호문, 키 미주입 시 fail-fast, `TokenCipherTest` 6건)
-- [x] Flyway `V001` users(`refresh_token` 선반영)·`V002` user_groups·`V003` user_tokens·**`V004` admin_atlassian_credential** **작성 완료**(V004 2026-06-11). **admin seed**(`role='ADMIN'`, 하드코딩)는 **후속**(별도 마이그레이션 — `users.access_token` NOT NULL 이라 placeholder 또는 nullable 검토)
+- [x] Flyway `V001` users(`refresh_token` 선반영)·`V002` user_groups·`V003` user_tokens·**`V004` admin_atlassian_credential** **작성 완료**(V004 2026-06-11). **admin seed 는 후속 작업**(별도 마이그레이션 + 앱 기동 seeder) — **설계 확정(2026-06-12, 로그인 전 사전 seed)**: ① `users`(role=ADMIN/email/accountId)+`admin_atlassian_credential.site_url` = Flyway 평문 seed, ② `admin_api_token_enc` = `ApplicationRunner` seeder 가 env 평문 토큰을 `TokenCipher` 암호화 후 행 없으면 INSERT(git secret 미포함), ③ `user_tokens`(OAuth) = 로그인 산물(사전 seed 아님). `users.access_token` 은 **`'ADMIN_PLACEHOLDER'` 더미값으로 seed INSERT**(NOT NULL 유지 — 스키마 변경 없음, 첫 로그인 시 진짜 JWT 로 덮어씀). (db-schema §6.1·§6.4)
 - [x] `user_tokens`(Confluence 토큰) 조회/저장은 `user_key`(FK) 기준, refresh 회전 시 덮어쓰기(이전 값 미보존) — ✅ 2026-06-11 (`UserToken.rotate()` + 회전 덮어쓰기·1행 유지 테스트)
 - [x] `@DataJpaTest`(H2/Testcontainers): users upsert, role lookup, 토큰 암호화 라운드트립(저장값이 평문이 아님), 만료시각 조회 — ✅ 2026-06-11 (H2, Repository 테스트 14건 — upsert 시 `user_key`/`role` 유지, native query 로 저장 컬럼 평문 아님 검증 포함)
 - [x] **(Feature 0·#6 반영)** admin-key 관리 credential 보관 — 별도 테이블 `admin_atlassian_credential`(`site_url`+`admin_api_token_enc`, `V004` CREATE, AES-GCM). `AdminAtlassianCredential` Entity + Repository, `TokenCipher` 재사용. (콘텐츠 조회용 OAuth 토큰·cloudId 는 `user_tokens` 그대로 — admin API Token 과 분리.) 게이트웨이 base URL 은 cloudId 로 런타임 구성
@@ -199,6 +199,34 @@
 
 ---
 
+### Feature 5·6 공통 — 전체 비동기 수집 파이프라인에서의 위치
+
+> 출처: 팀 **RabbitMQ Provisioning** 노트(2026-06-14, Infra). auth-server 의 두 내부 API(Feature 5 credential 조회·Feature 6 admin-key activate/deactivate)가 BFF↔RabbitMQ↔Data Ingestion Worker 파이프라인의 **어느 지점에서 호출되는지** 확정한다. RabbitMQ exchange/queue/binding/DLQ 프로비저닝 자체는 **Helm + ArgoCD GitOps(Infra 팀)** 소관으로 auth-server 범위 밖이다 — auth-server 는 큐를 직접 다루지 않고 내부 REST API 만 제공한다.
+
+```
+[FE] ─POST /api/admin/ingest─▶ [BFF] AdminIngestService.startIngest
+                                  │ ① jobId 생성
+                                  │ ② POST /internal/admin/key/activate  ──────▶ [auth-server] Feature 6 (activate)
+                                  │ ③ RabbitMQ publish (exchange lina.admin.ingest,
+                                  │     routing-key admin.ingest.requested → queue lina.data-ingestion.ingest)
+                                  ▼
+                          [Data Ingestion Worker] consume
+                                  │ ④ credential_lookup(adminUserId)
+                                  │    GET /internal/auth/admin-confluence-credential ─▶ [auth-server] Feature 5
+                                  │    → (accessToken, cloudId) 로 Confluence 게이트웨이 수집 (Admin Key 활성 상태)
+                                  │ ⑤ Confluence 수집 → 청킹/임베딩
+                                  │ ⑥ completion event publish (queue lina.admin.ingest.completion)
+                                  ▼
+                          [BFF] AdminIngestCompletionConsumer
+                                     COMPLETED/FAILED ─▶ POST /internal/admin/key/deactivate ─▶ [auth-server] Feature 6 (deactivate)
+```
+
+- **payload 에 credential 미포함**: RabbitMQ job/completion message 는 `jobId`/`adminUserId`/`mode`/`requestedAt`(또는 `status`/`completedAt`)만 싣고 `accessToken`/`cloudId`/`adminApiToken` 은 절대 넣지 않는다. credential 은 Worker 가 ④에서 auth-server 로 **pull** 한다(Feature 5). — `backend/CLAUDE.md` §2.2, api-spec §2-5 보안 원칙 정합.
+- **DLQ**: deactivate 실패 시 BFF consumer 에서 예외 전파 → `RetryOperationsInterceptor` 재시도 → 한도 초과 시 `RejectAndDontRequeueRecoverer` → `lina.admin.ingest.completion.dlq`. 따라서 **auth-server deactivate 가 복구 불가 4xx 를 주면 BFF 가 retry 후 DLQ 로 격리**한다(중복 `jobId` 는 4xx 아닌 2xx 여야 — 아래 Feature 6 idempotency).
+- **PDF '나중에 개발' 대조**: 1.6.b(credential 조회 구현)=**Feature 5 — 완료**. 1.4(activate 시 Admin Key 발급 절차)=**Feature 6 activate — 미구현(본 라운드)**. 전체 외부 연동 통합 테스트(activate/deactivate 실제 동작)=**4단계**.
+
+---
+
 ### Feature 5. 내부 credential 조회 API (Data Ingestion Worker 전용)
 
 #### 변경 대상 파일
@@ -213,6 +241,15 @@
 - [x] 테스트: role 분기(403), 만료시 refresh 후 최신 토큰 반환, `refreshToken` 미노출, WireMock 으로 AUTH-03 모킹 — ✅ 2026-06-12 (신규 24건 red→green: MockMvc 11건 — **내부 키 없는 외부 호출 401·위조 키 401·사용자 Bearer 403 전부 토큰 미반환** 포함, Service 단위 10건, AUTH-03 WireMock 3건. 전체 101건 통과)
 - [x] **(하이브리드 정정 2026-06-11)** 본 §2-5 API 는 **admin OAuth `accessToken` + `cloudId`(user_tokens) + `siteUrl`(JSON, =`admin_atlassian_credential.site_url` 컬럼)** 을 반환. `accessToken`/`cloudId`=Bearer+게이트웨이 콘텐츠 조회, `siteUrl`=출처 URL absolute 정규화(별도 저장 없이 `site_url` 컬럼 그대로 전달). `refreshToken` 미반환, 만료 임박 시 AUTH-03 refresh 후 `user_tokens` 갱신해 반환(401/502 에러 유지). **admin API Token 은 본 API 가 반환하지 않음** — admin-key 관리(Feature 6)에서 auth-server 내부 사용 — ✅ 2026-06-12 (응답 DTO 에 refreshToken/adminApiToken 필드 자체 없음 — 구조적 차단)
 
+#### Ingestion Worker 소비 계약 정합 (RabbitMQ Provisioning 노트, 2026-06-14)
+- [x] **호출자 = Python Data Ingestion Worker 의 `credential_lookup(adminUserId)` 구현체**(PDF §1.6.b·"나중에 개발 2"). Worker 가 ingest job consume 후 `_resolve_runtime_credentials` 에서 본 API 를 호출한다. auth-server 측 작업은 **완료** — PDF 기준으로도 1.6.b 의 auth-server 책임("admin key 를 ingestion-deploy 에 리턴")이 본 Feature 로 충족됨.
+- [x] **반환 형태 정합 확인**: Worker 의 `credential_lookup` 은 `(access_token, cloud_id)` **2-tuple** 만 소비한다(`resolved_access_token, resolved_cloud_id = credential_lookup(admin_user_id)`). 본 API 응답 4필드 중 **`accessToken`/`cloudId` 만 Worker 가 사용**하고, `siteUrl`/`expiresAt` 은 현 Worker 코드 미소비(JSON 에는 포함 — 출처 URL 정규화·만료 가시성용, 응답 계약 유지). → **불일치 아님**: REST 응답은 4필드 객체, Worker adapter 가 2값만 추출. siteUrl 실제 소비는 Worker 측 후속(범위 밖).
+- [x] **Worker 실패 처리 인지(범위 밖이나 영향 기록)**: Worker 는 `credential_lookup` 예외를 잡고 로깅 후 기존 `(access_token, cloud_id)` 로 fallback 하며, PoC 에선 그 값이 `None` 이라 결국 수집 실패한다. 따라서 본 API 의 `401`(invalid_grant)/`404`/`502` 는 Worker 로그에서만 드러나고 BFF 로 직접 전파되지 않는다 — 에러 시멘틱(상태코드·메시지)은 운영 디버깅용으로 유지하되, 사용자 노출 경로 아님. (Worker 재시도/알림은 Ingestion 측 책임)
+
+#### 잔여(코드 아님 — 연동 전제, open)
+- [ ] **⚠️ `X-Internal-Api-Key` 계약을 Ingestion 팀과 합의·공유** — auth-server `/internal/auth/**` 는 이 헤더 fail-closed(누락/불일치 시 401)다. 그런데 PDF 의 Worker `credential_lookup` 은 **"implements 구현 예정"** 이라 헤더 송신이 아직 없다 → **합의 없이는 실 연동 시 100% 401 로 credential 조회 실패**(우리가 신규 도입한 계약이라 양측 합의 필수). 키 값은 **k8s Secret 으로 auth-server·Worker 양쪽 주입**(평문 금지, `${INTERNAL_API_KEY}`) 방향. api-spec §2-5 헤더 계약은 반영됨 — Ingestion 팀 전달·Worker 구현 확인까지가 잔여. (대안으로 NetworkPolicy 단독이면 헤더 면제 가능하나, 그 경우 SecurityConfig 의 ROLE_INTERNAL 게이트를 완화해야 하므로 결정 필요)
+- [ ] **실 Worker→auth-server 라이브 연동 검증(4단계/Feature 8)** — 현재 WireMock/MockMvc 단위까지. 실제 Python Worker 가 `GET /internal/auth/admin-confluence-credential` 를 키 헤더와 함께 호출해 `(accessToken, cloudId)` 로 Confluence 수집까지 이어지는 end-to-end 는 PDF "나중에 개발 3"(전체 통합) 시점에 Feature 6 통합과 함께 수행. auth-server 코드 자체는 완료.
+
 ---
 
 ### Feature 6. Admin Key 내부 API (`/internal/admin/key/{activate,deactivate}`)
@@ -221,8 +258,12 @@
 
 > **BFF 측 계약 선머지(2026-06-12 확인):** 본 API 의 호출자(BFF `AuthAdminKeyClient`·completion event consumer)는 PR #21(`feat/#17/admin-key-deactivate`)로 **이미 main 에 머지**되어 있다. 아래 요청 계약·idempotency·TTL 항목은 그 구현과 대조해 정합화한 것이다(`bff-server/current-plans.md` 4단계 Feature 1). Feature 6 구현 전까지 BFF `/api/admin/ingest` → activate 호출은 `/internal/**` denyAll 에 막혀 실패하는 것이 정상.
 
+> **PDF 정합(RabbitMQ Provisioning 노트, 2026-06-14):** PDF "나중에 개발 1번" 이 **activate 시 'Admin Key 발급 절차'(Atlassian `POST /wiki/api/v2/admin-key`)가 아직 미구현**임을 명시한다 — 즉 본 Feature 의 핵심 미구현분이 activate 다(deactivate client/consumer 는 BFF 선머지). 파이프라인 위치(activate=수집 시작 직전, deactivate=completion event 수신 후)는 §Feature 5·6 공통 흐름도 참조. deactivate 실패→BFF DLQ 경로도 같은 흐름도에 정리.
+
 #### 변경 대상 파일
-- `internal/{AdminKeyController,AdminKeyClient}.java`, `internal/dto/*.java`(activate/deactivate 요청), `internal/AdminKeyControllerTest.java`
+- `internal/{AdminKeyController,AdminKeyClient}.java`(`AdminKeyClient`=Atlassian admin-key REST 를 Basic auth 로 호출 — BFF 의 `AuthAdminKeyClient` 와 역할 다름·이름 혼동 금지), `internal/dto/*.java`(activate/deactivate 요청·응답), `internal/AdminKeyControllerTest.java`
+- `config/SecurityConfig.java`(`/internal/admin/**` 를 ROLE_INTERNAL 로 개방 — Feature 5 의 `/internal/auth/**` 와 동일 `InternalApiKeyFilter` 재사용, 잔여 denyAll 해제)
+- `config/RestClientConfig.java`(Atlassian admin-key 호출용 RestClient — site URL 가변이라 base-url 없이 절대 URI, 기존 Atlassian RestClient 재사용 검토)
 - `application*.yml`(`durationInMinutes` 설정 외부화)
 
 #### 체크리스트
@@ -232,9 +273,9 @@
 - [ ] `POST /internal/admin/key/deactivate` — Atlassian **`DELETE {siteUrl}/wiki/api/v2/admin-key`**(Basic auth, site URL) 호출, 실측 `204`. **`jobId` 기준 idempotent**(중복 completion event 안전) — BFF 계약상 중복 `jobId` 는 **두 번째 Atlassian DELETE 없이 2xx 성공** 응답(4xx 금지 — BFF 의 DLQ 이동 조건에 걸림). TTL 은 fallback
 - [ ] idempotency 저장: 처리된 `jobId` 는 **in-memory TTL store**(단일 인스턴스 전제 — Feature 3 `OAuthStateService` 의 in-memory state 와 동일 전제, 다중 인스턴스 시 외부 저장소 교체). Admin Key TTL(60분)이 fallback 이므로 entry TTL 도 그 이상이면 충분, 별도 테이블 미신설
 - [ ] 에러 정책: body 필수 필드(`adminUserId`/`jobId`) 누락 `400`, 사용자/credential 없음 `404`, `role != ADMIN` `403`, Atlassian 일시 장애 `502 EXTERNAL_SERVICE_ERROR`. 단 **중복 `jobId` deactivate 는 에러가 아닌 2xx**(위 idempotency)
-- [ ] 호출 주체 제한(내부 API). BFF completion event consumer / `/api/admin/ingest` 묶음 처리만 호출
-- [ ] 테스트: WireMock 으로 Atlassian admin-key API 모킹, activate `durationInMinutes=60` 전송·만료시각 검증, activate 반복 호출 안전, deactivate idempotency(중복 jobId → Atlassian DELETE 1회·2xx), 에러 매핑(400/403/404/502)
-- [ ] (4단계 연계) BFF consumer → deactivate 통합 검증 항목은 4단계 plan 에 추적
+- [ ] 호출 주체 제한(내부 API) — Feature 5 와 동일하게 `/internal/admin/**` 을 `InternalApiKeyFilter`(ROLE_INTERNAL)로 개방하고 잔여 denyAll 해제. BFF completion event consumer / `/api/admin/ingest` 묶음 처리만 호출. (현재 SecurityConfig 는 `/internal/auth/**` 만 열려 있고 `/internal/admin/**` 은 denyAll — 본 Feature 에서 확장)
+- [ ] 테스트: WireMock 으로 Atlassian admin-key API 모킹, activate `durationInMinutes=60` 전송·만료시각 검증, activate 반복 호출 안전, deactivate idempotency(중복 jobId → Atlassian DELETE 1회·2xx), 에러 매핑(400/403/404/502), 내부 키 없는 외부 호출 차단(Feature 5 와 동일 — 토큰/키 미반환)
+- [ ] (4단계 연계) **전체 외부 연동 통합 테스트**(PDF "나중에 개발 3"): RabbitMQ 프로비저닝(Helm/ArgoCD GitOps) 완료 후 `/api/admin/ingest` → activate → 수집 → completion event → deactivate 가 실제 Atlassian Admin Key 를 켜고 끄는지 외부 컴포넌트 연동으로 검증. 본 항목은 4단계 plan(`bff-server/current-plans.md` Feature 1)에서 추적하며 3단계는 WireMock 단위까지.
 
 ---
 
@@ -244,9 +285,9 @@
 - `config/SecurityConfig.java`, `application*.yml`, 로깅/마스킹 유틸(필요 시), `config/SensitiveConfigurationTest.java`
 
 #### 체크리스트
-- [ ] 토큰 로그/tracing 본문 마스킹 (Confluence access/refresh, LINA refresh 모두)
+- [ ] 토큰 로그/tracing 본문 마스킹 (Confluence access/refresh, LINA refresh 모두) — Feature 5 에서 credential 응답 body 미로깅은 적용됨, 본 Feature 에서 전역 규칙으로 일반화
 - [ ] actuator `env`/`heapdump`/`threaddump` 비노출
-- [ ] `/internal/**` 호출자 화이트리스트(NetworkPolicy 또는 내부 service auth) — `docs/api-spec.md` §2-2 정합
+- [ ] `/internal/**` 호출자 제한 — **응용 계층 인증은 Feature 5/6 에서 `InternalApiKeyFilter`(`X-Internal-Api-Key` ROLE_INTERNAL, fail-closed)로 도입 완료**(`/internal/auth/**`=F5, `/internal/admin/**`=F6). 본 Feature 잔여 = **인프라 계층 NetworkPolicy** 병행 + `${INTERNAL_API_KEY}` 미설정 시 기동 거부/경고 점검 + `docs/api-spec.md` §2-2(NetworkPolicy)·§2-5(헤더 계약) 정합 확인
 - [ ] RabbitMQ/HTTP payload 에 `accessToken`/`refreshToken`/`cloudId` 미포함(본 모듈이 발행하는 경우)
 - [ ] 평문 secret 미포함(OAuth client-secret·DB·암호화 키·JWT 키 모두 `${...}`) — `SensitiveConfigurationTest` 로 고정
 
@@ -287,6 +328,8 @@
 | MySQL 운영 인스턴스 미가동 부팅 | 컨텍스트 실패 | Flyway/JPA 기동 전제 — 로컬은 docker MySQL, 헬스/레디니스 분리 |
 | **Flyway V001~V004 미검증**(2026-06-11) — Repository 테스트는 H2 + Entity 기반 create-drop 이라 마이그레이션 SQL 을 실행하지 않음 | 컬럼명/타입 entity↔migration drift 잠복 | `ddl-auto: validate` 로 bootRun(Feature 8, 실 MySQL) 부팅 시 Entity↔실 스키마 대조 — Feature 8 이 마이그레이션 최초 검증 게이트. Testcontainers MySQL 은 ALTER/데이터 이관 마이그레이션이 생기는 시점에 도입 검토 |
 | Admin Key 내부 API 의 4단계 강결합 | 3단계 단독 검증 곤란 | Feature 6 은 인터페이스+WireMock 까지, 통합은 4단계와 함께(범위 권고) |
+| ~~`admin_atlassian_credential` 등록 경로 부재~~ | Feature 5/6 가 404 로 실동작 불가 | ✅ **해소·설계 확정(2026-06-12) — 로그인 전 사전 seed**: `users`(role/email/accountId)+`admin_atlassian_credential.site_url` = **Flyway 평문 seed**, `admin_api_token_enc` = **앱 기동 seeder**(`ApplicationRunner` 가 env 평문 토큰을 `TokenCipher` 암호화 후 INSERT — git secret 미포함), `user_tokens`(OAuth) = **로그인 산물**. `users.access_token` 은 `'ADMIN_PLACEHOLDER'` 더미값으로 seed(NOT NULL 유지, 첫 로그인 시 덮어씀). 구현은 별도 후속 작업(seed 마이그레이션 + seeder). (db-schema §6.1·§6.4) |
+| **`X-Internal-Api-Key` 계약 Worker 미합의**(2026-06-12) — auth-server `/internal/auth/**` fail-closed 인데 Python Worker `credential_lookup` 이 헤더 미송신("구현 예정") | 실 연동 시 100% 401 → credential 조회 실패 | Ingestion 팀과 키 계약 합의·k8s Secret 양쪽 주입(Feature 5 잔여 항목). 대안 NetworkPolicy 단독 시 ROLE_INTERNAL 게이트 완화 결정 |
 
 ## 문서 수정 필요 여부
 
@@ -300,7 +343,7 @@
 - [ ] Confluence access/refresh 토큰이 MySQL 에 **암호화 저장**(평문 없음), FE 응답 미노출
 - [ ] JWT Claim(`userId`/`groups`/`role`/`iss`/`iat`/`exp`)이 BFF 검증 계약과 일치, 서명·만료 검증 동작
 - [ ] `users` upsert + `role` DB 단일 source + 최초 admin seed(Flyway) 동작
-- [ ] `/internal/auth/admin-confluence-credential` 가 role 검증·만료 refresh·credential 반환(refreshToken 미노출)
+- [~] `/internal/auth/admin-confluence-credential` 가 role 검증·만료 refresh·credential 반환(refreshToken 미노출) — **코드·단위 테스트 완료(Feature 5)**, 실 Worker 연동(X-Internal-Api-Key 합의·admin seed)은 4단계 통합에서 최종 확인
 - [ ] `docs/db-schema.md` §6.1~§6.4 작성 완료, Entity 와 일치
 - [ ] `Repository @DataJpaTest` / `JwtProviderTest` / WireMock(AUTH-02/03/04·admin-key) / MockMvc 테스트 통과
 - [ ] 평문 secret 미포함, 인증 우회 코드 없음, 토큰 로그 마스킹
@@ -343,5 +386,6 @@
 | FE 진입점·gateway 라우팅 | **BFF 단일 진입점**. `/api/auth/**` 는 BFF gateway **path-through** 로 auth-server 의 `/api/auth/*` 핸들러에 위임((a) 안 확정). `/api/users/me`·`/api/admin/*` 는 BFF→MySQL 직접 읽기. auth-server 추가 노출면=`/internal/*`(credential·admin-key). MySQL 은 3단계부터 공유(auth-server 쓰기, BFF 읽기) | 2026-06-09 |
 | groups/cloudId 취득 경로 | **Atlassian 공식 API 로 별도 취득**(토큰 디코딩 아님). **cloudId**=AUTH-04 `accessible-resources` 의 `id`(멀티사이트 순서 없음·최근 인가 추론 금지). **groups**=AUTH-05 `GET /ex/confluence/{cloudId}/wiki/rest/api/user/memberof?accountId=` 의 `results[].id`(=**`groupId`**, `name` 아님 — RAG `allowed_groups` 정합, 2026-06-09 확정. 페이지네이션 `start`/`limit` 200/`totalSize`). callback 에서 조회해 JWT `groups` claim 적재. **`user_space_acl` RDB 테이블 미사용** — 페이지-단위 ACL 은 수집단계 Qdrant payload(`allowed_groups`/`allowed_users`, ADR 0001 §2). 페이지 ACL 추출은 Confluence Content restrictions API(수집측). | 2026-06-09 |
 | role 결정 정책 | **MySQL `users.role` DB 단일 source** — OAuth callback 시 accountId lookup, 행 없으면 `role='USER'` INSERT, 행 있으면 그 값 사용. JWT `role` claim 은 그 값 그대로 발급. YAML bootstrap 미사용. **최초 admin** 은 Flyway `V001` 하드코딩 INSERT. 별도 `admins` 테이블 미사용(흡수). (`docs/db-schema.md` §6.1) | 2026-06-02 |
+| admin seed 방식 (로그인 전 사전 주입) | admin 정보를 **로그인 전에 DB 에 미리 채운다**. ① `users`(role=ADMIN·email·accountId) + `admin_atlassian_credential.site_url` = **Flyway 평문 seed**. ② `admin_api_token_enc` = **앱 기동 seeder**(`ApplicationRunner` 가 env(k8s Secret) 평문 토큰을 `TokenCipher` 암호화 후 행 없으면 INSERT — 암호문 git 미포함). ③ `user_tokens`(OAuth access/refresh·cloudId) = **로그인 산물**(사전 seed 아님). `users.access_token` 은 `'ADMIN_PLACEHOLDER'` 더미값으로 seed(NOT NULL 유지 — 스키마 변경 없음, 첫 로그인 시 덮어씀). 결과: **Feature 6**(admin-key)은 사전 seed 만으로 동작, **Feature 5**(credential 조회)는 admin 1회 로그인 후 동작. (`docs/db-schema.md` §6.1·§6.4) | 2026-06-12 |
 | Admin Key activate TTL·요청 계약 | activate 는 `durationInMinutes` **60분(최대값)** 으로 요청(설정 외부화) — BFF 운영 문서(4단계 Feature 1)의 "60분 TTL = 최종 fallback" 전제 정합, 기본 10분이면 장기 수집 중 키 만료 → 제한 페이지 silent 404 누락. 요청 body 는 activate/deactivate 모두 `{ adminUserId, jobId }`(PR #21 선머지된 BFF `AuthAdminKeyClient` 계약). deactivate 중복 `jobId` 는 Atlassian DELETE 재호출 없이 2xx(in-memory jobId store, 단일 인스턴스 전제) | 2026-06-12 |
 | (예정) Refresh Token 갱신 정책 | LINA 세션 refresh = Rotating(Feature 4). Confluence refresh = AUTH-03 Rotating(Feature 5). 저장/TTL 세부는 Feature 2/4 착수 시 확정 | — |
