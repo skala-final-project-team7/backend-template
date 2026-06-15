@@ -4,6 +4,7 @@ import com.lina.bff.admin.dashboard.dto.AdminDataResponse;
 import com.lina.bff.admin.dashboard.security.AdminAuthorizationService;
 import com.lina.bff.admin.dashboard.service.AdminDataService;
 import com.lina.common.response.ApiResponse;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -39,8 +40,8 @@ public class AdminDataController {
   }
 
   @GetMapping("/data")
-  public ApiResponse<AdminDataResponse> getData() {
+  public ResponseEntity<ApiResponse<AdminDataResponse>> getData() {
     adminAuthorizationService.requireAdmin();
-    return ApiResponse.success(adminDataService.getData(), "데이터 현황 조회 성공");
+    return ResponseEntity.ok(ApiResponse.success(adminDataService.getData(), "데이터 현황 조회 성공"));
   }
 }

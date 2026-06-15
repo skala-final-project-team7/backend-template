@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-06-15
+
+- **관리자 대시보드/인입 API 컨트롤러 응답 형식 확장성 반영**: `ApiResponse` 래퍼 형식은 유지하면서 반환 타입을 `ResponseEntity<ApiResponse<T>>`로 통일했다. 변경 대상은 관리자 대시보드 전용 컨트롤러 5개(`AdminDataController`, `AdminUsersController`, `AdminStatsController`, `AdminFeedbackController`, `AdminSyncController`)와 관리자 수집 API 컨트롤러 `AdminIngestController`이다. 각 핸들러는 `ResponseEntity.ok(...)`로 감싸서 성공 응답을 반환한다.
+  - 수정 파일:
+    - `backend/bff-server/src/main/java/com/lina/bff/admin/controller/AdminIngestController.java`
+    - `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/controller/AdminDataController.java`
+    - `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/controller/AdminStatsController.java`
+    - `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/controller/AdminUsersController.java`
+    - `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/controller/AdminFeedbackController.java`
+    - `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/controller/AdminSyncController.java`
+- **검증**: `./gradlew test` (실행 위치: `backend/`) 성공.
+
 ## 2026-06-12
 
 - **Admin dashboard 평균 응답 시간 집계 효율화**: `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/service/AdminStatsService.java`의 `averageResponseTimeSeconds()`에서 `List<Long>`로 응답 시간을 모두 적재한 뒤 평균을 계산하던 방식을, 합계(`responseTimeSum`)와 카운트(`responseTimeCount`) 누적 집계로 변경해 객체 생성과 후처리 비용을 줄였다. 테스트: `:bff-server:test --tests "com.lina.bff.admin.dashboard.service.AdminStatsServiceTest"` 통과, `./gradlew test` 통과.

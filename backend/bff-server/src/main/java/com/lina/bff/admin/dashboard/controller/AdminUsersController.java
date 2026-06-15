@@ -6,6 +6,7 @@ import com.lina.bff.admin.dashboard.security.AdminAuthorizationService;
 import com.lina.bff.admin.dashboard.service.AdminUsersService;
 import com.lina.bff.admin.dashboard.support.AdminDashboardQueryParser;
 import com.lina.common.response.ApiResponse;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -46,7 +47,7 @@ public class AdminUsersController {
   }
 
   @GetMapping("/users")
-  public ApiResponse<AdminUsersResponse> getUsers(
+  public ResponseEntity<ApiResponse<AdminUsersResponse>> getUsers(
       @RequestParam(required = false) String period,
       @RequestParam(required = false) String from,
       @RequestParam(required = false) String to,
@@ -54,6 +55,7 @@ public class AdminUsersController {
       @RequestParam(required = false) Integer size) {
     adminAuthorizationService.requireAdmin();
     AdminDashboardQuery query = adminDashboardQueryParser.parse(period, from, to, page, size);
-    return ApiResponse.success(adminUsersService.getUsers(query), "관리자 사용자 현황 조회 성공");
+    return ResponseEntity.ok(
+        ApiResponse.success(adminUsersService.getUsers(query), "관리자 사용자 현황 조회 성공"));
   }
 }

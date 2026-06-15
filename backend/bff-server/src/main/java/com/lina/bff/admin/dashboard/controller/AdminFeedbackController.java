@@ -6,6 +6,7 @@ import com.lina.bff.admin.dashboard.security.AdminAuthorizationService;
 import com.lina.bff.admin.dashboard.service.AdminFeedbackDashboardService;
 import com.lina.bff.admin.dashboard.support.AdminDashboardQueryParser;
 import com.lina.common.response.ApiResponse;
+import org.springframework.http.ResponseEntity;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -39,7 +40,7 @@ public class AdminFeedbackController {
   private final AdminFeedbackDashboardService adminFeedbackDashboardService;
 
   @GetMapping("/feedback")
-  public ApiResponse<AdminFeedbackResponse> getFeedback(
+  public ResponseEntity<ApiResponse<AdminFeedbackResponse>> getFeedback(
       @RequestParam(required = false) String period,
       @RequestParam(required = false) String from,
       @RequestParam(required = false) String to,
@@ -47,6 +48,7 @@ public class AdminFeedbackController {
       @RequestParam(required = false) Integer size) {
     adminAuthorizationService.requireAdmin();
     AdminDashboardQuery query = adminDashboardQueryParser.parse(period, from, to, page, size);
-    return ApiResponse.success(adminFeedbackDashboardService.getFeedback(query), "피드백 현황 조회 성공");
+    return ResponseEntity.ok(
+        ApiResponse.success(adminFeedbackDashboardService.getFeedback(query), "피드백 현황 조회 성공"));
   }
 }

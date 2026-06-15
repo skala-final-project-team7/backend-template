@@ -6,6 +6,7 @@ import com.lina.bff.admin.dashboard.security.AdminAuthorizationService;
 import com.lina.bff.admin.dashboard.service.AdminSyncService;
 import com.lina.bff.admin.dashboard.support.AdminDashboardQueryParser;
 import com.lina.common.response.ApiResponse;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -46,13 +47,14 @@ public class AdminSyncController {
   }
 
   @GetMapping("/sync")
-  public ApiResponse<AdminSyncResponse> getSyncHistory(
+  public ResponseEntity<ApiResponse<AdminSyncResponse>> getSyncHistory(
       @RequestParam(required = false) String from,
       @RequestParam(required = false) String to,
       @RequestParam(required = false) Integer page,
       @RequestParam(required = false) Integer size) {
     adminAuthorizationService.requireAdmin();
     AdminDashboardQuery query = adminDashboardQueryParser.parse(null, from, to, page, size);
-    return ApiResponse.success(adminSyncService.getSyncHistory(query), "동기화 이력 조회 성공");
+    return ResponseEntity.ok(
+        ApiResponse.success(adminSyncService.getSyncHistory(query), "동기화 이력 조회 성공"));
   }
 }

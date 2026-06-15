@@ -7,6 +7,7 @@ import com.lina.bff.admin.dashboard.service.AdminStatsService;
 import com.lina.bff.admin.dashboard.support.AdminDashboardQueryParser;
 import com.lina.common.response.ApiResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -39,12 +40,12 @@ public class AdminStatsController {
   private final AdminStatsService adminStatsService;
 
   @GetMapping("/stats")
-  public ApiResponse<AdminStatsResponse> getStats(
+  public ResponseEntity<ApiResponse<AdminStatsResponse>> getStats(
       @RequestParam(required = false) String period,
       @RequestParam(required = false) String from,
       @RequestParam(required = false) String to) {
     adminAuthorizationService.requireAdmin();
     AdminDashboardQuery query = adminDashboardQueryParser.parse(period, from, to, null, null);
-    return ApiResponse.success(adminStatsService.getStats(query), "관리자 통계 조회 성공");
+    return ResponseEntity.ok(ApiResponse.success(adminStatsService.getStats(query), "관리자 통계 조회 성공"));
   }
 }
