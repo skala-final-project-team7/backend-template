@@ -37,8 +37,8 @@ class AdminSeederTest {
   @Mock private UserRepository userRepository;
   @Mock private AdminAtlassianCredentialRepository adminCredentialRepository;
 
-  private AdminSeeder seeder(AdminSeedProperties properties) {
-    return new AdminSeeder(properties, userRepository, adminCredentialRepository);
+  private AdminSeedService seeder(AdminSeedProperties properties) {
+    return new AdminSeedService(properties, userRepository, adminCredentialRepository);
   }
 
   private AdminSeedProperties configured() {
