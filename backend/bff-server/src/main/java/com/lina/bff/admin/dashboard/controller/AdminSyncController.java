@@ -1,12 +1,11 @@
 package com.lina.bff.admin.dashboard.controller;
 
 import com.lina.bff.admin.dashboard.dto.AdminDashboardQuery;
-import com.lina.bff.admin.dashboard.dto.AdminStatsResponse;
+import com.lina.bff.admin.dashboard.dto.AdminSyncResponse;
 import com.lina.bff.admin.dashboard.security.AdminAuthorizationService;
-import com.lina.bff.admin.dashboard.service.AdminStatsService;
+import com.lina.bff.admin.dashboard.service.AdminSyncService;
 import com.lina.bff.admin.dashboard.support.AdminDashboardQueryParser;
 import com.lina.common.response.ApiResponse;
-import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -19,10 +18,10 @@ import org.springframework.web.bind.annotation.RestController;
  * <pre>
  * --------------------------------------------------
  * 작성자 : LINA Backend Team
- * 작성목적 : 관리자 대시보드 사용 통계 API 컨트롤러.
+ * 작성목적 : 관리자 대시보드 동기화 이력 API 컨트롤러.
  * 작성일 : 2026-06-12
  * 변경사항 내역 (날짜, 변경목적, 변경내용 순)
- *   - 2026-06-12, 4단계 Feature 3 — GET /api/admin/stats 추가
+ *   - 2026-06-12, 4단계 Feature 7 — GET /api/admin/sync 추가
  * --------------------------------------------------
  * [호환성]
  *   - JDK 21 LTS
@@ -32,20 +31,30 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/admin")
-@RequiredArgsConstructor
-public class AdminStatsController {
+public class AdminSyncController {
 
   private final AdminAuthorizationService adminAuthorizationService;
   private final AdminDashboardQueryParser adminDashboardQueryParser;
-  private final AdminStatsService adminStatsService;
+  private final AdminSyncService adminSyncService;
 
-  @GetMapping("/stats")
-  public ResponseEntity<ApiResponse<AdminStatsResponse>> getStats(
-      @RequestParam(required = false) String period,
+  public AdminSyncController(
+      AdminAuthorizationService adminAuthorizationService,
+      AdminDashboardQueryParser adminDashboardQueryParser,
+      AdminSyncService adminSyncService) {
+    this.adminAuthorizationService = adminAuthorizationService;
+    this.adminDashboardQueryParser = adminDashboardQueryParser;
+    this.adminSyncService = adminSyncService;
+  }
+
+  @GetMapping("/sync")
+  public ResponseEntity<ApiResponse<AdminSyncResponse>> getSyncHistory(
       @RequestParam(required = false) String from,
-      @RequestParam(required = false) String to) {
+      @RequestParam(required = false) String to,
+      @RequestParam(required = false) Integer page,
+      @RequestParam(required = false) Integer size) {
     adminAuthorizationService.requireAdmin();
-    AdminDashboardQuery query = adminDashboardQueryParser.parse(period, from, to, null, null);
-    return ResponseEntity.ok(ApiResponse.success(adminStatsService.getStats(query), "관리자 통계 조회 성공"));
+    AdminDashboardQuery query = adminDashboardQueryParser.parse(null, from, to, page, size);
+    return ResponseEntity.ok(
+        ApiResponse.success(adminSyncService.getSyncHistory(query), "동기화 이력 조회 성공"));
   }
 }

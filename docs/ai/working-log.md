@@ -11,6 +11,53 @@
 - **Feature 5·6 외 문서 정합성 점검·정정(이번 작업이 건드린 계약의 파급)**: Feature 5 구현 + `X-Internal-Api-Key` 신규 도입이 다른 문서와 어긋난 곳을 정리. (1) auth-server plan **진행 상태 요약** "착수 가능"→"Feature 0~5 구현 완료, 6~8 잔여"로 갱신(stale 해소), (2) **Feature 7** `/internal/**` 화이트리스트 항목이 F5 에서 이미 도입한 `InternalApiKeyFilter` 를 모른 채 "처음 하는 일"처럼 돼 있던 것 → "응용계층 인증은 F5/F6 완료, F7 은 NetworkPolicy 병행"으로 정합, (3) **위험 요소 표** 2건 추가(admin credential 등록경로 부재·`X-Internal-Api-Key` Worker 미합의 — 각각 404·401 로 실연동 차단), (4) **`docs/api-spec.md` 변경 이력 v2.7.0** 추가(§2-5 에 `X-Internal-Api-Key` 헤더 추가했는데 버전이력 누락 — 문서 컨벤션), (5) **`docs/db-schema.md` §6.4** 에 등록 경로 노트 추가(테이블 정의만 있고 누가 행을 넣는지 부재).
 - **admin seed 설계 확정 — 로그인 전 사전 seed (plan·db-schema 반영)**: `admin_atlassian_credential` 행을 넣을 수단이 없어 F5/F6 가 모두 404 로 막히는 갭을 해소. **데이터별 주입 방법 확정**: ① `users`(role=ADMIN/email/accountId)+`admin_atlassian_credential.site_url` = **Flyway 평문 seed**, ② `admin_api_token_enc`(AES-GCM 컬럼, 평문 SQL 불가·암호문 git 금지) = **앱 기동 seeder**(`ApplicationRunner` 가 env(k8s Secret) 평문 토큰을 `TokenCipher` 암호화 후 행 없으면 INSERT), ③ `user_tokens`(OAuth) = **로그인 산물**(사전 seed 아님). 결과: **F6(admin-key)은 사전 seed 만으로 동작, F5(credential 조회)는 admin 1회 로그인 후 동작**. `users.access_token` 은 NOT NULL 이라 seed 시 **`'ADMIN_PLACEHOLDER'` 더미값으로 INSERT**(스키마 변경 없이 유지, 첫 로그인 시 진짜 JWT 로 덮어씀 — nullable 대신 placeholder 선택). 구현(seed 마이그레이션 + seeder)은 별도 후속 작업. 변경 파일: `backend/auth-server/current-plans.md`(진행상태·Feature 1·위험요소·확정된 결정), `docs/db-schema.md` §6.1·§6.4. **코드 변경 없음(문서 확정만).**
 
+## 2026-06-15
+
+- **관리자 대시보드 `spaceId` 중복 카운트 메모리 부담 완화**: `AdminDataMongoRepository.countDistinctNonNull()`에서 `findDistinct + stream count` 방식으로 결과 전체를 JVM으로 가져오던 구현을 MongoDB 집계 파이프라인(`$match` → `$group` → `$count`)으로 변경해 서버 메모리 사용을 줄였다.
+  - `count != null/빈 문자열` 조건은 `buildNonNullAndNonEmptyCriteria`로 재사용하고, 집계 결과의 `count`만 받아와 반환한다.
+  - 변경 파일: `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/repository/AdminDataMongoRepository.java`
+  - 테스트 변경 파일: `backend/bff-server/src/test/java/com/lina/bff/admin/dashboard/repository/AdminDataMongoRepositoryTest.java` (`findDistinct` 목업 제거, `aggregate` 결과 스텁 기반 확인, 결과 0 케이스 보강)
+  - 검증: `cd backend && ./gradlew test` (`BUILD SUCCESSFUL`)
+
+- **관리자 대시보드 sync_logs 마지막 동기화 시각 파싱 안정화**: `AdminDataMongoRepository.toInstant(Object)`가 문자열 시간을 `Instant.parse`만 시도하던 방식으로 인해 형식 불일치 시 `DateTimeParseException`이 상위로 전파되던 부분을 보완했다.
+  - `parseStringToInstant()`를 도입해 `Instant.parse` 실패 시 `OffsetDateTime.parse` → `ZonedDateTime.parse` 순으로 폴백하고, 최종 실패 시 `null`로 처리해 `/api/admin/data`에서 집계값 계산이 500으로 단락되지 않도록 했다.
+  - 테스트 파일에서 잘못된 시간 문자열 입력이 있어도 예외 없이 유효한 다음 필드 값으로 fallback 하거나 `null`을 안전하게 반환하는 동작을 확인하는 단위 테스트를 추가했다.
+  - 변경 파일: `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/repository/AdminDataMongoRepository.java`, `backend/bff-server/src/test/java/com/lina/bff/admin/dashboard/repository/AdminDataMongoRepositoryTest.java`
+  - 검증: `cd backend && ./gradlew test` (`BUILD SUCCESSFUL`)
+
+- **관리자 대시보드 `spaceId` 집계 null/빈 문자열 제외 처리 강화**: `countDistinctSpaces()`의 공간 식별자 집계를 위해 `Criteria.where(field).ne(null)`만으로는 빈 문자열을 걸러내지 못하던 문제를 해결했다. `AdminDataMongoRepository`에서 `buildNonNullAndNonEmptyQuery()`를 도입해 null/빈 문자열을 모두 필터링하고, `countDistinctNonNull()` 및 `findLatestInstantByField()`에 공통 적용했다.
+  - 변경 파일: `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/repository/AdminDataMongoRepository.java`
+  - 검증: `cd backend && ./gradlew test` (`BUILD SUCCESSFUL`)
+
+- **관리자 사용자 현황 API 생성자 의존성 주입 리팩터링**: `AdminUsersService`와 연결된 `AdminUsersController`에서 생성자 코드를 제거하고 Lombok `@RequiredArgsConstructor`로 통일했다.
+  - 변경 파일:
+    - `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/service/AdminUsersService.java`
+    - `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/controller/AdminUsersController.java`
+  - 검증: `backend/`에서 `./gradlew test` 실행 (`BUILD SUCCESSFUL`).
+
+- **`conversations` 사용자 집계 쿼리용 인덱스 추가**: 관리자 사용자 현황 집계에서 `userId IN (...)` + `deletedAt == null` 패턴을 더 직접적으로 커버하도록 MongoDB 인덱스를 추가했다.
+  - 변경 파일:
+    - `backend/bff-server/src/main/java/com/lina/bff/chat/entity/Conversation.java`
+    - `docs/db-schema.md`
+  - 추가 인덱스: `idx_conversations_user_active` (`{ userId:1, deletedAt:1 }`)  
+    목적: `AdminUserMongoRepository.countActiveConversationsByUserIds(...)`에서 사용자별 활성 대화 수 집계를 위한 `$match` 선별 인덱스 보완.
+
+- **관리자 사용자 수 조회 `$in` 배치 분할 튜닝**: `AdminUserMongoRepository.countActiveConversationsByUserIds(...)`에서 `userIds`를 `distinct` 처리 후 500개 단위로 쪼개 `$in` 조회를 수행하도록 변경했다.  
+  - 단일 쿼리의 `$in` 과부하를 줄이고, 요청 데이터 급증 시 MongoDB 쿼리 오버헤드/타임아웃 리스크를 완화하기 위한 사전 튜닝이다.  
+  - 중복 userId는 제거 후 집계하며, 각 배치 결과는 `merge`로 병합해 중복 누적에도 안전하게 처리한다.  
+  - 운영 가이드: userIds 입력이 매우 클 경우에도 배치 크기 상한 유지가 성능과 안정성 균형에 유리.
+  - 변경 파일: `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/repository/AdminUserMongoRepository.java`
+
+- **관리자 대시보드/인입 API 컨트롤러 응답 형식 확장성 반영**: `ApiResponse` 래퍼 형식은 유지하면서 반환 타입을 `ResponseEntity<ApiResponse<T>>`로 통일했다. 변경 대상은 관리자 대시보드 전용 컨트롤러 5개(`AdminDataController`, `AdminUsersController`, `AdminStatsController`, `AdminFeedbackController`, `AdminSyncController`)와 관리자 수집 API 컨트롤러 `AdminIngestController`이다. 각 핸들러는 `ResponseEntity.ok(...)`로 감싸서 성공 응답을 반환한다.
+  - 수정 파일:
+    - `backend/bff-server/src/main/java/com/lina/bff/admin/controller/AdminIngestController.java`
+    - `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/controller/AdminDataController.java`
+    - `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/controller/AdminStatsController.java`
+    - `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/controller/AdminUsersController.java`
+    - `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/controller/AdminFeedbackController.java`
+    - `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/controller/AdminSyncController.java`
+- **검증**: `./gradlew test` (실행 위치: `backend/`) 성공.
+
 ## 2026-06-12
 
 - **auth-server 3단계 Feature 5 완료 — 내부 credential 조회 API(`GET /internal/auth/admin-confluence-credential`)**: Data Ingestion Worker 전용 내부 API 를 구현했다. **동작**: `adminUserId`(accountId) → `users.role==ADMIN` 검증 → `user_tokens`(OAuth accessToken/cloudId) + `admin_atlassian_credential`(site_url) 로드 → access token 만료/임박(skew 60초) 시 AUTH-03 refresh → `{accessToken, cloudId, siteUrl, expiresAt(KST)}` **raw JSON**(공통 Wrapper 미적용, api-spec §2-5) 반환. `refreshToken`·admin API Token 은 응답 DTO 에 **필드 자체 없음**(구조적 미노출). refresh 는 외부호출(트랜잭션 밖) → DB 갱신만 `TransactionTemplate`(rotating 덮어쓰기) — `SessionService`/`OAuthLoginService` 와 동일 트랜잭션 분리 원칙(LINA 세션 담당 SessionService 재사용 대신 `InternalCredentialService` 별도 — Confluence 토큰과 LINA 세션은 다른 토큰). **호출 주체 제한**: 신규 `InternalApiKeyFilter` 가 `X-Internal-Api-Key` 헤더를 env(`${INTERNAL_API_KEY}`)와 **상수시간 비교**, 키 미설정 시 **fail-closed**(전부 거부). `/internal/auth/**` 만 `ROLE_INTERNAL` 개방, 사용자 JWT 는 403, 잔여 `/internal/**` 는 denyAll 유지(F6 미개방). **AUTH-03**: `AtlassianOAuthClient.refreshAccessToken` 추가, `invalid_grant` 는 `InvalidGrantException` 으로 구분 → 재로그인 필요 `401`, 그 외 일시장애 `502`. `TokenExchangeRequest` 에 `refreshToken` 필드+`@JsonInclude(NON_NULL)`(grant 별 미사용 필드 와이어 제외, 기존 AUTH-02 계약 불변). **에러 매핑**: 누락 `400`(@Validated+@NotBlank) / 비ADMIN `403` / 사용자·credential 없음 `404` / invalid_grant `401` / Atlassian 장애 `502`. 검증: 실패 테스트 선작성(신규 24건 red→green — MockMvc 11: **내부키 없는 외부호출 401·위조키 401·사용자 Bearer 403 전부 토큰 미반환** 포함, Service 단위 10, AUTH-03 WireMock 3) 후 구현, `:auth-server:test` 101건 통과, `./scripts/verify.sh` 통과. **실 Atlassian 미호출(전부 WireMock/MockMvc)** — 실 Worker 연동(X-Internal-Api-Key 합의·admin seed)은 4단계 통합. `docs/api-spec.md` §2-5 에 `X-Internal-Api-Key` 헤더 계약 반영. 변경 파일: `internal/{InternalCredentialController,InternalCredentialService}.java`(신규), `internal/dto/AdminConfluenceCredentialResponse.java`(신규), `config/InternalApiKeyFilter.java`(신규), `config/SecurityConfig.java`, `oauth/AtlassianOAuthClient.java`(AUTH-03), `oauth/dto/TokenExchangeRequest.java`, `application*.yml`, 테스트 2종(신규)+`AtlassianOAuthClientTest`, `docs/api-spec.md` §2-5, `backend/auth-server/current-plans.md`(Feature 5 `[x]`).

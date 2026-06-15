@@ -2,6 +2,7 @@ package com.lina.bff;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 
 /**
  *
@@ -21,7 +22,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * --------------------------------------------------
  * </pre>
  */
-@SpringBootApplication(scanBasePackages = {"com.lina.bff", "com.lina.common"})
+@SpringBootApplication(
+    scanBasePackages = {"com.lina.bff", "com.lina.common"},
+    exclude = DataSourceAutoConfiguration.class)
 public class BffApplication {
 
   public static void main(String[] args) {

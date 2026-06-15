@@ -193,6 +193,7 @@
 | 인덱스 | 컬렉션 | 정의 | 목적 |
 |---|---|---|---|
 | `idx_conversations_user_active_recent` | `conversations` | `{ userId:1, deletedAt:1, isPinned:-1, lastMessageAt:-1 }` | 사용자별 활성 대화 고정 우선·최신순 페이징 |
+| `idx_conversations_user_active` | `conversations` | `{ userId:1, deletedAt:1 }` | 관리자 사용자 목록 화면의 사용자별 활성 대화 수 집계(`$in` + `deletedAt == null`) 성능 보완 |
 | `idx_messages_conversation_active_created` | `messages` | `{ conversationId:1, deletedAt:1, createdAt:1 }` | 대화별 활성 메시지 시간순(멀티턴 복원) |
 | `uniq_feedbacks_message` | `feedbacks` | `{ messageId:1 }` UNIQUE | 메시지당 피드백 1건 강제 |
 
