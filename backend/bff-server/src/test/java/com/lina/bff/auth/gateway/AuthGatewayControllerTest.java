@@ -14,13 +14,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import com.lina.bff.config.DemoSecurityConfig;
+import com.lina.bff.security.BffJwtVerifier;
 import java.net.http.HttpClient;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
@@ -30,6 +33,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.client.RestClient;
 
 @WebMvcTest(controllers = AuthGatewayController.class)
+@AutoConfigureMockMvc(addFilters = false)
 @Import({DemoSecurityConfig.class, AuthGatewayControllerTest.RestClientTestConfig.class})
 @TestPropertySource(properties = "lina.auth-server.base-url=http://auth-server.test")
 class AuthGatewayControllerTest {
@@ -37,6 +41,8 @@ class AuthGatewayControllerTest {
   @RegisterExtension static WireMockExtension wireMock = WireMockExtension.newInstance().build();
 
   @Autowired private MockMvc mockMvc;
+
+  @MockBean private BffJwtVerifier jwtVerifier;
 
   @Test
   @DisplayName("GET /api/auth/login 을 auth-server 로 전달하고 302 Location 을 보존한다")

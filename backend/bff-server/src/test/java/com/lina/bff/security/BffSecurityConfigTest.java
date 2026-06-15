@@ -1,0 +1,75 @@
+package com.lina.bff.security;
+
+import static org.mockito.BDDMockito.given;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.util.List;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@WebMvcTest(controllers = BffSecurityConfigTest.TestController.class)
+@Import({BffSecurityConfig.class, BffSecurityConfigTest.TestController.class})
+@EnableWebSecurity
+class BffSecurityConfigTest {
+
+  @Autowired private MockMvc mockMvc;
+
+  @MockBean private BffJwtVerifier jwtVerifier;
+
+  @Test
+  @DisplayName("/api/auth/** 는 Bearer 없이도 공개한다")
+  void shouldPermitAuthGatewayPaths() throws Exception {
+    mockMvc
+        .perform(get("/api/auth/login"))
+        .andExpect(status().isOk())
+        .andExpect(content().string("auth-ok"));
+  }
+
+  @Test
+  @DisplayName("보호 API 는 Bearer 없으면 401 ErrorResponse 를 반환한다")
+  void shouldRejectProtectedApiWithoutBearer() throws Exception {
+    mockMvc
+        .perform(get("/api/protected"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.isSuccess").value(false))
+        .andExpect(jsonPath("$.errorCode").value("UNAUTHORIZED"));
+  }
+
+  @Test
+  @DisplayName("유효한 Bearer 는 보호 API 를 통과시킨다")
+  void shouldAllowProtectedApiWithValidBearer() throws Exception {
+    given(jwtVerifier.verifyAccessToken("valid-token"))
+        .willReturn(new BffJwtClaims("712020:abc", List.of("group-id-1"), "USER"));
+
+    mockMvc
+        .perform(get("/api/protected").header(HttpHeaders.AUTHORIZATION, "Bearer valid-token"))
+        .andExpect(status().isOk())
+        .andExpect(content().string("protected-ok"));
+  }
+
+  @RestController
+  static class TestController {
+
+    @GetMapping("/api/auth/login")
+    String auth() {
+      return "auth-ok";
+    }
+
+    @GetMapping("/api/protected")
+    String protectedApi() {
+      return "protected-ok";
+    }
+  }
+}
