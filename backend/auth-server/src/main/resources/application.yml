@@ -34,6 +34,9 @@ management:
     web:
       exposure:
         include: health, info, metrics, prometheus
+        # 민감 엔드포인트는 include 허용목록에 없지만, 프로필/환경변수로 include 가 넓어져도(예: '*')
+        # 노출되지 않도록 명시적으로 제외한다. exclude 가 include 보다 우선한다. (Feature 7)
+        exclude: env, heapdump, threaddump
   endpoint:
     health:
       show-details: never

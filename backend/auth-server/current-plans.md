@@ -286,10 +286,10 @@
 
 #### 체크리스트
 - [ ] 토큰 로그/tracing 본문 마스킹 (Confluence access/refresh, LINA refresh 모두) — Feature 5 에서 credential 응답 body 미로깅은 적용됨, 본 Feature 에서 전역 규칙으로 일반화
-- [ ] actuator `env`/`heapdump`/`threaddump` 비노출
+- [x] actuator `env`/`heapdump`/`threaddump` 비노출 — ✅ 2026-06-16 (`management.endpoints.web.exposure` 가 이미 `include: health,info,metrics,prometheus` allowlist 라 민감 endpoint 미노출 + 방어적으로 `exclude: env, heapdump, threaddump` 명시(exclude 가 include 보다 우선 — 프로필/env 로 include 가 `*` 로 넓어져도 비노출). `ActuatorEndpointExposureTest`(RANDOM_PORT 실기동): **health 200·liveness/readiness probe 200(헬스체크 안 깨짐 확인)**·metrics 200·env/heapdump/threaddump/beans 는 2xx 아님(security 401 차단). `SensitiveConfigurationTest` 가 include 에 민감 endpoint 없음·exclude 3종 존재 고정)
 - [ ] `/internal/**` 호출자 제한 — **응용 계층 인증은 Feature 5/6 에서 `InternalApiKeyFilter`(`X-Internal-Api-Key` ROLE_INTERNAL, fail-closed)로 도입 완료**(`/internal/auth/**`=F5, `/internal/admin/**`=F6). 본 Feature 잔여 = **인프라 계층 NetworkPolicy** 병행 + `${INTERNAL_API_KEY}` 미설정 시 기동 거부/경고 점검 + `docs/api-spec.md` §2-2(NetworkPolicy)·§2-5(헤더 계약) 정합 확인
 - [ ] RabbitMQ/HTTP payload 에 `accessToken`/`refreshToken`/`cloudId` 미포함(본 모듈이 발행하는 경우)
-- [ ] 평문 secret 미포함(OAuth client-secret·DB·암호화 키·JWT 키 모두 `${...}`) — `SensitiveConfigurationTest` 로 고정
+- [x] 평문 secret 미포함(OAuth client-secret·DB·암호화 키·JWT 키 모두 `${...}`) — `SensitiveConfigurationTest` 로 고정 — ✅ 2026-06-16 (운영 `application.yml` 을 `YamlPropertySourceLoader` 로 원문 로드(placeholder 미해석)해 client-secret·DB username/password·token-encryption key·JWT private/public key·internal api-key·admin-seed api-token 7개가 전부 `${ENV}` 주입(평문 아님)임을 단언. 평문 secret 이 끼면 즉시 red)
 
 ---
 
