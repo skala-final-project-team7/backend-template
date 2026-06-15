@@ -7,6 +7,7 @@
 
 ## 2026-06-12
 
+
 - **data-ingestion ingest job DLQ 정책 반영 및 검증 완료 (`featureI-7c Step 10`)**: ingest job 큐에 DLQ 선언/재시도 제어를 적용하고 실패 핸들링 정책 테스트를 추가한 뒤 검증까지 완료했다. `app/config.py`에 `ingest_job_dlq` 기본값을 `lina.data-ingestion.ingest.dlq`로 추가하고, `app/ingestion/bootstrap.py`에서 `ingest_job_queue` 선언 시 `durable` + `x-dead-letter-exchange: ""` + `x-dead-letter-routing-key: settings.ingest_job_dlq`를 설정했으며, `ingest_job_dlq` durable 큐 선언을 추가했다. `app/ingestion/workers/ingest_job_main.py`는 실패 시 `auto_ack=False`에서 처리하도록 정합해, 파싱/비즈니스 예외 시 `basic_reject(requeue=False)` 또는 `x-retry-count` 기반(1000/2000/4000/8000/10000ms) 재시도 후 재발행·재시도 소진 시 DLQ로 전환되도록 수정했으며, 파싱/재시도/실패/성공 동작을 테스트 가능한 형태로 정비했다. `app/ingestion/workers/ingestion_worker.py`의 기존 멱등성 가드(`IN_PROGRESS/COMPLETED/FAILED` skip)는 유지했다. 테스트 추가/수정: `tests/ingestion/test_bootstrap.py`(기본값·오버라이드 검증), `tests/ingestion/test_ingest_job_main.py`(retry header 파싱, malformed 메시지 처리, 재시도/재발행, DLQ 진입, 소비 루프 커버) — `python3.11 -m pytest tests/ingestion/test_ingest_job_main.py tests/ingestion/test_bootstrap.py`에서 `18 passed, 1 skipped`, `python3.11 -m pytest`에서 `238 passed, 2 skipped` 통과.
 
 - **Admin dashboard 평균 응답 시간 집계 효율화**: `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/service/AdminStatsService.java`의 `averageResponseTimeSeconds()`에서 `List<Long>`로 응답 시간을 모두 적재한 뒤 평균을 계산하던 방식을, 합계(`responseTimeSum`)와 카운트(`responseTimeCount`) 누적 집계로 변경해 객체 생성과 후처리 비용을 줄였다. 테스트: `:bff-server:test --tests "com.lina.bff.admin.dashboard.service.AdminStatsServiceTest"` 통과, `./gradlew test` 통과.
