@@ -1,10 +1,5 @@
 package com.lina.auth.token;
 
-import com.lina.auth.token.entity.AdminAtlassianCredential;
-import com.lina.auth.token.entity.User;
-import com.lina.auth.token.entity.UserRole;
-import com.lina.auth.token.repository.AdminAtlassianCredentialRepository;
-import com.lina.auth.token.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
