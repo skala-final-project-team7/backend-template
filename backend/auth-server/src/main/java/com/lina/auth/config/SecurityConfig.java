@@ -68,11 +68,13 @@ public class SecurityConfig {
                         "/actuator/metrics/**",
                         "/actuator/prometheus")
                     .permitAll()
-                    // Data Ingestion Worker 전용 — 내부 키 인증(InternalApiKeyFilter)만 통과(Feature 5).
-                    // 사용자 JWT(ROLE_USER/ADMIN)는 403 — FE/BFF 차단
-                    .requestMatchers("/internal/auth/**")
+                    // 내부 호출자 전용 — 내부 키 인증(InternalApiKeyFilter)만 통과.
+                    // 사용자 JWT(ROLE_USER/ADMIN)는 403 — FE/BFF 차단.
+                    // /internal/auth/**=credential 조회(F5, Data Ingestion Worker),
+                    // /internal/admin/**=Admin Key activate/deactivate(F6, BFF admin ingest)
+                    .requestMatchers("/internal/auth/**", "/internal/admin/**")
                     .hasRole("INTERNAL")
-                    // 잔여 /internal/** 외부 차단 — Feature 6/7 에서 내부 호출자 인증으로 확장
+                    // 잔여 /internal/** 외부 차단 — 필요 시 후속 Feature 에서 확장
                     .requestMatchers("/internal/**")
                     .denyAll()
                     .anyRequest()

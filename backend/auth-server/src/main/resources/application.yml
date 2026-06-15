@@ -78,3 +78,6 @@ lina:
     # /internal/** 내부 호출자(service auth) 공유 키 — X-Internal-Api-Key 헤더 대조.
     # 미설정 시 내부 API 전부 거부(fail-closed). NetworkPolicy 와 병행(Feature 5/7)
     api-key: ${INTERNAL_API_KEY:}
+  admin-key:
+    # Atlassian Admin Key 활성 지속시간(분) — 60=최대값. 장기 수집 중 키 만료(제한 페이지 404 누락) 방지(Feature 6)
+    duration-minutes: ${ADMIN_KEY_DURATION_MINUTES:60}
