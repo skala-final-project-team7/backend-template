@@ -7,6 +7,10 @@
 
 ## 2026-06-15
 
+- **관리자 대시보드 `spaceId` 집계 null/빈 문자열 제외 처리 강화**: `countDistinctSpaces()`의 공간 식별자 집계를 위해 `Criteria.where(field).ne(null)`만으로는 빈 문자열을 걸러내지 못하던 문제를 해결했다. `AdminDataMongoRepository`에서 `buildNonNullAndNonEmptyQuery()`를 도입해 null/빈 문자열을 모두 필터링하고, `countDistinctNonNull()` 및 `findLatestInstantByField()`에 공통 적용했다.
+  - 변경 파일: `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/repository/AdminDataMongoRepository.java`
+  - 검증: `cd backend && ./gradlew test` (`BUILD SUCCESSFUL`)
+
 - **관리자 사용자 현황 API 생성자 의존성 주입 리팩터링**: `AdminUsersService`와 연결된 `AdminUsersController`에서 생성자 코드를 제거하고 Lombok `@RequiredArgsConstructor`로 통일했다.
   - 변경 파일:
     - `backend/bff-server/src/main/java/com/lina/bff/admin/dashboard/service/AdminUsersService.java`

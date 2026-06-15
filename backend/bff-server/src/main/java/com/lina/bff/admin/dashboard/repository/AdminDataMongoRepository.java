@@ -76,7 +76,7 @@ public class AdminDataMongoRepository {
   }
 
   private long countDistinctNonNull(String collectionName, String fieldName) {
-    Query query = Query.query(Criteria.where(fieldName).ne(null));
+    Query query = buildNonNullAndNonEmptyQuery(fieldName);
     return mongoTemplate.findDistinct(query, fieldName, collectionName, String.class).stream()
         .filter(Objects::nonNull)
         .count();
@@ -96,11 +96,18 @@ public class AdminDataMongoRepository {
 
   private Instant findLatestInstantByField(String fieldName) {
     Query query =
-        Query.query(Criteria.where(fieldName).ne(null))
+        buildNonNullAndNonEmptyQuery(fieldName)
             .with(Sort.by(Sort.Direction.DESC, fieldName))
             .limit(1);
     Document document = mongoTemplate.findOne(query, Document.class, SYNC_LOGS);
     return document == null ? null : toInstant(document.get(fieldName));
+  }
+
+  private static Query buildNonNullAndNonEmptyQuery(String fieldName) {
+    return Query.query(
+        new Criteria().andOperator(
+            Criteria.where(fieldName).ne(null),
+            Criteria.where(fieldName).ne("")));
   }
 
   private static Instant toInstant(Object value) {
