@@ -14,6 +14,7 @@
 |---|---|---|
 | 1단계 | 프로젝트 초기 셋업 (패키지 구조, 설정, 공통 예외/응답) | ✅ 완료 (2026-05-15, `auth-server` 와 공동) |
 | 2단계 | BFF Server 핵심 API (대화 CRUD, RAG 호출 + SSE 중계, 메시지 이력, 피드백, 대화 검색, DB 스키마) | ✅ 완료 (2026-06-08, Feature 1~8) |
+| 3단계 | Authorization Server 연동 (BFF 인증 전환 · users/me · auth gateway) | 계획 수립 |
 | 4단계 | 부가 API (관리자 대시보드 · Confluence 미리보기) | 미착수 |
 
 > **2026-05-19 범위 조정:** 중간발표를 인증 없이 시연하기 위해 2단계에서 **JWT 검증 필터를 제외**하고 3단계로 이동한다. 대신 **피드백 API**를 4단계에서 2단계로 당긴다. 근거: 사용자 지시 + `docs/api-spec.md` 전제("중간 발표 시 인증 하드코딩, 로그인 제외"). 상세는 아래 **2단계** 섹션 참조.
@@ -516,6 +517,86 @@
 5. **Confluence OAuth 토큰/cloudId 조회 모드** (2026-05-21, 2026-05-22, 2026-06-05 갱신): **credential payload 미포함 모드로 정정** — BFF 는 Data Ingestion Pipeline 요청 본문 또는 RabbitMQ payload 에 `accessToken`/`refreshToken`/`cloudId` 를 첨부하지 않는다. Data Ingestion Worker 가 `adminUserId` 로 auth-server 내부 credential 조회 API 를 호출해 admin OAuth `accessToken` + cloudId 를 함께 조회한다(콘텐츠 조회용, `docs/api-spec.md` §2-2). 운영 보호장치(로그·tracing 본문 마스킹, actuator 민감 endpoint 차단, NetworkPolicy, RabbitMQ payload credential 미포함) 동반 필수. 관련 설정 키: `lina.data-ingestion.*` (Data Ingestion 호출 클라이언트 base-url/timeout). 상세는 `backend/auth-server/current-plans.md` §3단계 Feature A~D 참조.
    - **2026-05-22 갱신 / 2026-06-05 정정**: 토큰 사용 대상을 RAG 질의(`/ml/query`, §2-1) → 데이터 수집(`/ml/ingest`, §2-2) 로 변경하되, 전달 방식은 payload 첨부가 아니라 Data Ingestion Worker 의 auth-server 내부 credential 조회로 정정. **근거**: 권한은 수집 시 Qdrant payload(`allowed_groups`/`allowed_users`) 에 ACL 저장 + 질의 시 JWT 의 `userId`/`groups` 로 필터링 (기획서 §6.4/§6.6). 따라서 `/ml/query` 는 라이브 Confluence 호출이 없어 토큰 불필요, 토큰은 크롤하는 수집 단계에서만 내부 조회해 사용. **전제**: "`/ml/query` 가 실시간 Confluence 호출을 일절 안 함" 을 가정 (※ ML 확인 대기 — 확인 후 본 결정 확정).
 6. **시간 표기 정책** (2026-05-21): 저장은 UTC(`Instant`), **응답 JSON 의 모든 timestamp 는 KST(`+09:00`)** 로 절대 전환 — `instant.atZone(ZoneId.of("Asia/Seoul"))`. Feature 3/4/5(`done` 페이로드 및 출처)/6 응답 DTO 변환에 동일 정책 적용. `docs/api-spec.md` 모든 응답 예시도 이 표기로 일괄 갱신 완료.
+
+---
+
+# 3단계 — Authorization Server 연동 (BFF 측 작업)
+
+> 출처: `backend/auth-server/current-plans.md` 의 "교차 모듈 참조 (BFF 측 작업 — 본 plan 범위 밖)" 블록.
+> 작업 범위: 실제 변경은 `backend/bff-server` 에서만 수행한다. `backend/auth-server` 는 이 plan 의 수정 대상이 아니다.
+
+## 목표
+
+BFF 의 데모 인증 구성을 Authorization Server 기반 실제 JWT 검증 흐름으로 전환한다. FE 는 BFF 를 단일 API 진입점으로 사용하고, BFF 는 `/api/auth/**` 를 auth-server 로 라우팅하며, 인증 이후의 BFF API 는 JWT claim 기반 `CurrentUserProvider` 를 통해 현재 사용자를 판별한다.
+
+## Feature 1. `/api/auth/**` auth-server gateway 라우팅
+
+- [x] BFF 에 auth-server base URL 설정을 추가한다. 예: `lina.auth-server.base-url`
+- [x] `/api/auth/**` 요청을 auth-server 로 전달하는 gateway/proxy 구성을 추가한다.
+- [x] FE 단일 진입점 요구에 맞게 `/api/auth/login`, `/api/auth/callback`, `/api/auth/refresh`, `/api/auth/logout` 계열 요청의 method/header/query/body 전달을 보존한다.
+- [x] gateway 경로는 BFF 비즈니스 controller 에서 직접 처리하지 않도록 분리한다.
+- [x] auth-server 장애, timeout, 4xx/5xx 응답이 BFF 에서 임의 변환되지 않고 호출자가 판별 가능한 형태로 전달되는지 테스트한다.
+
+> Feature 1 완료 (2026-06-15). `auth/gateway/AuthGatewayController` 를 추가해 `/api/auth/**`
+> 요청을 auth-server 로 path-through proxy 하도록 구현했다. OAuth login 302 `Location`,
+> refresh 요청 body/header, auth-server 401 status/body 보존을 `AuthGatewayControllerTest` 로 검증.
+> `AuthServerClientConfig` 는 OAuth redirect 를 따라가지 않도록 JDK HttpClient(`Redirect.NEVER`) 기반으로 고정했다.
+
+## Feature 2. 데모 `permitAll` 보안 설정을 JWT 검증 `SecurityFilterChain` 으로 교체
+
+- [x] `DemoSecurityConfig` 의 전역 `permitAll` 정책을 제거하거나 test/demo profile 전용으로 격리한다.
+- [x] BFF API 요청의 `Authorization: Bearer <JWT>` 를 검증하는 security filter 구성을 추가한다.
+- [x] 공개 경로는 최소 범위로 제한한다. 예: `/api/auth/**`, health check, CORS preflight.
+- [x] `/api/admin/**` 는 기존 `AdminAuthorizationService` 가 role 기반 접근 제어를 수행할 수 있도록 인증 객체와 role claim 을 연결한다.
+- [x] 미인증 요청은 `401`, 권한 부족 요청은 `403` 으로 응답하도록 통합 테스트를 추가한다.
+
+> Feature 2 완료 (2026-06-15). 기본 profile 에 `BffSecurityConfig` + `BffJwtAuthenticationFilter`
+> 를 추가해 `/api/auth/**`, actuator health/metrics, CORS preflight 외 BFF API 를 Bearer JWT 인증 대상으로
+> 전환했다. `DemoSecurityConfig` 는 `demo` profile 전용으로 격리했다. `BffSecurityConfigTest` 로
+> 공개 경로, 미인증 401, 유효 Bearer 통과를 검증했다.
+
+## Feature 3. `CurrentUserProvider` 를 JWT claim 기반 구현으로 교체
+
+- [x] `FixedDemoUserProvider` 를 대체할 JWT 기반 `CurrentUserProvider` 구현체를 추가한다.
+- [x] JWT claim 에서 `userId`, `role`, `groups` 를 읽어 기존 controller/service 계약을 유지한다. `name`/`email`/`profileImageUrl` 은 JWT claim 이 아니라 Feature 4 `GET /api/users/me` 의 DB 조회 응답에서 제공한다.
+- [x] `groups` claim 은 api-spec v2.6.0 기준 groupId 배열로 해석한다.
+- [x] Chat/RAG relay, 관리자 대시보드, 향후 사용자 API 가 같은 `CurrentUserProvider` 를 재사용하도록 구성한다.
+- [x] demo provider 의 테스트 의존성을 JWT fixture 기반 테스트로 교체한다.
+
+> Feature 3 완료 (2026-06-15). `BffJwtVerifier` 가 auth-server 의 RS256 access JWT(`iss`,
+> `userId`, `groups`, `role`)를 검증하고, `JwtCurrentUserProvider` 가 `SecurityContext` 의 claim 을
+> `CurrentUserProvider` 계약으로 노출한다. `FixedDemoUserProvider` 는 `demo` profile 전용으로 격리했다.
+
+## Feature 4. `GET /api/users/me` 를 BFF 가 직접 서빙
+
+- [ ] `GET /api/users/me` controller/service/dto 를 추가한다.
+- [ ] Bearer 검증 후 현재 사용자 기준으로 MySQL `users` 테이블을 read-only 조회한다.
+- [ ] 응답 필드는 `userId`, `name`, `email`, `role`, `profileImageUrl`, `lastLoginAt`(KST) 을 포함한다.
+- [ ] 미인증 요청은 `401` 로 응답한다.
+- [ ] 관리자 대시보드에서 사용하는 MySQL read datasource 와 중복 구성을 만들지 않고 공유 가능한 설정으로 정리한다.
+- [ ] auth-server DB write 책임과 BFF read 책임을 분리하고, BFF 에서 사용자/토큰 정보를 갱신하지 않는다.
+
+## Feature 5. `lina.demo.*` 데모 설정 제거
+
+- [ ] 운영 기본 설정에서 `lina.demo.*` 의존을 제거한다.
+- [ ] `FixedDemoUserProvider` 는 삭제하거나 test profile 전용 fixture 로 이동한다.
+- [ ] README/current plan/test fixture 에 남은 demo user 전제를 JWT 기반 전제로 갱신한다.
+- [ ] 기존 관리자 대시보드 테스트가 demo 설정 없이도 JWT fixture 로 통과하도록 수정한다.
+
+## Feature 6. 통합 검증
+
+- [ ] `/api/auth/** -> auth-server` 라우팅 smoke test 를 추가한다.
+- [ ] JWT 없는 BFF API 요청은 `401`, 일반 사용자 admin 요청은 `403`, 관리자 admin 요청은 `200` 인지 검증한다.
+- [ ] `/api/users/me` 가 JWT subject/claim 과 MySQL `users` row 를 매칭해 응답하는지 검증한다.
+- [ ] Chat/RAG relay 가 JWT `groups` claim 을 그대로 사용하고, 빈 `groups=[]` 를 차단하지 않는지 확인한다.
+- [ ] `./gradlew :backend:bff-server:test` 또는 repo 표준 BFF 테스트 명령으로 회귀 검증한다.
+
+## 작업 전 확인 필요
+
+- [ ] auth-server 가 발급하는 JWT 의 서명 검증 방식 확정: JWKS URL, public key, 또는 shared secret 중 하나.
+- [ ] JWT claim 이름 확정: `userId`, `role`, `groups`, `name`, `email`, `profileImageUrl`.
+- [ ] BFF 에 주입할 auth-server 내부 base URL/env 이름 확정.
+- [ ] BFF 가 읽을 MySQL datasource env 이름과 read-only 계정 제공 방식 확정.
 
 ---
 

@@ -46,6 +46,11 @@ dependencies {
     // BFF/Gateway 단에서 JWT Resource Server 방식으로 토큰 검증할 경우 사용
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
 
+    // auth-server 가 발급한 RS256 LINA access JWT 검증
+    implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+
     // 컴파일 시에만 필요, 산출물에는 미포함
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
