@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -54,6 +55,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
   protected void doFilterInternal(
       HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
       throws ServletException, IOException {
+    log.debug(
+        "JWT 필터 진입 시 SecurityContext: {}",
+        SecurityContextHolder.getContext().getAuthentication());
     String header = request.getHeader(HttpHeaders.AUTHORIZATION);
     log.debug("JWT 필터 진입: path={}, authHeaderPresent={}", request.getRequestURI(), header != null);
     if (header != null && header.startsWith(BEARER_PREFIX)) {
@@ -66,11 +70,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 null,
                 List.of(new SimpleGrantedAuthority("ROLE_" + claims.role())));
         log.debug("JWT 인증 객체 isAuthenticated={}", authentication.isAuthenticated());
-        SecurityContextHolder.getContext().setAuthentication(authentication);
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(authentication);
+        SecurityContextHolder.setContext(context);
       } catch (JwtException e) {
         SecurityContextHolder.clearContext();
       }
     }
     filterChain.doFilter(request, response);
+    log.debug(
+        "JWT 필터 종료 시 SecurityContext: {}",
+        SecurityContextHolder.getContext().getAuthentication());
   }
 }

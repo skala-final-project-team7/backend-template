@@ -12,7 +12,7 @@ apply plugin: 'io.spring.dependency-management'
 // 버전 없는 의존성 표기를 가능하게 하는 BOM (실행 모듈과 동일 버전 정렬)
 dependencyManagement {
     imports {
-        mavenBom "org.springframework.boot:spring-boot-dependencies:4.0.7"
+        mavenBom "org.springframework.boot:spring-boot-dependencies:${rootProject.ext.springBootVersion}"
     }
 }
 

@@ -14,6 +14,8 @@ plugins {
 }
 
 ext {
+    // 공통 정렬 기준 버전
+    set('springBootVersion', '4.0.7')
     // Spring Boot 4.0.x 와 정합성 높은 Spring Cloud BOM (bff-server 의 gateway-mvc 사용)
     set('springCloudVersion', '2025.1.1')
 }
