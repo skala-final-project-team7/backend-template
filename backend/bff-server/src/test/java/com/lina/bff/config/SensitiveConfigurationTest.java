@@ -21,6 +21,10 @@ class SensitiveConfigurationTest {
         .doesNotContain("env", "heapdump");
     assertThat(applicationYaml.containsProperty("lina.confluence.access-token")).isFalse();
     assertThat(applicationYaml.containsProperty("lina.confluence.cloud-id")).isFalse();
+    assertThat(applicationYaml.containsProperty("lina.demo.fixed-user-id")).isFalse();
+    assertThat(applicationYaml.containsProperty("lina.demo.fixed-groups")).isFalse();
+    assertThat(applicationYaml.containsProperty("lina.demo.fixed-space-key")).isFalse();
+    assertThat(applicationYaml.containsProperty("lina.demo.fixed-role")).isFalse();
   }
 
   private PropertySource<?> applicationYaml() throws IOException {
