@@ -11,7 +11,7 @@
 | 단계 | 범위 | 상태 |
 |---|---|---|
 | 1단계 | 프로젝트 초기 셋업 (패키지 구조, 설정, 공통 응답/예외) | ✅ 완료 (2026-05-15, `backend/bff-server/current-plans.md` 1단계 공동 작업) |
-| 3단계 | Confluence OAuth 2.0 Authorization Code Flow + Access/Refresh Token 암호화 저장 + JWT 발급 | 🚧 진행 — Feature 0(게이트)·1(영속)·2(JWT)·3(login/callback)·4(세션)·5(credential 조회)·**6(admin-key activate/deactivate)** 코드 **구현 완료**(F6=내부 API + WireMock 단위까지, 외부 연동 통합은 4단계). **Feature 7**(보안 운영)·8(검증) 잔여. admin seed(`AdminSeeder` ApplicationRunner) **구현 완료(06-15)**. admin seed env 주입 후 bootRun 라이브 스모크 — **Feature 5(credential 조회)·6(admin-key)·OAuth 전 사이클 통과(2026-06-16, 실 Atlassian·curl stand-in)**. users/me(BFF) 라이브 스모크 **완료(2026-06-16, §검증 라이브 스모크 항목)**. 실 연동 잔여: `X-Internal-Api-Key`↔Ingestion 합의·실 Python Worker/BFF consumer end-to-end(4단계)·seed accountId realm 접두사 검증(별도 코드 작업). (게이트 종료 2026-06-10 하이브리드, 착수 전 결정 6건 전부 확정) |
+| 3단계 | Confluence OAuth 2.0 Authorization Code Flow + Access/Refresh Token 암호화 저장 + JWT 발급 | 🚧 진행 — Feature 0(게이트)·1(영속)·2(JWT)·3(login/callback)·4(세션)·5(credential 조회)·**6(admin-key activate/deactivate)** 코드 **구현 완료**(F6=내부 API + WireMock 단위까지, 외부 연동 통합은 4단계). **Feature 7**(보안 운영) 코드 항목 완료 — 미체크 2건은 인프라/해당없음(`/internal/**` NetworkPolicy 병행=k8s, RabbitMQ payload=auth-server 비발행). **Feature 8(검증) 완료 + 3단계 Done Definition 전 항목 검증·체크(2026-06-16, `:auth-server:test` 152건 통과·spotless/checkstyle clean·item 5 만 실 Worker 연동 4단계 잔여로 부분완료)**. admin seed(`AdminSeeder` ApplicationRunner) **구현 완료(06-15)**. admin seed env 주입 후 bootRun 라이브 스모크 — **Feature 5(credential 조회)·6(admin-key)·OAuth 전 사이클 통과(2026-06-16, 실 Atlassian·curl stand-in)**. users/me(BFF) 라이브 스모크 **완료(2026-06-16, §검증 라이브 스모크 항목)**. 실 연동 잔여: `X-Internal-Api-Key`↔Ingestion 합의·실 Python Worker/BFF consumer end-to-end(4단계)·seed accountId realm 접두사 검증(별도 코드 작업). (게이트 종료 2026-06-10 하이브리드, 착수 전 결정 6건 전부 확정) |
 
 ---
 
@@ -344,15 +344,15 @@
 
 ## 3단계 완료 기준 (Done Definition)
 
-- [ ] `/api/auth/login`·`/callback`·`/refresh`·`/logout`·`/api/users/me` 가 `docs/api-spec.md` §4-1 대로 동작(성공·400/401/403 실패 경로 포함)
-- [ ] Confluence access/refresh 토큰이 MySQL 에 **암호화 저장**(평문 없음), FE 응답 미노출
-- [ ] JWT Claim(`userId`/`groups`/`role`/`iss`/`iat`/`exp`)이 BFF 검증 계약과 일치, 서명·만료 검증 동작
-- [ ] `users` upsert + `role` DB 단일 source + 최초 admin seed(`AdminSeeder` ApplicationRunner — env 주입, 멱등) 동작
-- [~] `/internal/auth/admin-confluence-credential` 가 role 검증·만료 refresh·credential 반환(refreshToken 미노출) — **코드·단위 테스트 완료(Feature 5)**, 실 Worker 연동(X-Internal-Api-Key 합의·admin seed)은 4단계 통합에서 최종 확인
-- [ ] `docs/db-schema.md` §6.1~§6.4 작성 완료, Entity 와 일치
-- [ ] `Repository @DataJpaTest` / `JwtProviderTest` / WireMock(AUTH-02/03/04·admin-key) / MockMvc 테스트 통과
-- [ ] 평문 secret 미포함, 인증 우회 코드 없음, 토큰 로그 마스킹
-- [ ] `format`/`lint`/`test`/`verify` 통과, `git diff` 담당 외 파일 미수정
+- [x] `/api/auth/login`·`/callback`·`/refresh`·`/logout`·`/api/users/me` 가 `docs/api-spec.md` §4-1 대로 동작(성공·400/401/403 실패 경로 포함) — ✅ 2026-06-16 검증: auth 4종 = `AuthControllerTest`(MockMvc, login 302·callback/refresh/logout 성공·400/401/403) + 실 3LO 라이브 스모크(2026-06-12); users/me = BFF 라이브 스모크 6경로(2026-06-16, §검증 라이브 스모크 항목). §4-1 정합 line 304 확인(불일치 없음)
+- [x] Confluence access/refresh 토큰이 MySQL 에 **암호화 저장**(평문 없음), FE 응답 미노출 — ✅ 2026-06-16 검증: `UserToken.confluence_access/refresh_token_enc` `@Convert(TokenCipher)` AES-GCM(평문 저장 없음, `TokenCipherTest`·`UserTokenRepositoryTest` native query 평문 아님 검증), callback/refresh 응답 `LoginTokenResponse`(LINA accessToken/refreshToken/expiresAt 만) — Confluence 토큰 필드 없음
+- [x] JWT Claim(`userId`/`groups`/`role`/`iss`/`iat`/`exp`)이 BFF 검증 계약과 일치, 서명·만료 검증 동작 — ✅ 2026-06-16 검증: `JwtProviderTest` 11건(라운드트립·camelCase 와이어 이름·만료/위조/issuer 거부) + BFF 라이브 스모크가 auth-server 형태 RS256 JWT 를 실제 검증(만료·위조 서명 → `401`)해 양측 계약 정합 실측
+- [x] `users` upsert + `role` DB 단일 source + 최초 admin seed(`AdminSeeder` ApplicationRunner — env 주입, 멱등) 동작 — ✅ 2026-06-16 검증: `UserRepositoryTest`(upsert 시 user_key/role 유지) + `AdminSeederTest` 4건(미설정 skip·신규 INSERT·기존 보존·멱등) + 라이브 스모크(재로그인 시 role=ADMIN 유지·placeholder→실 JWT)
+- [~] `/internal/auth/admin-confluence-credential` 가 role 검증·만료 refresh·credential 반환(refreshToken 미노출) — **코드·단위 테스트 완료(Feature 5)** + **실 Atlassian 라이브 스모크 6경로 통과(2026-06-16, §검증 항목)**. 실 Python Worker↔auth-server end-to-end(X-Internal-Api-Key 합의)는 4단계 통합에서 최종 확인 — 부분 완료 유지
+- [x] `docs/db-schema.md` §6.1~§6.4 작성 완료, Entity 와 일치 — ✅ 2026-06-16 검증: §6.1 `users`·§6.2 `user_tokens`·§6.3 `user_groups`·§6.4 `admin_atlassian_credential` 작성 완료 + bootRun `ddl-auto: validate`(실 MySQL, V001~V004) drift 없음(line 300)
+- [x] `Repository @DataJpaTest` / `JwtProviderTest` / WireMock(AUTH-02/03/04·admin-key) / MockMvc 테스트 통과 — ✅ 2026-06-16 검증: `:auth-server:test --rerun-tasks` **152건 전부 통과(failures=0)** — Repository 4종(`User`/`UserGroup`/`UserToken`/`AdminAtlassianCredential`) + `JwtProviderTest` + WireMock(`AtlassianOAuthClientTest`·`AdminKeyClientTest`) + MockMvc(`AuthControllerTest`·`InternalCredentialControllerTest`·`AdminKeyControllerTest`)
+- [x] 평문 secret 미포함, 인증 우회 코드 없음, 토큰 로그 마스킹 — ✅ 2026-06-16 검증: `application*.yml` secret 전부 `${...}` env(`LINA_TOKEN_ENCRYPTION_KEY`·`INTERNAL_API_KEY`·`admin-seed.*`), `SecurityConfig` default-deny(우회 없음), `LoginTokenResponse.toString` 마스킹 + `SensitiveConfigurationTest`/`SensitiveLoggingTest`/`SensitiveValuesTest` 통과
+- [x] `format`/`lint`/`test`/`verify` 통과, `git diff` 담당 외 파일 미수정 — ✅ 2026-06-16 검증: `:auth-server:spotlessCheck`+`checkstyleMain/Test` BUILD SUCCESSFUL, `:auth-server:test` 152건 통과, 워킹트리 clean(담당 외 미수정), `./scripts/verify.sh` 전체 통과(line 299)
 
 ---
 
