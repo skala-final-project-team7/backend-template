@@ -59,7 +59,9 @@ public class InternalApiKeyFilter extends OncePerRequestFilter {
       HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
       throws ServletException, IOException {
     String presented = request.getHeader(HEADER_NAME);
+    log.debug("내부 키 필터 진입: path={}, headerPresent={}", request.getRequestURI(), presented != null);
     if (presented != null && matches(presented)) {
+      log.debug("내부 키 검증 성공");
       UsernamePasswordAuthenticationToken authentication =
           new UsernamePasswordAuthenticationToken(
               "internal-service", null, List.of(new SimpleGrantedAuthority("ROLE_INTERNAL")));

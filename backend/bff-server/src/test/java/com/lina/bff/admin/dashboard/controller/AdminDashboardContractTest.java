@@ -6,8 +6,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.lina.bff.admin.dashboard.dto.AdminDataResponse;
 import com.lina.bff.admin.dashboard.dto.AdminFeedbackResponse;
 import com.lina.bff.admin.dashboard.dto.AdminFeedbackTrendItemResponse;
@@ -38,7 +36,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -71,12 +68,6 @@ class AdminDashboardContractTest {
                     authorizationService, queryParser, adminFeedbackDashboardService),
                 new AdminSyncController(authorizationService, queryParser, adminSyncService))
             .setControllerAdvice(new GlobalExceptionHandler())
-            .setMessageConverters(
-                new MappingJackson2HttpMessageConverter(
-                    JsonMapper.builder()
-                        .findAndAddModules()
-                        .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
-                        .build()))
             .build();
   }
 

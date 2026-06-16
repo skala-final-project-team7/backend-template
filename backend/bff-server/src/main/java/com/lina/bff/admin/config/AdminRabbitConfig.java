@@ -12,7 +12,7 @@ import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.retry.interceptor.RetryOperationsInterceptor;
+import org.aopalliance.intercept.MethodInterceptor;
 
 @Configuration
 @EnableConfigurationProperties(AdminIngestRabbitProperties.class)
@@ -55,10 +55,10 @@ public class AdminRabbitConfig {
   }
 
   @Bean
-  RetryOperationsInterceptor adminCompletionRetryInterceptor(
+  MethodInterceptor adminCompletionRetryInterceptor(
       AdminIngestRabbitProperties properties, RejectAndDontRequeueRecoverer recoverer) {
     return RetryInterceptorBuilder.stateless()
-        .maxAttempts(properties.completionRetryMaxAttempts())
+        .maxRetries(properties.completionRetryMaxAttempts())
         .backOffOptions(
             properties.completionRetryInitialIntervalMs(),
             properties.completionRetryMultiplier(),
@@ -71,7 +71,7 @@ public class AdminRabbitConfig {
   SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
       ConnectionFactory connectionFactory,
       MessageConverter adminRabbitMessageConverter,
-      RetryOperationsInterceptor adminCompletionRetryInterceptor) {
+      MethodInterceptor adminCompletionRetryInterceptor) {
     SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
     factory.setConnectionFactory(connectionFactory);
     factory.setMessageConverter(adminRabbitMessageConverter);

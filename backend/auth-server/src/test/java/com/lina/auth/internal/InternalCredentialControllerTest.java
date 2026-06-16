@@ -20,8 +20,8 @@ import org.hamcrest.Matchers;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -42,9 +42,11 @@ class InternalCredentialControllerTest {
 
   @Autowired private MockMvc mockMvc;
 
-  @MockBean private InternalCredentialService credentialService;
+  @MockitoBean
+  private InternalCredentialService credentialService;
 
-  @MockBean private JwtProvider jwtProvider;
+  @MockitoBean
+  private JwtProvider jwtProvider;
 
   // --- 호출 주체 제한 (내부 service auth — FE/BFF/외부 차단) ---
 

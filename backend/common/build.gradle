@@ -12,7 +12,7 @@ apply plugin: 'io.spring.dependency-management'
 // 버전 없는 의존성 표기를 가능하게 하는 BOM (실행 모듈과 동일 버전 정렬)
 dependencyManagement {
     imports {
-        mavenBom "org.springframework.boot:spring-boot-dependencies:3.3.5"
+        mavenBom "org.springframework.boot:spring-boot-dependencies:4.0.7"
     }
 }
 
@@ -33,6 +33,7 @@ dependencies {
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'com.fasterxml.jackson.core:jackson-databind'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 // 라이브러리 모듈: 일반 jar 산출(소비 모듈이 클래스 참조), 실행 jar 는 비활성

@@ -2,16 +2,19 @@ package com.lina.bff.admin.dto;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import tools.jackson.databind.ObjectMapper;
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class IngestCompletionEventTest {
 
-  private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+  private static final Pattern FIELD_PATTERN = Pattern.compile("\"([^\"]+)\":");
+  private final ObjectMapper objectMapper = new ObjectMapper();
 
   @Test
   @DisplayName("completion event payload schema 는 작업 완료/실패 식별 필드로 고정한다")
@@ -26,18 +29,24 @@ class IngestCompletionEventTest {
             null,
             "done");
 
-    JsonNode payload = objectMapper.readTree(objectMapper.writeValueAsString(event));
+    String payload = objectMapper.writeValueAsString(event);
+    Set<String> fieldNames = new HashSet<>();
+    Matcher matcher = FIELD_PATTERN.matcher(payload);
+    while (matcher.find()) {
+      fieldNames.add(matcher.group(1));
+    }
 
-    assertThat(payload.fieldNames())
-        .toIterable()
+    assertThat(fieldNames)
         .containsExactlyInAnyOrder(
             "jobId", "adminUserId", "mode", "status", "completedAt", "errorCode", "message");
-    assertThat(payload.get("jobId").asText()).isEqualTo("job-1");
-    assertThat(payload.get("adminUserId").asText()).isEqualTo("admin-account-id");
-    assertThat(payload.get("mode").asText()).isEqualTo("full");
-    assertThat(payload.get("status").asText()).isEqualTo("COMPLETED");
-    assertThat(payload.get("completedAt").asText()).isEqualTo("2026-06-11T00:05:00Z");
-    assertThat(payload.get("message").asText()).isEqualTo("done");
+    assertThat(payload)
+        .contains(
+            "\"jobId\":\"job-1\"",
+            "\"adminUserId\":\"admin-account-id\"",
+            "\"mode\":\"full\"",
+            "\"status\":\"COMPLETED\"",
+            "\"completedAt\":\"2026-06-11T00:05:00Z\"",
+            "\"message\":\"done\"");
   }
 
   @Test

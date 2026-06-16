@@ -7,11 +7,11 @@ import com.lina.auth.token.entity.UserToken;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.UUID;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
-import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
@@ -21,7 +21,7 @@ import org.springframework.test.context.ActiveProfiles;
 class UserTokenRepositoryTest {
 
   @Autowired private UserTokenRepository userTokenRepository;
-  @Autowired private TestEntityManager entityManager;
+  @Autowired private EntityManager entityManager;
 
   private static final UUID USER_KEY = UUID.fromString("11111111-1111-1111-1111-111111111111");
   private static final Instant EXPIRES_AT = Instant.parse("2026-06-11T01:00:00Z");
@@ -58,7 +58,6 @@ class UserTokenRepositoryTest {
     byte[] storedAccess =
         (byte[])
             entityManager
-                .getEntityManager()
                 .createNativeQuery(
                     "select confluence_access_token_enc from user_tokens where user_key = ?")
                 .setParameter(1, USER_KEY)

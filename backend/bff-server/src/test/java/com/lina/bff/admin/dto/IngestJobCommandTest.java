@@ -2,16 +2,19 @@ package com.lina.bff.admin.dto;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import tools.jackson.databind.ObjectMapper;
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class IngestJobCommandTest {
 
-  private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+  private static final Pattern FIELD_PATTERN = Pattern.compile("\"([^\"]+)\":");
+  private final ObjectMapper objectMapper = new ObjectMapper();
 
   @Test
   @DisplayName("ingest job payload schema 는 작업 식별/상태 필드만 포함한다")
@@ -20,15 +23,21 @@ class IngestJobCommandTest {
         new IngestJobCommand(
             "job-1", "admin-account-id", "full", Instant.parse("2026-06-11T00:00:00Z"));
 
-    JsonNode payload = objectMapper.readTree(objectMapper.writeValueAsString(command));
+    String payload = objectMapper.writeValueAsString(command);
+    Set<String> fieldNames = new HashSet<>();
+    Matcher matcher = FIELD_PATTERN.matcher(payload);
+    while (matcher.find()) {
+      fieldNames.add(matcher.group(1));
+    }
 
-    assertThat(payload.fieldNames())
-        .toIterable()
+    assertThat(fieldNames)
         .containsExactlyInAnyOrder("jobId", "adminUserId", "mode", "requestedAt");
-    assertThat(payload.get("jobId").asText()).isEqualTo("job-1");
-    assertThat(payload.get("adminUserId").asText()).isEqualTo("admin-account-id");
-    assertThat(payload.get("mode").asText()).isEqualTo("full");
-    assertThat(payload.get("requestedAt").asText()).isEqualTo("2026-06-11T00:00:00Z");
+    assertThat(payload)
+        .contains(
+            "\"jobId\":\"job-1\"",
+            "\"adminUserId\":\"admin-account-id\"",
+            "\"mode\":\"full\"",
+            "\"requestedAt\":\"2026-06-11T00:00:00Z\"");
   }
 
   @Test

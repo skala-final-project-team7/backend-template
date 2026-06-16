@@ -2,7 +2,6 @@ package com.lina.bff;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 
 /**
  *
@@ -17,14 +16,14 @@ import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
  * --------------------------------------------------
  * [호환성]
  *   - JDK 21 LTS — Virtual Threads (spring.threads.virtual.enabled=true) 사용
- *   - Spring Boot 3.3.x, Spring MVC 6.1.x
+ *   - Spring Boot 4.0.7, Spring MVC 7.0.x
  *   - Spring Cloud Gateway Server MVC 4.1.x
  * --------------------------------------------------
  * </pre>
  */
 @SpringBootApplication(
     scanBasePackages = {"com.lina.bff", "com.lina.common"},
-    exclude = DataSourceAutoConfiguration.class)
+    excludeName = {"org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration"})
 public class BffApplication {
 
   public static void main(String[] args) {

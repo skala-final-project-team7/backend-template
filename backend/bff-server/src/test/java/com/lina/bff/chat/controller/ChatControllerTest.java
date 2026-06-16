@@ -12,9 +12,9 @@ import com.lina.bff.chat.service.ChatService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -27,7 +27,8 @@ class ChatControllerTest {
 
   @Autowired private MockMvc mockMvc;
 
-  @MockBean private ChatService chatService;
+  @MockitoBean
+  private ChatService chatService;
 
   @Test
   @DisplayName("POST /api/conversations/{conversationId}/chat 은 Wrapper 없이 SseEmitter 를 반환한다")

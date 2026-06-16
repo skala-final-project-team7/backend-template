@@ -208,7 +208,7 @@ RabbitMQ는 비동기 작업 큐로 사용한다.
 
 ## 7. Backend 아키텍처
 
-Backend는 Spring Boot 3.x, Java 21 기반으로 구성한다.
+Backend는 Spring Boot 4.0.x, Java 21 기반으로 구성한다.
 
 주요 역할:
 

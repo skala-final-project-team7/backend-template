@@ -12,9 +12,9 @@ import com.lina.common.exception.GlobalExceptionHandler;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -26,7 +26,8 @@ class AdminIngestControllerTest {
 
   @Autowired private MockMvc mockMvc;
 
-  @MockBean private AdminIngestService adminIngestService;
+  @MockitoBean
+  private AdminIngestService adminIngestService;
 
   @Test
   @DisplayName("POST /api/admin/ingest 는 Admin Key activate 실패 시 EXTERNAL_SERVICE_ERROR 를 반환한다")

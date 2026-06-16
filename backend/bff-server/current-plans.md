@@ -26,7 +26,7 @@
 | 항목 | 결정 |
 |---|---|
 | 빌드 도구 | Gradle (Groovy DSL) — `build.gradle`, `settings.gradle` |
-| Java / Spring Boot | Java 21 / Spring Boot 3.3.x |
+| Java / Spring Boot | Java 21 / Spring Boot 4.0.7 |
 | 모듈 구성 | 단일 Gradle 멀티모듈 (`backend/`) |
 | Base package | `com.lina` (`com.lina.common`, `com.lina.bff`, `com.lina.auth`) |
 | Lombok | 사용 |
@@ -38,7 +38,7 @@
 
 ## 작업 요약
 
-`backend/` 디렉토리에 Spring Boot 3.x + Java 21 기반 Gradle 멀티모듈 프로젝트의 골격을 구성한다.
+`backend/` 디렉토리에 Spring Boot 4.0.x + Java 21 기반 Gradle 멀티모듈 프로젝트의 골격을 구성한다.
 실제 비즈니스 로직(OAuth, 대화, 피드백 등)은 본 단계에서 구현하지 않는다.
 
 구성 모듈:

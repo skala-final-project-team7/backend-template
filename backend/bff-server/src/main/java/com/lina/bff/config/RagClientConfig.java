@@ -2,11 +2,10 @@ package com.lina.bff.config;
 
 import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.web.client.ClientHttpRequestFactories;
-import org.springframework.boot.web.client.ClientHttpRequestFactorySettings;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.ClientHttpRequestFactory;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 /**
@@ -28,7 +27,7 @@ import org.springframework.web.client.RestClient;
  * --------------------------------------------------
  * [호환성]
  *   - JDK 21 LTS — Virtual Threads 가 I/O 블로킹 흡수
- *   - Spring Boot 3.3.x / Spring Web 6.1.x (RestClient)
+ *   - Spring Boot 4.0.7 / Spring Web 7.0.x (RestClient)
  * --------------------------------------------------
  * </pre>
  */
@@ -53,13 +52,11 @@ public class RagClientConfig {
   private static RestClient buildClient(String baseUrl, long connectTimeoutMs, long readTimeoutMs) {
     Duration connectTimeout = Duration.ofMillis(connectTimeoutMs);
     Duration readTimeout = Duration.ofMillis(readTimeoutMs);
-    ClientHttpRequestFactorySettings settings =
-        ClientHttpRequestFactorySettings.DEFAULTS
-            .withConnectTimeout(connectTimeout)
-            .withReadTimeout(readTimeout);
-    ClientHttpRequestFactory requestFactory = ClientHttpRequestFactories.get(settings);
+    SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+    requestFactory.setConnectTimeout(connectTimeout);
+    requestFactory.setReadTimeout(readTimeout);
 
-    RestClient.Builder builder = RestClient.builder().requestFactory(requestFactory);
+    RestClient.Builder builder = RestClient.builder().requestFactory((ClientHttpRequestFactory) requestFactory);
     if (baseUrl != null && !baseUrl.isBlank()) {
       builder = builder.baseUrl(baseUrl);
     }

@@ -9,6 +9,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -38,6 +40,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
+  private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
+
   private static final String BEARER_PREFIX = "Bearer ";
 
   private final JwtProvider jwtProvider;
@@ -51,14 +55,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
       HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
       throws ServletException, IOException {
     String header = request.getHeader(HttpHeaders.AUTHORIZATION);
+    log.debug("JWT 필터 진입: path={}, authHeaderPresent={}", request.getRequestURI(), header != null);
     if (header != null && header.startsWith(BEARER_PREFIX)) {
       try {
         JwtClaims claims = jwtProvider.verifyAccessToken(header.substring(BEARER_PREFIX.length()));
+        log.debug("JWT 검증 성공: userId={}", claims.userId());
         UsernamePasswordAuthenticationToken authentication =
             new UsernamePasswordAuthenticationToken(
                 claims.userId(),
                 null,
                 List.of(new SimpleGrantedAuthority("ROLE_" + claims.role())));
+        log.debug("JWT 인증 객체 isAuthenticated={}", authentication.isAuthenticated());
         SecurityContextHolder.getContext().setAuthentication(authentication);
       } catch (JwtException e) {
         SecurityContextHolder.clearContext();

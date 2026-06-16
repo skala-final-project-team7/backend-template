@@ -1,6 +1,6 @@
 package com.lina.bff.security;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.lina.common.exception.ErrorCode;
 import com.lina.common.response.ErrorResponse;
 import jakarta.servlet.http.HttpServletResponse;

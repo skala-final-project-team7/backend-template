@@ -1,8 +1,8 @@
 package com.lina.bff.rag.client;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.lina.bff.rag.client.dto.RagQueryCommand;
 import com.lina.bff.rag.client.dto.RagSseEvent;
 import java.io.BufferedReader;
@@ -152,7 +152,7 @@ public class RagClient {
       JsonNode payload =
           data.isEmpty() ? objectMapper.createObjectNode() : objectMapper.readTree(data.toString());
       eventConsumer.accept(new RagSseEvent(eventName, payload));
-    } catch (JsonProcessingException exception) {
+    } catch (JacksonException exception) {
       throw new RagClientException(
           ML_CONNECTION_ERROR, "Failed to parse RAG SSE event data", exception);
     }

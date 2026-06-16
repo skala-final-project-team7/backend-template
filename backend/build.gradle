@@ -8,14 +8,14 @@ plugins {
     id 'java'
     // 실행 모듈에서만 적용하므로 root 에서는 apply false (버전만 고정).
     // common 은 라이브러리라 spring-boot/bootJar 가 필요 없음.
-    id 'org.springframework.boot' version '3.3.5' apply false
+    id 'org.springframework.boot' version '4.0.7' apply false
     id 'io.spring.dependency-management' version '1.1.6' apply false
     id 'com.diffplug.spotless' version '6.25.0' apply false
 }
 
 ext {
-    // Spring Boot 3.3.x 와 호환되는 Spring Cloud BOM (bff-server 의 gateway-mvc 가 사용)
-    set('springCloudVersion', '2023.0.3')
+    // Spring Boot 4.0.x 와 정합성 높은 Spring Cloud BOM (bff-server 의 gateway-mvc 사용)
+    set('springCloudVersion', '2025.1.1')
 }
 
 allprojects {

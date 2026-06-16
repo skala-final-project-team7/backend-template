@@ -172,7 +172,7 @@ def build_query_router(state: RagState) -> RagState:
  * --------------------------------------------------
  * [호환성]
  *   - JDK 21 LTS 권장 — Virtual Threads 사용
- *   - Spring Boot 3.3.x, Spring MVC 6.1.x 기준
+ *   - Spring Boot 4.0.x, Spring MVC 7.0.x 기준
  *   - Spring Cloud Gateway Server MVC 4.1.x와 라우팅 호환
  * --------------------------------------------------
  */

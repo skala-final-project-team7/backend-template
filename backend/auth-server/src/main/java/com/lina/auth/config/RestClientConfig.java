@@ -2,11 +2,9 @@ package com.lina.auth.config;
 
 import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.web.client.ClientHttpRequestFactories;
-import org.springframework.boot.web.client.ClientHttpRequestFactorySettings;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.client.ClientHttpRequestFactory;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 /**
@@ -23,7 +21,7 @@ import org.springframework.web.client.RestClient;
  * --------------------------------------------------
  * [호환성]
  *   - JDK 21 LTS
- *   - Spring Boot 3.3.x (RestClient + Virtual Threads 동기 I/O)
+ *   - Spring Boot 4.0.7 (RestClient + Virtual Threads 동기 I/O)
  * --------------------------------------------------
  * </pre>
  */
@@ -34,11 +32,9 @@ public class RestClientConfig {
   RestClient atlassianRestClient(
       @Value("${lina.oauth.confluence.request-timeout-ms:10000}") long requestTimeoutMs) {
     Duration timeout = Duration.ofMillis(requestTimeoutMs);
-    ClientHttpRequestFactorySettings settings =
-        ClientHttpRequestFactorySettings.DEFAULTS
-            .withConnectTimeout(timeout)
-            .withReadTimeout(timeout);
-    ClientHttpRequestFactory requestFactory = ClientHttpRequestFactories.get(settings);
+    SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+    requestFactory.setConnectTimeout(timeout);
+    requestFactory.setReadTimeout(timeout);
     return RestClient.builder().requestFactory(requestFactory).build();
   }
 }

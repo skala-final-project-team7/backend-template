@@ -1,6 +1,6 @@
 package com.lina.auth.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.lina.common.exception.ErrorCode;
 import com.lina.common.response.ErrorResponse;
 import jakarta.servlet.http.HttpServletResponse;
@@ -54,6 +54,7 @@ public class SecurityConfig {
     http.csrf(AbstractHttpConfigurer::disable)
         .sessionManagement(
             session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+        .anonymous(AbstractHttpConfigurer::disable)
         .authorizeHttpRequests(
             auth ->
                 auth.requestMatchers("/api/auth/login", "/api/auth/callback", "/api/auth/refresh")

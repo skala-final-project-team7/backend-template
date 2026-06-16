@@ -5,12 +5,12 @@ import static org.mockito.Mockito.mock;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.aopalliance.intercept.MethodInterceptor;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.retry.RejectAndDontRequeueRecoverer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-import org.springframework.retry.interceptor.RetryOperationsInterceptor;
 
 class AdminRabbitConfigTest {
 
@@ -67,7 +67,7 @@ class AdminRabbitConfigTest {
           assertThat(properties.completionRetryInitialIntervalMs()).isEqualTo(1000);
           assertThat(properties.completionRetryMultiplier()).isEqualTo(2.0);
           assertThat(properties.completionRetryMaxIntervalMs()).isEqualTo(10000);
-          assertThat(context).hasSingleBean(RetryOperationsInterceptor.class);
+          assertThat(context).hasSingleBean(MethodInterceptor.class);
           assertThat(context).hasSingleBean(RejectAndDontRequeueRecoverer.class);
           assertThat(context.getBean("rabbitListenerContainerFactory"))
               .isInstanceOf(SimpleRabbitListenerContainerFactory.class);

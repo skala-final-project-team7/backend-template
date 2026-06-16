@@ -1,9 +1,9 @@
 package com.lina.bff.chat.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 import com.lina.bff.chat.entity.Conversation;
 import com.lina.bff.chat.entity.Message;
 import com.lina.bff.chat.entity.MessageSource;
@@ -200,7 +200,7 @@ public class ChatService {
     if (!payload.isObject()) {
       return payload;
     }
-    ObjectNode normalized = payload.deepCopy();
+    ObjectNode normalized = (ObjectNode) payload.deepCopy();
     JsonNode sources = normalized.get("sources");
     if (sources instanceof ArrayNode sourceArray) {
       sourceArray.forEach(this::normalizeSourceUpdatedAt);
@@ -224,7 +224,7 @@ public class ChatService {
 
   private JsonNode normalizeDonePayload(JsonNode payload, Message assistantMessage) {
     ObjectNode normalized =
-        payload.isObject() ? payload.deepCopy() : JsonNodeFactory.instance.objectNode();
+        payload.isObject() ? (ObjectNode) payload.deepCopy() : JsonNodeFactory.instance.objectNode();
     normalized.put("messageId", assistantMessage.getMessageId());
     JsonNode timestamp = normalized.get("timestamp");
     String kstTimestamp =
@@ -239,7 +239,7 @@ public class ChatService {
 
   private JsonNode normalizeErrorPayload(JsonNode payload) {
     ObjectNode normalized =
-        payload.isObject() ? payload.deepCopy() : JsonNodeFactory.instance.objectNode();
+        payload.isObject() ? (ObjectNode) payload.deepCopy() : JsonNodeFactory.instance.objectNode();
     String errorCode =
         normalized.hasNonNull("errorCode") ? normalized.get("errorCode").asText() : null;
     if (!RELAYABLE_ERROR_CODES.contains(errorCode)) {

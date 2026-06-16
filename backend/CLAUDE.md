@@ -17,7 +17,7 @@ Backend는 BFF Server와 Authorization Server로 구성된다.
 
 | 컴포넌트 | 기술 | 역할 |
 |---|---|---|
-| **BFF Server** | Spring Cloud Gateway Server MVC + Spring Boot 3.x + Java 21 + Virtual Threads | API 단일 진입점, Authorization Server가 발급한 JWT의 서명/만료/권한 Claim 검증, 서비스별 라우팅, Rate Limiting, CORS 처리, 내부 API 결과 조합, RAG Pipeline 호출, SSE 스트리밍 중계, 메타데이터 처리, 피드백 상태 관리 |
+| **BFF Server** | Spring Cloud Gateway Server MVC + Spring Boot 4.0.x + Java 21 + Virtual Threads | API 단일 진입점, Authorization Server가 발급한 JWT의 서명/만료/권한 Claim 검증, 서비스별 라우팅, Rate Limiting, CORS 처리, 내부 API 결과 조합, RAG Pipeline 호출, SSE 스트리밍 중계, 메타데이터 처리, 피드백 상태 관리 |
 | **Authorization Server** | Spring Security OAuth2 Client | Confluence OAuth 2.0 인증/인가, Access/Refresh Token 관리 및 갱신, 사용자 스페이스 접근 권한(ACL) 조회, JWT 발급 |
 
 계층 구조, 패키지 의존 방향, Layer 책임은 `docs/architecture.md` 7장과 `docs/conventions.md` 6장을 따른다.

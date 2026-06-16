@@ -6,11 +6,11 @@ import com.lina.auth.token.TokenCipher;
 import com.lina.auth.token.entity.AdminAtlassianCredential;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
-import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
@@ -20,7 +20,7 @@ import org.springframework.test.context.ActiveProfiles;
 class AdminAtlassianCredentialRepositoryTest {
 
   @Autowired private AdminAtlassianCredentialRepository credentialRepository;
-  @Autowired private TestEntityManager entityManager;
+  @Autowired private EntityManager entityManager;
 
   private static final UUID USER_KEY = UUID.fromString("11111111-1111-1111-1111-111111111111");
 
@@ -55,7 +55,6 @@ class AdminAtlassianCredentialRepositoryTest {
     byte[] stored =
         (byte[])
             entityManager
-                .getEntityManager()
                 .createNativeQuery(
                     "select admin_api_token_enc from admin_atlassian_credential"
                         + " where user_key = ?")

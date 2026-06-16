@@ -20,9 +20,9 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -35,7 +35,8 @@ class ConversationSearchControllerTest {
 
   @Autowired private MockMvc mockMvc;
 
-  @MockBean private ConversationSearchService conversationSearchService;
+  @MockitoBean
+  private ConversationSearchService conversationSearchService;
 
   @Test
   @DisplayName("GET /api/conversations/search 는 200 Wrapper 와 매칭 결과 구조를 KST 로 반환한다")
