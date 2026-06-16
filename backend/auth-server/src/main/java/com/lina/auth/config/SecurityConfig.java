@@ -69,15 +69,9 @@ public class SecurityConfig {
                         "/actuator/metrics/**",
                         "/actuator/prometheus")
                     .permitAll()
-                    // 내부 호출자 전용 — 내부 키 인증(InternalApiKeyFilter)만 통과.
-                    // 사용자 JWT(ROLE_USER/ADMIN)는 403 — FE/BFF 차단.
-                    // /internal/auth/**=credential 조회(F5, Data Ingestion Worker),
-                    // /internal/admin/**=Admin Key activate/deactivate(F6, BFF admin ingest)
+                    // 내부 API 호출은 InternalApiKeyFilter(=경로 게이트)에서 401/403 처리한다.
                     .requestMatchers("/internal/auth/**", "/internal/admin/**")
-                    .hasRole("INTERNAL")
-                    // 잔여 /internal/** 외부 차단 — 필요 시 후속 Feature 에서 확장
-                    .requestMatchers("/internal/**")
-                    .denyAll()
+                    .permitAll()
                     .anyRequest()
                     .authenticated())
         .exceptionHandling(
@@ -89,8 +83,8 @@ public class SecurityConfig {
                     .accessDeniedHandler(
                         (request, response, accessDeniedException) ->
                             writeError(objectMapper, response, ErrorCode.FORBIDDEN)))
-        .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-        .addFilterBefore(internalApiKeyFilter, UsernamePasswordAuthenticationFilter.class);
+        .addFilterAfter(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+        .addFilterAfter(internalApiKeyFilter, UsernamePasswordAuthenticationFilter.class);
     return http.build();
   }
 

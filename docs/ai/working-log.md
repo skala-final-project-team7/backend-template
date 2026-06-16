@@ -1,3 +1,4 @@
+
 # Working Log
 
 > 작업 완료 후 핵심 변경 사항과 결정을 일자별로 누적 기록한다.
@@ -6,6 +7,11 @@
 ---
 
 ## 2026-06-16
+
+- **auth-server 내부 API 컨텍스트 소실 회귀 조치 완료(핵심 1차):** `SecurityConfig`에서 `/internal/auth/**`, `/internal/admin/**`를 `hasRole("INTERNAL")/denyAll` 경로에서 분리해 `permitAll`로 처리하고, `InternalApiKeyFilter`에서 `/internal/**` 요청에 대해 내부 키 존재·미존재를 직접 판별해 `UNAUTHORIZED`/`FORBIDDEN` 응답을 직송하도록 리팩터링했다. 이로써 `SecurityContext`가 필터 체인에서 소실되더라도 `AdminKeyControllerTest.shouldActivate`, `shouldBlockUserBearerJwt`, 내부 credential/FailClosed 테스트가 모두 통과.
+  - 검증: `:auth-server:test --tests "com.lina.auth.internal.AdminKeyControllerTest.shouldActivate"`, `:auth-server:test --tests "com.lina.auth.internal.AdminKeyControllerTest.shouldBlockUserBearerJwt"`, `:auth-server:test --tests "com.lina.auth.internal.AdminKeyControllerTest"`, `:auth-server:test --tests "com.lina.auth.internal.InternalCredentialControllerTest"`, `:auth-server:test --tests "com.lina.auth.config.InternalApiKeyFailClosedTest"`, `:auth-server:test --tests "com.lina.auth.oauth.AuthControllerTest.shouldBlockInternalPathsFromOutside"`.
+
+- **auth-server 내부 API 권한 회귀 대응**: `auth-server` `InternalApiKeyFilter`에서 `UsernamePasswordAuthenticationToken` 생성 시 정적 팩토리 메서드 `authenticated(...)`를 사용해, Boot 4.0.7에서 `hasRole("INTERNAL")` 인가가 통과되도록 조정했다.
 
 - **bff-server 임베디드 MongoDB 의존성 복구(테스트 의존성 1차 정합성):** `backend/bff-server/build.gradle`의 `de.flapdoodle` 테스트 의존성을 `de.flapdoodle.embed.mongo.spring40x:4.22.0`에서 **실제로 존재하는 Boot 4 계열 모듈인 `de.flapdoodle.embed.mongo.spring4x:4.33.0`로 되돌림**하고, `application-test.yml` 주석을 동기화했다. 결과 `GRADLE_USER_HOME=/tmp/gradle-user ./gradlew :bff-server:test --tests "com.lina.bff.BffApplicationTests.contextLoads"`가 통과했다. (해당 커밋은 이후 `bff-server:test` 19건 전체 실패 중 security/timeout 계층 이슈로 분해해 다음 단계에서 계속 진행)
 
