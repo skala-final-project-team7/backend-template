@@ -1,8 +1,10 @@
 package com.lina.bff.admin.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.lina.bff.admin.client.AuthAdminKeyClient;
@@ -61,5 +63,22 @@ class AdminIngestServiceTest {
         ArgumentCaptor.forClass(IngestJobCommand.class);
     verify(jobProducer).publish(commandCaptor.capture());
     assertThat(commandCaptor.getValue().mode()).isEqualTo("full");
+  }
+
+  @Test
+  @DisplayName("Admin Key 활성화 실패 시 job 발행을 수행하지 않고 예외를 전파한다")
+  void shouldNotPublishJobWhenActivationFails() {
+    when(currentUserProvider.getUserId()).thenReturn("admin-account-id");
+    var ex =
+        new AuthAdminKeyClient.AuthAdminKeyException(
+            "Failed to activate Admin Key", new RuntimeException("boom"));
+
+    org.mockito.Mockito.doThrow(ex).when(authAdminKeyClient).activate(eq("admin-account-id"), org.mockito.Mockito.any());
+
+    assertThatThrownBy(() -> service.startIngest(new AdminIngestRequest("full")))
+        .isInstanceOf(AuthAdminKeyClient.AuthAdminKeyException.class)
+        .hasMessageContaining("Failed to activate Admin Key");
+
+    verifyNoInteractions(jobProducer);
   }
 }

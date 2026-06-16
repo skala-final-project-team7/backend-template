@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -29,6 +30,7 @@ import org.springframework.web.util.UriComponentsBuilder;
  * 작성일 : 2026-06-12
  * 변경사항 내역 (날짜, 변경목적, 변경내용 순)
  *   - 2026-06-12, 최초 작성, 3단계 Feature 3 — OAuth Authorization Code Flow
+ *   - 2026-06-12, 3단계 Feature 5, AUTH-03 refresh_token 갱신 추가(invalid_grant 구분 — InvalidGrantException)
  * --------------------------------------------------
  * [호환성]
  *   - JDK 21 LTS
@@ -66,6 +68,36 @@ public class AtlassianOAuthClient {
           .body(AtlassianTokenResponse.class);
     } catch (RestClientException e) {
       throw new AtlassianOAuthException("Atlassian 토큰 교환(AUTH-02)에 실패했습니다.", e);
+    }
+  }
+
+  /**
+   * AUTH-03: refresh_token → 새 access/refresh 갱신(rotating — 이전 refresh 는 Atlassian 측 무효화).
+   * invalid_grant 는 재로그인 필요 신호이므로 InvalidGrantException 으로 구분하고, 그 외 실패는 일시 장애로 본다(Feature 5).
+   */
+  public AtlassianTokenResponse refreshAccessToken(String refreshToken) {
+    TokenExchangeRequest body =
+        TokenExchangeRequest.builder()
+            .grantType("refresh_token")
+            .clientId(properties.getClientId())
+            .clientSecret(properties.getClientSecret())
+            .refreshToken(refreshToken)
+            .build();
+    try {
+      return restClient
+          .post()
+          .uri(properties.getTokenUri())
+          .contentType(MediaType.APPLICATION_JSON)
+          .body(body)
+          .retrieve()
+          .body(AtlassianTokenResponse.class);
+    } catch (HttpClientErrorException e) {
+      if (e.getResponseBodyAsString().contains("invalid_grant")) {
+        throw new InvalidGrantException("Atlassian refresh token 이 무효화되었습니다(invalid_grant).");
+      }
+      throw new AtlassianOAuthException("Atlassian 토큰 갱신(AUTH-03)에 실패했습니다.", e);
+    } catch (RestClientException e) {
+      throw new AtlassianOAuthException("Atlassian 토큰 갱신(AUTH-03)에 실패했습니다.", e);
     }
   }
 
@@ -146,6 +178,14 @@ public class AtlassianOAuthClient {
 
     public AtlassianOAuthException(String message, Throwable cause) {
       super(message, cause);
+    }
+  }
+
+  /** AUTH-03 invalid_grant — refresh token 무효(회수/만료). 일시 장애가 아니라 재로그인이 필요한 상태다. */
+  public static class InvalidGrantException extends AtlassianOAuthException {
+
+    public InvalidGrantException(String message) {
+      super(message);
     }
   }
 }

@@ -9,9 +9,7 @@ import com.lina.auth.oauth.dto.AtlassianUserInfo;
 import com.lina.auth.oauth.dto.LoginTokenResponse;
 import com.lina.auth.token.entity.User;
 import com.lina.auth.token.entity.UserRole;
-import com.lina.auth.token.repository.UserGroupRepository;
 import com.lina.auth.token.repository.UserRepository;
-import com.lina.auth.token.repository.UserTokenRepository;
 import com.lina.common.exception.BizException;
 import com.lina.common.exception.ErrorCode;
 import java.net.URI;
@@ -22,11 +20,11 @@ import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.util.UriComponentsBuilder;
-import lombok.RequiredArgsConstructor;
 
 /**
  *
@@ -106,7 +104,15 @@ public class OAuthLoginService {
         jwtProvider.issueAccessToken(new JwtClaims(userInfo.accountId(), groupIds, role.name()));
     String refreshToken = jwtProvider.issueRefreshToken(userInfo.accountId());
 
-    persistenceService.persistLoginState(existingUser, userInfo, accessJwt, refreshToken, groupIds, confluenceTokens, site.id(), now);
+    persistenceService.persistLoginState(
+        existingUser,
+        userInfo,
+        accessJwt,
+        refreshToken,
+        groupIds,
+        confluenceTokens,
+        site.id(),
+        now);
 
     return new LoginTokenResponse(accessJwt, refreshToken, accessTokenExpiresAt(now));
   }

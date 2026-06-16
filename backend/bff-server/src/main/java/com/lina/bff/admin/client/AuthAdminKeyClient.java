@@ -2,6 +2,8 @@ package com.lina.bff.admin.client;
 
 import com.lina.bff.admin.client.dto.AdminKeyActivateRequest;
 import com.lina.bff.admin.client.dto.AdminKeyDeactivateRequest;
+import com.lina.common.exception.BizException;
+import com.lina.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -42,10 +44,10 @@ public class AuthAdminKeyClient {
     }
   }
 
-  public static class AuthAdminKeyException extends RuntimeException {
+  public static class AuthAdminKeyException extends BizException {
 
     public AuthAdminKeyException(String message, Throwable cause) {
-      super(message, cause);
+      super(ErrorCode.EXTERNAL_SERVICE_ERROR, message, cause);
     }
   }
 }

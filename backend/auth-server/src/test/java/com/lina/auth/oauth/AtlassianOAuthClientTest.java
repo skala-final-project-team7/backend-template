@@ -208,6 +208,78 @@ class AtlassianOAuthClientTest {
         .isInstanceOf(AtlassianOAuthClient.AtlassianOAuthException.class);
   }
 
+  // --- AUTH-03: refresh_token 갱신 (Feature 5) ---
+
+  @Test
+  @DisplayName("AUTH-03: refresh_token 갱신 요청 body 를 계약대로 보내고(code/redirect_uri 미포함) 토큰 응답을 매핑한다")
+  void shouldRefreshAccessToken() {
+    wireMock.stubFor(
+        post(urlEqualTo("/oauth/token"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "access_token": "rotated-access",
+                          "refresh_token": "rotated-refresh",
+                          "expires_in": 3600,
+                          "scope": "read:confluence-user offline_access"
+                        }
+                        """)));
+
+    AtlassianTokenResponse response = client().refreshAccessToken("conf-refresh-1");
+
+    assertThat(response.accessToken()).isEqualTo("rotated-access");
+    assertThat(response.refreshToken()).isEqualTo("rotated-refresh");
+    wireMock.verify(
+        postRequestedFor(urlEqualTo("/oauth/token"))
+            .withRequestBody(
+                equalToJson(
+                    """
+                    {
+                      "grant_type": "refresh_token",
+                      "client_id": "client-id",
+                      "client_secret": "client-secret",
+                      "refresh_token": "conf-refresh-1"
+                    }
+                    """,
+                    true,
+                    false)));
+  }
+
+  @Test
+  @DisplayName("AUTH-03: invalid_grant 응답은 InvalidGrantException 으로 구분한다(재로그인 필요)")
+  void shouldThrowInvalidGrantOnRefreshRejection() {
+    wireMock.stubFor(
+        post(urlEqualTo("/oauth/token"))
+            .willReturn(
+                aResponse()
+                    .withStatus(403)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody("{\"error\":\"invalid_grant\"}")));
+
+    AtlassianOAuthClient client = client();
+
+    assertThatThrownBy(() -> client.refreshAccessToken("revoked-refresh"))
+        .isInstanceOf(AtlassianOAuthClient.InvalidGrantException.class);
+  }
+
+  @Test
+  @DisplayName("AUTH-03: 5xx 일시 장애는 일반 AtlassianOAuthException 으로 래핑한다(invalid_grant 아님)")
+  void shouldWrapTransientRefreshFailure() {
+    wireMock.stubFor(
+        post(urlEqualTo("/oauth/token"))
+            .willReturn(aResponse().withStatus(503).withBody("service unavailable")));
+
+    AtlassianOAuthClient client = client();
+
+    assertThatThrownBy(() -> client.refreshAccessToken("conf-refresh-1"))
+        .isInstanceOf(AtlassianOAuthClient.AtlassianOAuthException.class)
+        .isNotInstanceOf(AtlassianOAuthClient.InvalidGrantException.class);
+  }
+
   private AtlassianOAuthClient client() {
     String baseUrl = wireMock.baseUrl();
     OAuthProperties properties =

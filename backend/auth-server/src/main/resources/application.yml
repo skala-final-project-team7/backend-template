@@ -34,6 +34,9 @@ management:
     web:
       exposure:
         include: health, info, metrics, prometheus
+        # 민감 엔드포인트는 include 허용목록에 없지만, 프로필/환경변수로 include 가 넓어져도(예: '*')
+        # 노출되지 않도록 명시적으로 제외한다. exclude 가 include 보다 우선한다. (Feature 7)
+        exclude: env, heapdump, threaddump
   endpoint:
     health:
       show-details: never
@@ -74,3 +77,19 @@ lina:
     refresh-token-ttl-seconds: ${LINA_JWT_REFRESH_TTL:1209600}
   token-encryption:
     key: ${LINA_TOKEN_ENCRYPTION_KEY:}
+  internal:
+    # /internal/** 내부 호출자(service auth) 공유 키 — X-Internal-Api-Key 헤더 대조.
+    # 미설정 시 내부 API 전부 거부(fail-closed). NetworkPolicy 와 병행(Feature 5/7)
+    api-key: ${INTERNAL_API_KEY:}
+  admin-key:
+    # Atlassian Admin Key 활성 지속시간(분) — 60=최대값. 장기 수집 중 키 만료(제한 페이지 404 누락) 방지(Feature 6)
+    duration-minutes: ${ADMIN_KEY_DURATION_MINUTES:60}
+  admin-seed:
+    # 최초 admin 사전 seed(로그인 전 주입, docs/db-schema.md §6.1). 하나라도 비면 seed 건너뜀.
+    # 전부 env 주입(k8s Secret/ConfigMap) — admin 식별정보를 git 에 남기지 않고 한 묶음으로 관리.
+    # api-token 은 secret(평문 주입 → 저장 시 TokenCipher 암호화).
+    account-id: ${LINA_ADMIN_ACCOUNT_ID:}
+    email: ${LINA_ADMIN_EMAIL:}
+    name: ${LINA_ADMIN_NAME:}
+    site-url: ${LINA_ADMIN_SITE_URL:}
+    api-token: ${LINA_ADMIN_API_TOKEN:}

@@ -7,8 +7,8 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import org.springframework.stereotype.Service;
 import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
 
 /**
  *
@@ -49,7 +49,8 @@ public class OAuthStateService {
     store.put(
         state,
         new StoredState(
-            new StateData(mode, returnTo), Instant.now().plusSeconds(properties.getStateTtlSeconds())));
+            new StateData(mode, returnTo),
+            Instant.now().plusSeconds(properties.getStateTtlSeconds())));
     return state;
   }
 

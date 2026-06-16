@@ -37,6 +37,19 @@ public class AdminRabbitConfig {
   }
 
   @Bean
+  Queue adminIngestQueue(AdminIngestRabbitProperties properties) {
+    return QueueBuilder.durable(properties.ingestQueue())
+        .deadLetterExchange("")
+        .deadLetterRoutingKey(properties.ingestDlq())
+        .build();
+  }
+
+  @Bean
+  Queue adminIngestDlq(AdminIngestRabbitProperties properties) {
+    return QueueBuilder.durable(properties.ingestDlq()).build();
+  }
+
+  @Bean
   RejectAndDontRequeueRecoverer adminCompletionMessageRecoverer() {
     return new RejectAndDontRequeueRecoverer();
   }

@@ -73,6 +73,8 @@ lina:
       rabbitmq:
         ingest-exchange: ${ADMIN_INGEST_EXCHANGE:lina.admin.ingest}
         ingest-routing-key: ${ADMIN_INGEST_ROUTING_KEY:admin.ingest.requested}
+        ingest-queue: ${ADMIN_INGEST_QUEUE:lina.data-ingestion.ingest}
+        ingest-dlq: ${ADMIN_INGEST_DLQ:lina.data-ingestion.ingest.dlq}
         completion-queue: ${ADMIN_INGEST_COMPLETION_QUEUE:lina.admin.ingest.completion}
         completion-dlq: ${ADMIN_INGEST_COMPLETION_DLQ:lina.admin.ingest.completion.dlq}
         completion-retry-max-attempts: ${ADMIN_INGEST_COMPLETION_RETRY_MAX_ATTEMPTS:5}
