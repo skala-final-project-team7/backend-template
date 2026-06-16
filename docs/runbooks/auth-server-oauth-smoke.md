@@ -155,8 +155,52 @@ docker exec lina-mysql mysql -uroot -proot lina_auth -e \
 | 브라우저 `ERR_TOO_MANY_REDIRECTS` | `CONFLUENCE_AUTHORIZATION_URI` 등 빈 값 → 상대경로 302 루프 | §2 의 echo 점검 → 누락 export → **재기동** (env 는 기동 시점에 읽힘) |
 | `localhost:3000` 연결 거부 | FE 없음 — **정상** | 주소창에서 URL 만 복사해 §4 진행 |
 | callback `401` "Confluence 인증에 실패했습니다" | code 만료(5분)/재사용, 또는 Atlassian 호출 실패 | 새 로그인 사이클. 반복되면 격리: code 를 직접 `POST /oauth/token` 교환 → `accessible-resources` → `/me` 순서로 curl (1차 때 이 방법으로 `/me` 403 = `read:me` 누락을 특정) |
-| callback `500` | 예상 밖 예외 — bootRun 로그에 스택트레이스 있음 | `Unhandled exception` 블록 확인 (1차 때 토큰 컬럼 truncation 발견 경로) |
+| callback `500` `Duplicate entry ... for key 'users.uk_users_email'` | admin seed 의 `LINA_ADMIN_ACCOUNT_ID` 가 Atlassian realm 접두사 `712020:` 빠진 값 → `/me` accountId(`712020:...`)와 `users.user_id` 불일치 → upsert `findByUserId` miss → INSERT 분기가 `email` unique 충돌(2026-06-16 스모크 실측). **본인 계정으로 로그인해도** `404` 아닌 `500`. 해결: `admin.env` accountId 에 `712020:` 추가 + 기존 행 `UPDATE users SET user_id='712020:...' WHERE email='...'`(user_key 불변 → credential FK 유지). 근본 방어(seed accountId 형식 검증)는 별도 코드 작업 | 데이터 교정 후 재로그인 |
+| callback `500` (그 외) | 예상 밖 예외 — bootRun 로그에 스택트레이스 있음 | `Unhandled exception` 블록 확인 (1차 때 토큰 컬럼 truncation 발견 경로) |
 | curl 이 HTML 400 / 빈 출력 | 경로에 `/api` 누락, `\| jq` 오타, `:3000` 으로 호출 | §4 의 URL-변수 방식 사용 (포트 8081 / `/api/auth/callback` 고정) |
+
+## 10. Feature 5 — 내부 credential 조회 스모크 (admin 로그인 후)
+
+> Data Ingestion Worker 전용 내부 API(`GET /internal/auth/admin-confluence-credential`)의 라이브 검증.
+> 첫 통과: 2026-06-16. 호출은 **curl(내부 호출자 stand-in)** — 실 Python Worker end-to-end 는 4단계.
+
+**전제**
+- `user_tokens` 는 **로그인 산물**이라 seed 불가 → **admin(`LINA_ADMIN_ACCOUNT_ID` 계정)이 §3~§4 OAuth 로그인을 1회 완주**해 본인 행에 `user_tokens` 가 생겨 있어야 `200`. (다른 계정으로 로그인하면 admin 행엔 토큰이 없어 `404`)
+- ⚠️ seed accountId 는 **realm 접두사 `712020:` 포함 전체값**이어야 함 — 빠지면 콜백이 `500`(트러블슈팅 표 참조).
+- `export INTERNAL_API_KEY=...` 가 §2 와 같은 터미널에 주입돼 있어야 함(서버는 `${INTERNAL_API_KEY}` 로 검증).
+
+```bash
+source /tmp/lina-smoke/admin.env      # LINA_ADMIN_ACCOUNT_ID 로드
+KEY="$INTERNAL_API_KEY"; ADMIN="$LINA_ADMIN_ACCOUNT_ID"
+
+# ① 정상 — 200. ⚠️ 응답에 평문 access token 이 들어오므로 값은 마스킹해서 본다(원문 로그/대화 금지)
+curl -s -G "http://localhost:8081/internal/auth/admin-confluence-credential" \
+  -H "X-Internal-Api-Key: $KEY" --data-urlencode "adminUserId=$ADMIN" \
+  | jq '{accessToken_len:(.accessToken|length), cloudId, siteUrl, expiresAt, refreshToken_present:(has("refreshToken"))}'
+
+# ② 키 없음 → 401 (fail-closed)
+curl -s -o /dev/null -w "%{http_code}\n" -G "http://localhost:8081/internal/auth/admin-confluence-credential" --data-urlencode "adminUserId=$ADMIN"
+# ③ 키 틀림 → 401
+curl -s -o /dev/null -w "%{http_code}\n" -G "http://localhost:8081/internal/auth/admin-confluence-credential" -H "X-Internal-Api-Key: wrong" --data-urlencode "adminUserId=$ADMIN"
+# ④ adminUserId 누락 → 400 (@NotBlank)
+curl -s -o /dev/null -w "%{http_code}\n" "http://localhost:8081/internal/auth/admin-confluence-credential" -H "X-Internal-Api-Key: $KEY"
+# ⑤ 일반 USER accountId → 403
+curl -s -o /dev/null -w "%{http_code}\n" -G "http://localhost:8081/internal/auth/admin-confluence-credential" -H "X-Internal-Api-Key: $KEY" --data-urlencode "adminUserId=<USER 계정 accountId>"
+# ⑥ 존재하지 않는 user → 404
+curl -s -o /dev/null -w "%{http_code}\n" -G "http://localhost:8081/internal/auth/admin-confluence-credential" -H "X-Internal-Api-Key: $KEY" --data-urlencode "adminUserId=no-such-user"
+```
+
+**✅ 체크포인트 (2026-06-16 실측)**
+
+| # | 경로 | 기대 |
+|---|---|---|
+| ① | 정상 | `200` `{accessToken, cloudId, siteUrl, expiresAt}` — **`refreshToken` 필드 없음**(구조적 차단). `cloudId`=`user_tokens.cloud_id`, `siteUrl`=`admin_atlassian_credential.site_url`, `expiresAt` KST `+09:00` |
+| ② / ③ | 키 없음 / 위조 | `401` (fail-closed) |
+| ④ | adminUserId 누락 | `400` |
+| ⑤ | 일반 USER | `403` "관리자 권한이 없는 계정입니다" |
+| ⑥ | 없는 user | `404` "사용자를 찾을 수 없습니다" |
+
+> Feature 6(admin-key activate/deactivate) 라이브 스모크는 `working-log.md` 2026-06-16 참조(실 Premium 사이트 activate `200`→deactivate `200` 한 사이클 통과).
 
 ## 9. 뒷정리
 
@@ -167,5 +211,5 @@ docker exec lina-mysql mysql -uroot -proot lina_auth -e \
 ## 한계 (이 스모크가 검증하지 않는 것)
 
 - `GET /api/users/me` — BFF 측 작업 (auth-server plan §교차 모듈 참조) 완료 후 전체 사이클 재확인
-- `/internal/*` credential·admin-key API — Feature 5·6 구현 후 본 러닝북 확장
+- `/internal/*` credential API(Feature 5) — §10 으로 확장(2026-06-16 통과). admin-key API(Feature 6) 라이브 스모크는 `working-log.md` 2026-06-16. 단 둘 다 **curl stand-in** — 실 Python Worker/BFF consumer 경유 end-to-end 는 4단계
 - `LINA_TOKEN_ENCRYPTION_KEY` 를 매번 새로 생성하므로 서버 재시작 간 기존 암호화 토큰 복호화 불가 — 스모크는 1세션 내 완료 전제
