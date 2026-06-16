@@ -4,7 +4,7 @@ spring:
       database: lina_test
       auto-index-creation: true
 
-# @DataMongoTest 는 de.flapdoodle.embed.mongo.spring30x 가 클래스패스에 있을 때
+# @DataMongoTest 는 de.flapdoodle.embed.mongo.spring4x 가 클래스패스에 있을 때
 # 임베디드 MongoDB(랜덤 포트)를 자동 기동하고 spring.data.mongodb.uri 를 주입한다.
 de:
   flapdoodle:

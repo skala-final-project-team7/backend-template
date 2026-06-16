@@ -61,8 +61,8 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-data-mongodb-test'
     testImplementation 'org.springframework.boot:spring-boot-webmvc-test'
     testImplementation 'org.springframework.security:spring-security-test'
-    // @DataMongoTest 용 임베디드 MongoDB (Spring Boot 3.x / Spring 6 호환 모듈)
-    testImplementation 'de.flapdoodle.embed:de.flapdoodle.embed.mongo.spring30x:4.22.0'
+    // @DataMongoTest 용 임베디드 MongoDB (Spring Boot 4.x 공식 모듈)
+    testImplementation 'de.flapdoodle.embed:de.flapdoodle.embed.mongo.spring4x:4.33.0'
     // ML Pipeline SSE 응답 모킹 (Feature 5에서 사용, 의존성은 본 Feature에서 선반영)
     testImplementation 'org.wiremock:wiremock-standalone:3.9.2'
 }
