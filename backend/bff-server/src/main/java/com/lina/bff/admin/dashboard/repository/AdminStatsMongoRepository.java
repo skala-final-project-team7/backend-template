@@ -40,6 +40,11 @@ public class AdminStatsMongoRepository {
     return mongoTemplate.count(query, Conversation.class);
   }
 
+  public long countActiveMessages() {
+    Query query = Query.query(Criteria.where("deletedAt").is(null));
+    return mongoTemplate.count(query, Message.class);
+  }
+
   public List<Message> findActiveMessagesBetween(Instant fromInclusive, Instant toExclusive) {
     Query query =
         Query.query(

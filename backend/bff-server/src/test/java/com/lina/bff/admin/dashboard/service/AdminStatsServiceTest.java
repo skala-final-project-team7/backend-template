@@ -41,7 +41,7 @@ class AdminStatsServiceTest {
                 message("m2", "conv-1", MessageRole.assistant, "2026-06-09T15:10:04Z"),
                 message("m3", "conv-2", MessageRole.user, "2026-06-10T04:30:00Z"),
                 message("m4", "conv-2", MessageRole.assistant, "2026-06-10T04:30:10Z")));
-    when(adminStatsMongoRepository.countActiveConversations()).thenReturn(7L);
+    when(adminStatsMongoRepository.countActiveMessages()).thenReturn(7L);
 
     AdminStatsResponse response = new AdminStatsService(adminStatsMongoRepository).getStats(query);
 
@@ -78,7 +78,7 @@ class AdminStatsServiceTest {
     when(adminStatsMongoRepository.findActiveMessagesBetween(
             Instant.parse("2026-06-09T15:00:00Z"), Instant.parse("2026-06-10T15:00:00Z")))
         .thenReturn(List.of());
-    when(adminStatsMongoRepository.countActiveConversations()).thenReturn(0L);
+    when(adminStatsMongoRepository.countActiveMessages()).thenReturn(0L);
 
     AdminStatsResponse response = new AdminStatsService(adminStatsMongoRepository).getStats(query);
 

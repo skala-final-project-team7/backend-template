@@ -42,7 +42,8 @@ public class AdminStatsService {
     List<Message> messages =
         adminStatsMongoRepository.findActiveMessagesBetween(
             query.timeRange().fromUtc(), query.timeRange().toUtc());
-    long totalConversations = adminStatsMongoRepository.countActiveConversations();
+    // "전체 대화수"는 채팅방 수가 아니라 전체 메시지 수로 표시한다(응답 필드명 totalConversations 유지).
+    long totalConversations = adminStatsMongoRepository.countActiveMessages();
     List<Message> userMessages = messages.stream().filter(this::isUserMessage).toList();
 
     return new AdminStatsResponse(
