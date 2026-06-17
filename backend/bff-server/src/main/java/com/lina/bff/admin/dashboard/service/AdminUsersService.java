@@ -4,6 +4,7 @@ import com.lina.bff.admin.dashboard.dto.AdminDashboardQuery;
 import com.lina.bff.admin.dashboard.dto.AdminUserSummaryResponse;
 import com.lina.bff.admin.dashboard.dto.AdminUsersResponse;
 import com.lina.bff.admin.dashboard.repository.AdminUserMongoRepository;
+import com.lina.bff.admin.dashboard.repository.AdminUserMongoRepository.AccessibleCounts;
 import com.lina.bff.admin.dashboard.repository.AdminUserPage;
 import com.lina.bff.admin.dashboard.repository.AdminUserReadRepository;
 import com.lina.bff.admin.dashboard.repository.AdminUserRow;
@@ -43,12 +44,19 @@ public class AdminUsersService {
         adminUserReadRepository.findUsers(
             query.pageRequest(), query.timeRange().fromUtc(), query.timeRange().toUtc());
     List<String> userIds = userPage.users().stream().map(AdminUserRow::userId).toList();
+    // "대화수" 항목은 채팅방 수가 아니라 메시지 수로 표시한다(응답 필드명은 conversationCount 유지).
     Map<String, Long> conversationCounts =
-        adminUserMongoRepository.countActiveConversationsByUserIds(userIds);
+        adminUserMongoRepository.countActiveMessagesByUserIds(userIds);
 
     List<AdminUserSummaryResponse> users =
         userPage.users().stream()
-            .map(user -> toResponse(user, conversationCounts.getOrDefault(user.userId(), 0L)))
+            .map(
+                user ->
+                    toResponse(
+                        user,
+                        conversationCounts.getOrDefault(user.userId(), 0L),
+                        adminUserMongoRepository.countAccessiblePages(
+                            user.userId(), user.groupIds())))
             .toList();
 
     return new AdminUsersResponse(
@@ -59,7 +67,9 @@ public class AdminUsersService {
         users);
   }
 
-  private AdminUserSummaryResponse toResponse(AdminUserRow user, long conversationCount) {
+  private AdminUserSummaryResponse toResponse(
+      AdminUserRow user, long conversationCount, AccessibleCounts accessible) {
+    AccessibleCounts counts = accessible == null ? AccessibleCounts.ZERO : accessible;
     return new AdminUserSummaryResponse(
         user.userId(),
         user.name(),
@@ -68,9 +78,9 @@ public class AdminUsersService {
         user.profileImageUrl(),
         toKst(user.lastLoginAt()),
         conversationCount,
-        0L,
-        0L,
-        0L);
+        counts.spaceCount(),
+        counts.pageCount(),
+        counts.attachmentCount());
   }
 
   private static ZonedDateTime toKst(java.time.Instant instant) {

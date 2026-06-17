@@ -6,7 +6,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Arrays;
+import java.util.Calendar;
 import java.util.List;
+import java.util.TimeZone;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -70,7 +73,7 @@ public class JdbcAdminUserReadRepository implements AdminUserReadRepository {
                        u.profile_image_url,
                        u.role,
                        u.last_login_at,
-                       count(ug.group_id) as group_count
+                       group_concat(distinct ug.group_id) as group_ids
                 from users u
                 left join user_groups ug on ug.user_key = u.user_key
                 group by u.user_key, u.user_id, u.email, u.name, u.profile_image_url,
@@ -87,7 +90,10 @@ public class JdbcAdminUserReadRepository implements AdminUserReadRepository {
   }
 
   private AdminUserRow mapUser(ResultSet resultSet, int rowNumber) throws SQLException {
-    Timestamp lastLoginAt = resultSet.getTimestamp("last_login_at");
+    // last_login_at 은 auth-server 가 UTC 로 저장한 DATETIME 이다. 타임존 미지정으로 읽으면 JVM
+    // 기본 타임존으로 해석돼 KST 환경에서 9시간 어긋난다 — UTC Calendar 로 명시 해석한다.
+    Timestamp lastLoginAt =
+        resultSet.getTimestamp("last_login_at", Calendar.getInstance(TimeZone.getTimeZone("UTC")));
     return new AdminUserRow(
         uuidFromBytes(resultSet.getBytes("user_key")),
         resultSet.getString("user_id"),
@@ -96,7 +102,18 @@ public class JdbcAdminUserReadRepository implements AdminUserReadRepository {
         resultSet.getString("profile_image_url"),
         resultSet.getString("role"),
         lastLoginAt == null ? null : lastLoginAt.toInstant(),
-        resultSet.getLong("group_count"));
+        parseGroupIds(resultSet.getString("group_ids")));
+  }
+
+  /** group_concat 결과("g1,g2,...") 를 리스트로. 그룹 없는 사용자는 null → 빈 리스트. */
+  private static List<String> parseGroupIds(String concatenated) {
+    if (concatenated == null || concatenated.isBlank()) {
+      return List.of();
+    }
+    return Arrays.stream(concatenated.split(","))
+        .map(String::trim)
+        .filter(value -> !value.isEmpty())
+        .toList();
   }
 
   private static UUID uuidFromBytes(byte[] bytes) {

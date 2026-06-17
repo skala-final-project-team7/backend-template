@@ -4,10 +4,13 @@ import com.lina.auth.jwt.JwtProvider;
 import com.lina.auth.oauth.dto.LoginTokenResponse;
 import com.lina.auth.oauth.dto.RefreshTokenRequest;
 import com.lina.auth.token.SessionService;
+import com.lina.common.exception.BizException;
+import com.lina.common.exception.ErrorCode;
 import com.lina.common.response.ApiResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.net.URI;
+import java.util.function.Consumer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -46,6 +49,9 @@ import org.springframework.web.util.UriComponentsBuilder;
 @Validated
 public class AuthController {
 
+  // FE-redirect 모드에서 권한 외 인증 실패(state 불일치·토큰 교환 실패 등)에 싣는 errorCode 값.
+  private static final String ERROR_AUTH_FAILED = "AUTH_FAILED";
+
   private final OAuthLoginService loginService;
   private final SessionService sessionService;
   private final JwtProvider jwtProvider;
@@ -83,23 +89,41 @@ public class AuthController {
   @GetMapping("/callback")
   public ResponseEntity<?> callback(
       @RequestParam @NotBlank String code, @RequestParam @NotBlank String state) {
-    LoginTokenResponse tokens = loginService.handleCallback(code, state);
+    // 기본(미설정): LINA 세션 토큰을 JSON 으로 반환한다(기존 계약, api-spec §4-1).
+    // 실패는 GlobalExceptionHandler 가 JSON 으로 처리한다.
     if (frontendCallbackUrl == null || frontendCallbackUrl.isBlank()) {
-      return ResponseEntity.ok(ApiResponse.success(tokens, "로그인 성공"));
+      return ResponseEntity.ok(ApiResponse.success(loginService.handleCallback(code, state), "로그인 성공"));
     }
-    URI location =
-        UriComponentsBuilder.fromUriString(frontendCallbackUrl)
-            .queryParam("accessToken", tokens.accessToken())
-            .queryParam("returnTo", resolveReturnTo(tokens.accessToken()))
-            .build()
-            .encode()
-            .toUri();
-    return ResponseEntity.status(HttpStatus.FOUND).location(location).build();
+    // SPA 핸드오프: 성공/실패를 모두 FE 콜백으로 302 한다(브라우저에 JSON 노출 금지).
+    try {
+      LoginTokenResponse tokens = loginService.handleCallback(code, state);
+      return redirectToFrontend(
+          builder ->
+              builder
+                  .queryParam("accessToken", tokens.accessToken())
+                  .queryParam("returnTo", resolveReturnTo(tokens.accessToken())));
+    } catch (BizException exception) {
+      // 관리자 게이트(403)는 FORBIDDEN, 그 외(state 불일치·토큰 교환 실패 등)는 AUTH_FAILED 로 전달.
+      String errorCode =
+          exception.getErrorCode() == ErrorCode.FORBIDDEN
+              ? ErrorCode.FORBIDDEN.getCode()
+              : ERROR_AUTH_FAILED;
+      return redirectToFrontend(builder -> builder.queryParam("errorCode", errorCode));
+    } catch (RuntimeException exception) {
+      return redirectToFrontend(builder -> builder.queryParam("errorCode", ERROR_AUTH_FAILED));
+    }
   }
 
   /** SPA 핸드오프 returnTo — 발급된 JWT 의 role 로 진입 지점을 정한다(ADMIN→/admin, 그 외→/chat). */
   private String resolveReturnTo(String accessToken) {
     return "ADMIN".equals(jwtProvider.verifyAccessToken(accessToken).role()) ? "/admin" : "/chat";
+  }
+
+  /** frontendCallbackUrl 에 쿼리를 더해 302 Location 을 만든다(accessToken/returnTo 또는 errorCode). */
+  private ResponseEntity<Void> redirectToFrontend(Consumer<UriComponentsBuilder> queryCustomizer) {
+    UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(frontendCallbackUrl);
+    queryCustomizer.accept(builder);
+    return ResponseEntity.status(HttpStatus.FOUND).location(builder.build().encode().toUri()).build();
   }
 
   /** Rotating refresh — 새 access/refresh 발급, 이전 refresh 무효화. 만료·무효 시 401(api-spec §4-1). */

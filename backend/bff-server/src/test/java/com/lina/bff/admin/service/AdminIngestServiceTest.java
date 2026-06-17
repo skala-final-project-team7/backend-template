@@ -19,15 +19,18 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.springframework.web.client.RestClient;
 
 class AdminIngestServiceTest {
 
   private final CurrentUserProvider currentUserProvider = Mockito.mock(CurrentUserProvider.class);
   private final AuthAdminKeyClient authAdminKeyClient = Mockito.mock(AuthAdminKeyClient.class);
   private final AdminIngestJobProducer jobProducer = Mockito.mock(AdminIngestJobProducer.class);
+  private final RestClient dataIngestionRestClient = Mockito.mock(RestClient.class);
   private final Clock clock = Clock.fixed(Instant.parse("2026-06-11T00:00:00Z"), ZoneOffset.UTC);
   private final AdminIngestService service =
-      new AdminIngestService(currentUserProvider, authAdminKeyClient, jobProducer, clock);
+      new AdminIngestService(
+          currentUserProvider, authAdminKeyClient, jobProducer, clock, dataIngestionRestClient);
 
   @Test
   @DisplayName("/api/admin/ingest 서비스는 jobId 생성, Admin Key 활성화, RabbitMQ job 발행을 수행한다")

@@ -9,6 +9,7 @@ import com.lina.bff.admin.dashboard.dto.AdminDashboardQuery;
 import com.lina.bff.admin.dashboard.dto.AdminDashboardTimeRange;
 import com.lina.bff.admin.dashboard.dto.AdminUsersResponse;
 import com.lina.bff.admin.dashboard.repository.AdminUserMongoRepository;
+import com.lina.bff.admin.dashboard.repository.AdminUserMongoRepository.AccessibleCounts;
 import com.lina.bff.admin.dashboard.repository.AdminUserPage;
 import com.lina.bff.admin.dashboard.repository.AdminUserReadRepository;
 import com.lina.bff.admin.dashboard.repository.AdminUserRow;
@@ -47,9 +48,15 @@ class AdminUsersServiceTest {
             Instant.parse("2026-06-09T15:00:00Z"),
             Instant.parse("2026-06-10T15:00:00Z")))
         .thenReturn(new AdminUserPage(10L, 2L, users));
-    when(adminUserMongoRepository.countActiveConversationsByUserIds(
+    when(adminUserMongoRepository.countActiveMessagesByUserIds(
             List.of("712020:admin", "712020:user")))
         .thenReturn(Map.of("712020:admin", 3L, "712020:user", 1L));
+    when(adminUserMongoRepository.countAccessiblePages(
+            "712020:admin", List.of("group-1", "group-2")))
+        .thenReturn(new AccessibleCounts(7L, 71L, 4L));
+    when(adminUserMongoRepository.countAccessiblePages(
+            "712020:user", List.of("group-1", "group-2")))
+        .thenReturn(new AccessibleCounts(2L, 10L, 0L));
 
     AdminUsersResponse response =
         new AdminUsersService(adminUserReadRepository, adminUserMongoRepository).getUsers(query);
@@ -63,9 +70,9 @@ class AdminUsersServiceTest {
     assertThat(response.users().getFirst().lastAccessAt().toOffsetDateTime().toString())
         .isEqualTo("2026-06-10T10:30+09:00");
     assertThat(response.users().getFirst().conversationCount()).isEqualTo(3);
-    assertThat(response.users().getFirst().accessibleSpaceCount()).isZero();
-    assertThat(response.users().getFirst().accessiblePageCount()).isZero();
-    assertThat(response.users().getFirst().accessibleAttachmentCount()).isZero();
+    assertThat(response.users().getFirst().accessibleSpaceCount()).isEqualTo(7);
+    assertThat(response.users().getFirst().accessiblePageCount()).isEqualTo(71);
+    assertThat(response.users().getFirst().accessibleAttachmentCount()).isEqualTo(4);
   }
 
   @Test
@@ -78,7 +85,7 @@ class AdminUsersServiceTest {
             Instant.parse("2026-06-09T15:00:00Z"),
             Instant.parse("2026-06-10T15:00:00Z")))
         .thenReturn(new AdminUserPage(0L, 0L, List.of()));
-    when(adminUserMongoRepository.countActiveConversationsByUserIds(List.of()))
+    when(adminUserMongoRepository.countActiveMessagesByUserIds(List.of()))
         .thenReturn(Map.of());
 
     AdminUsersResponse response =
@@ -108,6 +115,6 @@ class AdminUsersServiceTest {
         "https://example.com/avatar.png",
         role,
         Instant.parse(lastLoginAt),
-        2L);
+        List.of("group-1", "group-2"));
   }
 }
