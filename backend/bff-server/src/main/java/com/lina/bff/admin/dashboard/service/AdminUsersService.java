@@ -44,8 +44,9 @@ public class AdminUsersService {
         adminUserReadRepository.findUsers(
             query.pageRequest(), query.timeRange().fromUtc(), query.timeRange().toUtc());
     List<String> userIds = userPage.users().stream().map(AdminUserRow::userId).toList();
+    // "대화수" 항목은 채팅방 수가 아니라 메시지 수로 표시한다(응답 필드명은 conversationCount 유지).
     Map<String, Long> conversationCounts =
-        adminUserMongoRepository.countActiveConversationsByUserIds(userIds);
+        adminUserMongoRepository.countActiveMessagesByUserIds(userIds);
 
     List<AdminUserSummaryResponse> users =
         userPage.users().stream()

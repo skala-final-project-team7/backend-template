@@ -1,6 +1,7 @@
 package com.lina.bff.admin.dashboard.repository;
 
 import com.lina.bff.chat.entity.Conversation;
+import com.lina.bff.chat.entity.Message;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -129,4 +130,64 @@ public class AdminUserMongoRepository {
   }
 
   private record UserConversationCount(String userId, long count) {}
+
+  /**
+   * 사용자별 활성 메시지 수. messages 에는 userId 가 없으므로, 사용자의 활성 대화(conversations)를
+   * 거쳐 conversationId → 메시지 수를 집계해 userId 로 합산한다(soft delete 제외).
+   */
+  public Map<String, Long> countActiveMessagesByUserIds(List<String> userIds) {
+    if (userIds.isEmpty()) {
+      return Collections.emptyMap();
+    }
+    List<String> deduplicatedUserIds = userIds.stream().distinct().collect(Collectors.toList());
+    Map<String, Long> messageCounts = new HashMap<>();
+    for (int offset = 0; offset < deduplicatedUserIds.size(); offset += USER_ID_BATCH_SIZE) {
+      int end = Math.min(offset + USER_ID_BATCH_SIZE, deduplicatedUserIds.size());
+      countActiveMessagesByUserIdsBatch(deduplicatedUserIds.subList(offset, end))
+          .forEach((userId, count) -> messageCounts.merge(userId, count, Long::sum));
+    }
+    return messageCounts;
+  }
+
+  private Map<String, Long> countActiveMessagesByUserIdsBatch(List<String> userIds) {
+    if (userIds.isEmpty()) {
+      return Collections.emptyMap();
+    }
+    // 1) 사용자 활성 대화 → conversationId → userId 매핑
+    Query conversationQuery =
+        new Query(Criteria.where("deletedAt").is(null).and("userId").in(userIds));
+    Map<String, String> conversationToUser = new HashMap<>();
+    for (Conversation conversation : mongoTemplate.find(conversationQuery, Conversation.class)) {
+      conversationToUser.put(conversation.getConversationId(), conversation.getUserId());
+    }
+    if (conversationToUser.isEmpty()) {
+      return Collections.emptyMap();
+    }
+    // 2) conversationId 별 활성 메시지 수
+    Aggregation aggregation =
+        Aggregation.newAggregation(
+            Aggregation.match(
+                Criteria.where("deletedAt")
+                    .is(null)
+                    .and("conversationId")
+                    .in(conversationToUser.keySet())),
+            Aggregation.group("conversationId").count().as("count"),
+            Aggregation.project("count").and("_id").as("conversationId"));
+    AggregationResults<ConversationMessageCount> results =
+        mongoTemplate.aggregate(
+            aggregation,
+            mongoTemplate.getCollectionName(Message.class),
+            ConversationMessageCount.class);
+    // 3) userId 로 합산
+    Map<String, Long> perUser = new HashMap<>();
+    for (ConversationMessageCount row : results.getMappedResults()) {
+      String userId = conversationToUser.get(row.conversationId());
+      if (userId != null) {
+        perUser.merge(userId, row.count(), Long::sum);
+      }
+    }
+    return perUser;
+  }
+
+  private record ConversationMessageCount(String conversationId, long count) {}
 }

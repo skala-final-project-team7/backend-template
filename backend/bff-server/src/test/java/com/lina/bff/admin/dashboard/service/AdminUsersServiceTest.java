@@ -48,7 +48,7 @@ class AdminUsersServiceTest {
             Instant.parse("2026-06-09T15:00:00Z"),
             Instant.parse("2026-06-10T15:00:00Z")))
         .thenReturn(new AdminUserPage(10L, 2L, users));
-    when(adminUserMongoRepository.countActiveConversationsByUserIds(
+    when(adminUserMongoRepository.countActiveMessagesByUserIds(
             List.of("712020:admin", "712020:user")))
         .thenReturn(Map.of("712020:admin", 3L, "712020:user", 1L));
     when(adminUserMongoRepository.countAccessiblePages(
@@ -85,7 +85,7 @@ class AdminUsersServiceTest {
             Instant.parse("2026-06-09T15:00:00Z"),
             Instant.parse("2026-06-10T15:00:00Z")))
         .thenReturn(new AdminUserPage(0L, 0L, List.of()));
-    when(adminUserMongoRepository.countActiveConversationsByUserIds(List.of()))
+    when(adminUserMongoRepository.countActiveMessagesByUserIds(List.of()))
         .thenReturn(Map.of());
 
     AdminUsersResponse response =
