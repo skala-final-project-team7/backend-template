@@ -54,6 +54,10 @@ logging:
     com.lina: INFO
 
 lina:
+  frontend:
+    # 설정 시 /api/auth/callback 이 JSON 대신 이 FE 라우트로 302(SPA 핸드오프, accessToken/returnTo 쿼리).
+    # 미설정(기본)이면 LINA 세션 토큰을 JSON 으로 반환 — 기존 계약 유지(api-spec §4-1).
+    callback-url: ${FRONTEND_CALLBACK_URL:}
   oauth:
     confluence:
       client-id: ${CONFLUENCE_CLIENT_ID:}

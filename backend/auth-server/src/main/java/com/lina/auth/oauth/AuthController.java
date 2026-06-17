@@ -1,5 +1,6 @@
 package com.lina.auth.oauth;
 
+import com.lina.auth.jwt.JwtProvider;
 import com.lina.auth.oauth.dto.LoginTokenResponse;
 import com.lina.auth.oauth.dto.RefreshTokenRequest;
 import com.lina.auth.token.SessionService;
@@ -7,6 +8,7 @@ import com.lina.common.response.ApiResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.net.URI;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.UriComponentsBuilder;
 
 /**
  *
@@ -45,10 +48,20 @@ public class AuthController {
 
   private final OAuthLoginService loginService;
   private final SessionService sessionService;
+  private final JwtProvider jwtProvider;
 
-  public AuthController(OAuthLoginService loginService, SessionService sessionService) {
+  // 설정 시 callback 이 JSON 대신 이 FE 라우트로 302(SPA 핸드오프). 미설정(기본)이면 JSON 반환 — 기존 계약 유지.
+  private final String frontendCallbackUrl;
+
+  public AuthController(
+      OAuthLoginService loginService,
+      SessionService sessionService,
+      JwtProvider jwtProvider,
+      @Value("${lina.frontend.callback-url:}") String frontendCallbackUrl) {
     this.loginService = loginService;
     this.sessionService = sessionService;
+    this.jwtProvider = jwtProvider;
+    this.frontendCallbackUrl = frontendCallbackUrl;
   }
 
   /** Atlassian authorize 화면으로 302 리다이렉트한다(AUTH-01). mode/returnTo 는 state 에 직렬화·보관. */
@@ -60,11 +73,33 @@ public class AuthController {
     return ResponseEntity.status(HttpStatus.FOUND).location(location).build();
   }
 
-  /** code/state 로 세션을 교환한다. 실패 매핑: state 불일치 400 / Confluence 오류 401 / admin 게이트 403. */
+  /**
+   * code/state 로 세션을 교환한다. 실패 매핑: state 불일치 400 / Confluence 오류 401 / admin 게이트 403.
+   *
+   * <p>lina.frontend.callback-url 미설정 시 LINA 세션 토큰을 JSON 으로 반환한다(기존 계약, api-spec §4-1).
+   * 설정 시 SPA 핸드오프를 위해 LINA 세션 accessToken 을 쿼리로 실어 FE 콜백 라우트로 302 한다. 노출 대상은
+   * LINA 세션 JWT 뿐이며 Confluence OAuth 토큰은 서버에 보관한다(auth-server CLAUDE §3.1).
+   */
   @GetMapping("/callback")
-  public ApiResponse<LoginTokenResponse> callback(
+  public ResponseEntity<?> callback(
       @RequestParam @NotBlank String code, @RequestParam @NotBlank String state) {
-    return ApiResponse.success(loginService.handleCallback(code, state), "로그인 성공");
+    LoginTokenResponse tokens = loginService.handleCallback(code, state);
+    if (frontendCallbackUrl == null || frontendCallbackUrl.isBlank()) {
+      return ResponseEntity.ok(ApiResponse.success(tokens, "로그인 성공"));
+    }
+    URI location =
+        UriComponentsBuilder.fromUriString(frontendCallbackUrl)
+            .queryParam("accessToken", tokens.accessToken())
+            .queryParam("returnTo", resolveReturnTo(tokens.accessToken()))
+            .build()
+            .encode()
+            .toUri();
+    return ResponseEntity.status(HttpStatus.FOUND).location(location).build();
+  }
+
+  /** SPA 핸드오프 returnTo — 발급된 JWT 의 role 로 진입 지점을 정한다(ADMIN→/admin, 그 외→/chat). */
+  private String resolveReturnTo(String accessToken) {
+    return "ADMIN".equals(jwtProvider.verifyAccessToken(accessToken).role()) ? "/admin" : "/chat";
   }
 
   /** Rotating refresh — 새 access/refresh 발급, 이전 refresh 무효화. 만료·무효 시 401(api-spec §4-1). */

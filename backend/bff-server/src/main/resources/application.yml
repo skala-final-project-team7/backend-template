@@ -58,6 +58,9 @@ lina:
   auth-server:
     base-url: ${AUTH_SERVER_BASE_URL:}
     request-timeout-ms: ${AUTH_SERVER_TIMEOUT_MS:30000}
+    # /internal/** 내부 호출자(service auth) 공유 키 — X-Internal-Api-Key 헤더로 주입.
+    # auth-server 의 lina.internal.api-key(INTERNAL_API_KEY)와 동일 값이어야 함. 미설정 시 헤더 미부착.
+    internal-api-key: ${INTERNAL_API_KEY:}
   admin:
     dashboard:
       data:
