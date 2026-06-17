@@ -5,6 +5,7 @@ import com.lina.bff.admin.client.dto.AdminKeyDeactivateRequest;
 import com.lina.common.exception.BizException;
 import com.lina.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -14,7 +15,12 @@ import org.springframework.web.client.RestClientException;
 @RequiredArgsConstructor
 public class AuthAdminKeyClient {
 
+  private static final String INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key";
+
   private final RestClient authServerRestClient;
+
+  @Value("${lina.internal.api-key:${RAG_INTERNAL_API_KEY:${INTERNAL_API_KEY:}}}")
+  private String internalApiKey;
 
   public void activate(String adminUserId, String jobId) {
     try {
@@ -22,6 +28,7 @@ public class AuthAdminKeyClient {
           .post()
           .uri("/internal/admin/key/activate")
           .contentType(MediaType.APPLICATION_JSON)
+          .header(INTERNAL_API_KEY_HEADER, internalApiKey == null ? "" : internalApiKey)
           .body(new AdminKeyActivateRequest(adminUserId, jobId))
           .retrieve()
           .toBodilessEntity();
@@ -36,6 +43,7 @@ public class AuthAdminKeyClient {
           .post()
           .uri("/internal/admin/key/deactivate")
           .contentType(MediaType.APPLICATION_JSON)
+          .header(INTERNAL_API_KEY_HEADER, internalApiKey == null ? "" : internalApiKey)
           .body(new AdminKeyDeactivateRequest(adminUserId, jobId))
           .retrieve()
           .toBodilessEntity();
