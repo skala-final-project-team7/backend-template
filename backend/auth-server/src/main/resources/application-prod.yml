@@ -6,6 +6,28 @@ logging:
     com.lina: INFO
     org.springframework: WARN
     org.springframework.security: WARN
+  structured:
+    format:
+      console: logstash
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+      # 민감 엔드포인트는 include 목록에 두지 않음. 환경이 늘어도 exclude로 차단.
+      exclude: env, heapdump, threaddump
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+    prometheus:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+      service: ${spring.application.name}
 
 spring:
   datasource:

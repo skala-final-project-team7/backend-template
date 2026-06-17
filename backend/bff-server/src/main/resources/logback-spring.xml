@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration scan="false">
+  <springProperty scope="context" name="ROOT_LOG_LEVEL" source="logging.level.root" defaultValue="INFO"/>
+  <springProperty scope="context" name="LINA_LOG_LEVEL" source="logging.level.com.lina" defaultValue="INFO"/>
+  <springProperty scope="context" name="SERVICE_NAME" source="spring.application.name" defaultValue="lina-bff-server"/>
+
+  <appender name="LOKI_JSON" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+      <customFields>{"service":"${SERVICE_NAME}"}</customFields>
+    </encoder>
+  </appender>
+
+  <root level="${ROOT_LOG_LEVEL}">
+    <appender-ref ref="LOKI_JSON"/>
+  </root>
+
+  <logger name="com.lina" level="${LINA_LOG_LEVEL}"/>
+</configuration>

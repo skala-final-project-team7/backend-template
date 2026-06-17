@@ -5,6 +5,9 @@ logging:
   level:
     com.lina: INFO
     org.springframework: WARN
+  structured:
+    format:
+      console: logstash
 
 spring:
   data:
@@ -12,6 +15,25 @@ spring:
       uri: ${MONGODB_URL:}
       database: ${MONGODB_DATABASE:}
       auto-index-creation: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+      # 민감 엔드포인트는 include 목록에 두지 않음. 환경이 늘어도 exclude로 차단.
+      exclude: env, heapdump, threaddump
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+    prometheus:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+      service: ${spring.application.name}
 
 lina:
   rag:

@@ -28,13 +28,14 @@ management:
       show-details: never
       probes:
         enabled: true
+    prometheus:
+      enabled: true
   metrics:
     tags:
       application: ${spring.application.name}
+      service: ${spring.application.name}
 
 logging:
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"
   level:
     root: INFO
     com.lina: INFO
