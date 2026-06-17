@@ -5,3 +5,38 @@ logging:
   level:
     com.lina: INFO
     org.springframework: WARN
+    org.springframework.security: WARN
+
+spring:
+  datasource:
+    url: ${MYSQL_URL:}
+    username: ${MYSQL_USERNAME:}
+    password: ${MYSQL_PASSWORD:}
+
+lina:
+  frontend:
+    callback-url: ${FRONTEND_CALLBACK_URL:}
+  oauth:
+    confluence:
+      client-id: ${CONFLUENCE_CLIENT_ID:}
+      client-secret: ${CONFLUENCE_CLIENT_SECRET:}
+      authorization-uri: ${CONFLUENCE_AUTHORIZATION_URI:}
+      token-uri: ${CONFLUENCE_TOKEN_URI:}
+      user-info-uri: ${CONFLUENCE_USER_INFO_URI:}
+      redirect-uri: ${CONFLUENCE_REDIRECT_URI:}
+      scopes: ${CONFLUENCE_SCOPES:}
+      api-base-uri: ${CONFLUENCE_API_BASE_URI:}
+      site-url: ${CONFLUENCE_SITE_URL:}
+    state-ttl-seconds: ${OAUTH_STATE_TTL_SECONDS:}
+  jwt:
+    issuer: ${LINA_JWT_ISSUER:}
+    private-key: ${LINA_JWT_PRIVATE_KEY:}
+    public-key: ${LINA_JWT_PUBLIC_KEY:}
+    access-token-ttl-seconds: ${LINA_JWT_ACCESS_TTL:}
+    refresh-token-ttl-seconds: ${LINA_JWT_REFRESH_TTL:}
+  token-encryption:
+    key: ${LINA_TOKEN_ENCRYPTION_KEY:}
+  internal:
+    api-key: ${INTERNAL_API_KEY:}
+  admin-key:
+    duration-minutes: ${ADMIN_KEY_DURATION_MINUTES:}

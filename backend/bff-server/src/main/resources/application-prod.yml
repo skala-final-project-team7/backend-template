@@ -6,8 +6,48 @@ logging:
     com.lina: INFO
     org.springframework: WARN
 
+spring:
+  data:
+    mongodb:
+      uri: ${MONGODB_URL:}
+      database: ${MONGODB_DATABASE:}
+      auto-index-creation: true
+
 lina:
   rag:
-    base-url: ${ML_PIPELINE_BASE_URL}
+    base-url: ${ML_PIPELINE_BASE_URL:}
+    request-timeout-ms: ${ML_PIPELINE_TIMEOUT_MS:}
+    sse-timeout-ms: ${ML_PIPELINE_SSE_TIMEOUT_MS:}
+    history-turns: ${ML_PIPELINE_HISTORY_TURNS:}
+  data-ingestion:
+    base-url: ${DATA_INGESTION_BASE_URL:${ML_PIPELINE_BASE_URL:}}
+    request-timeout-ms: ${DATA_INGESTION_TIMEOUT_MS:}
   auth-server:
-    base-url: ${AUTH_SERVER_BASE_URL}
+    base-url: ${AUTH_SERVER_BASE_URL:}
+    request-timeout-ms: ${AUTH_SERVER_TIMEOUT_MS:}
+    internal-api-key: ${INTERNAL_API_KEY:}
+  admin:
+    dashboard:
+      data:
+        vector-db-size: ${ADMIN_DASHBOARD_VECTOR_DB_SIZE:0 B}
+      mysql:
+        enabled: ${ADMIN_DASHBOARD_MYSQL_ENABLED:false}
+        jdbc-url: ${ADMIN_DASHBOARD_MYSQL_JDBC_URL:}
+        username: ${ADMIN_DASHBOARD_MYSQL_USERNAME:}
+        password: ${ADMIN_DASHBOARD_MYSQL_PASSWORD:}
+        maximum-pool-size: ${ADMIN_DASHBOARD_MYSQL_MAX_POOL_SIZE:5}
+    ingest:
+      rabbitmq:
+        ingest-exchange: ${ADMIN_INGEST_EXCHANGE:}
+        ingest-routing-key: ${ADMIN_INGEST_ROUTING_KEY:}
+        ingest-queue: ${ADMIN_INGEST_QUEUE:}
+        ingest-dlq: ${ADMIN_INGEST_DLQ:}
+        completion-queue: ${ADMIN_INGEST_COMPLETION_QUEUE:}
+        completion-dlq: ${ADMIN_INGEST_COMPLETION_DLQ:}
+        completion-retry-max-attempts: ${ADMIN_INGEST_COMPLETION_RETRY_MAX_ATTEMPTS:}
+        completion-retry-initial-interval-ms: ${ADMIN_INGEST_COMPLETION_RETRY_INITIAL_INTERVAL_MS:}
+        completion-retry-multiplier: ${ADMIN_INGEST_COMPLETION_RETRY_MULTIPLIER:}
+        completion-retry-max-interval-ms: ${ADMIN_INGEST_COMPLETION_RETRY_MAX_INTERVAL_MS:}
+  jwt:
+    issuer: ${LINA_JWT_ISSUER}
+    public-key: ${LINA_JWT_PUBLIC_KEY:}
