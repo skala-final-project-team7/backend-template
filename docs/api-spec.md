@@ -19,6 +19,7 @@
 | v2.5.0 | 2026-06-05 | **Admin Key 말소 흐름을 BFF polling watcher 에서 RabbitMQ completion event 기반으로 대체**. `/api/admin/ingest` 는 RabbitMQ 기반 비동기 수집 플로우로 정의한다. BFF 는 요청 수신 시 auth-server 내부 API 로 Admin Key 를 activate 한 뒤 BFF 또는 Data Ingestion Pipeline 을 통해 ingest job 을 RabbitMQ 에 발행하고, completion event consumer 가 `COMPLETED`/`FAILED` 이벤트를 consume 하면 auth-server `POST /internal/admin/key/deactivate` 를 호출한다. Data Ingestion Worker 는 MQ payload 에서 credential 을 받지 않고, `adminUserId` 로 auth-server 내부 credential 조회 API 를 호출해 admin OAuth `accessToken` + `cloudId` 를 함께 얻는다. RabbitMQ payload 는 `jobId`, `adminUserId`, `mode`, `status`, timestamp, error 요약 등 작업 식별/상태 정보만 포함하며 `accessToken`/`refreshToken`/`cloudId` 같은 Confluence credential set 을 포함하지 않는다. deactivate 대상은 OAuth token 이 아니라 Atlassian Admin Key 활성 상태이며, `jobId` 기준 중복 completion event 에 대해 idempotent 하게 처리한다. BFF 재시작/consumer 장애는 RabbitMQ durable queue 의 completion event 재처리로 복구하고, Admin Key 60분 TTL 은 최종 fallback 으로 유지한다. deactivate 실패는 초안 기준 최대 5회 재시도 후 DLQ 이동, DLQ 는 원인 조치 뒤 동일 event 재발행 또는 운영자 수동 deactivate 로 복구한다. **§2-5 에 Data Ingestion Worker → auth-server 내부 credential 조회 API 계약**(`GET /internal/auth/admin-confluence-credential`)을 추가했다. |
 | v2.6.0 | 2026-06-10 | **§2-1 `/ml/query` `userId`/`groups` 식별자 명세 정합화** — 3단계 확정(`userId`=Confluence accountId, `groups`=`groupId` 배열, Qdrant `allowed_groups` 정합)에 맞춰 필드 정의·예시를 정정. 예시값을 데모(`user-001`/group name `Cloud-Control-Center`) → 실제 형식(accountId `712020:...` / groupId)으로 교체하고, "2단계 데모는 `lina.demo.*` 고정값" 노트 추가. §4-1 `users/me`·§4-2 `admin/users` 응답 예시의 `userId` 도 accountId 로 통일. **ACL fail-closed 정책 변경**: `userId` 만 fail-closed, **`groups` 빈 배열 허용**(Confluence group 미소속 사용자도 `userId` 로 user-level/공개 페이지 매칭). (`docs/db-schema.md` §6.1·ADR 0001) |
 | v2.7.0 | 2026-06-12 | **§2-5 내부 credential 조회 API 에 `X-Internal-Api-Key` 헤더(내부 호출자 service auth) 추가** — auth-server Feature 5 구현 정합. Data Ingestion Worker 가 본 API 호출 시 `${INTERNAL_API_KEY}` 공유 키를 헤더로 보내야 하며, 누락/불일치 시 `401`·사용자 JWT 로는 `403`(fail-closed, 키 미설정 시 전부 거부). 기존 NetworkPolicy 와 **병행**하는 응용 계층 방어선. (auth-server `backend/auth-server/current-plans.md` Feature 5. ⚠️ Worker 측 헤더 송신 구현·키 공유는 Ingestion 팀과 합의 잔여) |
+| v2.8.0 | 2026-06-17 | **§4-1 `GET /api/auth/callback` FE-redirect 모드 추가** — 통합 테스트에서 SPA 핸드오프 누락(콜백이 브라우저에 JSON 그대로 노출, 비관리자 admin 로그인 시 403 JSON 노출) 확인·수정. 운영 설정 `lina.frontend.callback-url`(env `FRONTEND_CALLBACK_URL`) 설정 시 callback 이 JSON 대신 FE 콜백 라우트(`/auth/callback`)로 **302** 한다: 성공 `?accessToken={jwt}&returnTo={/chat\|/admin}`(`returnTo` 는 발급 JWT 의 `role` 로 결정 — ADMIN→`/admin`, 그 외→`/chat`), admin 게이트 거부 `?errorCode=FORBIDDEN`, 기타 인증 실패(state 불일치·code 무효·Confluence 오류) `?errorCode=AUTH_FAILED`. FE `AuthCallbackPage` 가 `accessToken` 보관 후 `returnTo` 라우팅·`errorCode` 면 `/login?error=...` 이동. **미설정(기본)이면 기존 JSON 계약 유지**(하위호환 — 비브라우저 호출자/테스트). 노출 대상은 LINA 세션 JWT 뿐, Confluence OAuth 토큰은 서버 보관(§4-1 불변). |
 
 ---
 
@@ -1020,6 +1021,21 @@ Confluence 인가 후 redirect_uri(FE 콜백 라우트)가 받은 `code`/`state`
 - FE 는 `accessToken` 을 보관해 이후 요청에 `Authorization: Bearer` 로 전송한다.
 
 **Response (실패)** — `state` 불일치는 `400`(`errorCode: INVALID_REQUEST`), `code` 무효·Confluence 오류는 `401`(`errorCode: UNAUTHORIZED`), **`mode=admin` 인데 `users.role != ADMIN`** 은 `403`(`errorCode: FORBIDDEN`, message: "관리자 권한이 없는 계정입니다"). 모든 실패 케이스에서 토큰을 발급하지 않는다.
+
+**응답 모드 — JSON vs FE-redirect (`lina.frontend.callback-url`)**
+
+callback 은 redirect_uri 가 받은 브라우저 top-level 네비게이션이므로, SPA 가 결과를 받으려면 응답을 FE 라우트로 돌려줘야 한다. 운영 설정 `lina.frontend.callback-url`(env `FRONTEND_CALLBACK_URL`)로 두 모드를 가지며, **어느 모드든 발급 토큰은 동일하고 Confluence OAuth 토큰은 응답에 포함하지 않는다**(서버 보관, §4-1 불변).
+
+- **미설정(기본)** — 위 JSON 봉투를 그대로 반환한다(성공 200 / 실패 4xx). 비브라우저 호출자·테스트 계약용.
+- **설정 시 (SPA 핸드오프)** — 브라우저에 JSON 을 노출하지 않고 FE 콜백 라우트로 **302** 한다. 결과는 `Location` 쿼리로 전달한다:
+
+  | 결과 | `Location` |
+  |------|-----------|
+  | 성공 | `{frontend-callback-url}?accessToken={jwt}&returnTo={/chat\|/admin}` |
+  | 권한 부족(admin 게이트 403) | `{frontend-callback-url}?errorCode=FORBIDDEN` |
+  | 기타 인증 실패(state 불일치·`code` 무효·Confluence 오류 등) | `{frontend-callback-url}?errorCode=AUTH_FAILED` |
+
+  `returnTo` 는 발급 JWT 의 `role` 로 결정한다(ADMIN→`/admin`, 그 외→`/chat`). FE `AuthCallbackPage` 는 `accessToken` 을 보관(localStorage)한 뒤 `returnTo` 로 라우팅하고, `errorCode` 가 있으면 `/login?error={FORBIDDEN|AUTH_FAILED}` 로 이동한다. 노출되는 토큰은 **LINA 세션 JWT** 뿐이다.
 
 ### `POST /api/auth/refresh`
 
