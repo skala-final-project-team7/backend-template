@@ -7,7 +7,9 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.List;
+import java.util.TimeZone;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -88,7 +90,10 @@ public class JdbcAdminUserReadRepository implements AdminUserReadRepository {
   }
 
   private AdminUserRow mapUser(ResultSet resultSet, int rowNumber) throws SQLException {
-    Timestamp lastLoginAt = resultSet.getTimestamp("last_login_at");
+    // last_login_at 은 auth-server 가 UTC 로 저장한 DATETIME 이다. 타임존 미지정으로 읽으면 JVM
+    // 기본 타임존으로 해석돼 KST 환경에서 9시간 어긋난다 — UTC Calendar 로 명시 해석한다.
+    Timestamp lastLoginAt =
+        resultSet.getTimestamp("last_login_at", Calendar.getInstance(TimeZone.getTimeZone("UTC")));
     return new AdminUserRow(
         uuidFromBytes(resultSet.getBytes("user_key")),
         resultSet.getString("user_id"),
