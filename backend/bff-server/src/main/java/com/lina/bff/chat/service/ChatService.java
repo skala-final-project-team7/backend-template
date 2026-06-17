@@ -28,6 +28,7 @@ import java.util.function.Consumer;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.task.TaskExecutor;
+import org.springframework.security.concurrent.DelegatingSecurityContextRunnable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -99,7 +100,7 @@ public class ChatService {
     AtomicBoolean terminalEventSent = new AtomicBoolean(false);
     emitter.onTimeout(
         () -> sendMlErrorThenComplete(emitter, terminalEventSent, RagClient.ML_TIMEOUT));
-    chatSseTaskExecutor.execute(
+    Runnable relayTask =
         () -> {
           try {
             relayRagQuery(
@@ -120,7 +121,10 @@ public class ChatService {
           } catch (RuntimeException exception) {
             emitter.completeWithError(exception);
           }
-        });
+        };
+    // 중계는 별도(virtual) 스레드에서 실행된다. JWT 인증 필터가 요청 스레드에 적재한 SecurityContext 를
+    // 위임 래핑으로 전파해, relayRagQuery 의 ACL(userId/groups) 조회가 executor 스레드에서도 동작하게 한다.
+    chatSseTaskExecutor.execute(new DelegatingSecurityContextRunnable(relayTask));
     return emitter;
   }
 
