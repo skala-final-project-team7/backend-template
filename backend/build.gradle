@@ -24,6 +24,14 @@ allprojects {
 
     repositories {
         mavenCentral()
+        maven {
+            name = 'Maven Central Fallback'
+            url = uri('https://repo.maven.apache.org/maven2')
+        }
+        maven {
+            name = 'Maven Central Mirror'
+            url = uri('https://repo1.maven.org/maven2')
+        }
     }
 }
 

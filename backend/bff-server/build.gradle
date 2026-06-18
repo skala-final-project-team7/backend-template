@@ -41,7 +41,7 @@ dependencies {
     // /actuator/prometheus 노출용 (런타임에만 필요)
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
     // Loki 수집을 위한 구조화 로그 출력(JSON) 지원
-    implementation 'net.logstash.logback:logstash-logback-encoder:7.4.1'
+    implementation 'net.logstash.logback:logstash-logback-encoder:7.4'
 
     implementation 'org.springframework.boot:spring-boot-starter-security'
 
