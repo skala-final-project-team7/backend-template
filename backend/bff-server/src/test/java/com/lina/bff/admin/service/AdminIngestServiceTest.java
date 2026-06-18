@@ -76,7 +76,9 @@ class AdminIngestServiceTest {
         new AuthAdminKeyClient.AuthAdminKeyException(
             "Failed to activate Admin Key", new RuntimeException("boom"));
 
-    org.mockito.Mockito.doThrow(ex).when(authAdminKeyClient).activate(eq("admin-account-id"), org.mockito.Mockito.any());
+    org.mockito.Mockito.doThrow(ex)
+        .when(authAdminKeyClient)
+        .activate(eq("admin-account-id"), org.mockito.Mockito.any());
 
     assertThatThrownBy(() -> service.startIngest(new AdminIngestRequest("full")))
         .isInstanceOf(AuthAdminKeyClient.AuthAdminKeyException.class)

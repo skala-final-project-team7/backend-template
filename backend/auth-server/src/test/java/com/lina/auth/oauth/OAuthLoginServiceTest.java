@@ -143,7 +143,7 @@ class OAuthLoginServiceTest {
     given(jwtProvider.issueAccessToken(any())).willReturn("lina-access");
     given(jwtProvider.issueRefreshToken(ACCOUNT_ID)).willReturn("lina-refresh");
 
-    LoginTokenResponse response = service().handleCallback("auth-code-1", "state-123");
+    LoginTokenResponse response = service().handleCallback("auth-code-1", "state-123").tokens();
 
     assertThat(response.accessToken()).isEqualTo("lina-access");
     assertThat(response.refreshToken()).isEqualTo("lina-refresh");
@@ -186,7 +186,7 @@ class OAuthLoginServiceTest {
     given(jwtProvider.issueAccessToken(any())).willReturn("lina-access");
     given(jwtProvider.issueRefreshToken(ACCOUNT_ID)).willReturn("lina-refresh");
 
-    LoginTokenResponse response = service().handleCallback("auth-code-1", "state-123");
+    LoginTokenResponse response = service().handleCallback("auth-code-1", "state-123").tokens();
 
     assertThat(List.of(response.accessToken(), response.refreshToken(), response.expiresAt()))
         .noneMatch(value -> value.contains("conf-access") || value.contains("conf-refresh"));
@@ -220,6 +220,43 @@ class OAuthLoginServiceTest {
     assertThat(existing.getAccessToken()).isEqualTo("lina-access");
     assertThat(existing.getRefreshToken()).isEqualTo("lina-refresh");
     verify(userGroupRepository).deleteByUserKey(existing.getUserKey());
+  }
+
+  @Test
+  @DisplayName("callback: 사용자 로그인(mode!=admin)은 ADMIN 계정이라도 returnTo=/chat 을 반환한다")
+  void shouldReturnChatForUserModeEvenWhenAdmin() {
+    User admin =
+        User.builder().userId(ACCOUNT_ID).email("dayeon@example.com").role(UserRole.ADMIN).build();
+    stubHappyExternalCalls(List.of(resource("cloud-1", "https://team.atlassian.net")));
+    given(userRepository.findByUserId(ACCOUNT_ID)).willReturn(Optional.of(admin));
+    given(oauthClient.fetchGroupIds(anyString(), anyString(), anyString())).willReturn(List.of());
+    given(jwtProvider.issueAccessToken(any())).willReturn("lina-access");
+    given(jwtProvider.issueRefreshToken(ACCOUNT_ID)).willReturn("lina-refresh");
+
+    OAuthLoginService.CallbackOutcome outcome =
+        service().handleCallback("auth-code-1", "state-123");
+
+    assertThat(outcome.returnTo()).isEqualTo("/chat");
+    assertThat(outcome.tokens().accessToken()).isEqualTo("lina-access");
+  }
+
+  @Test
+  @DisplayName("callback: 관리자 로그인(mode=admin)은 returnTo=/admin 을 반환한다")
+  void shouldReturnAdminForAdminMode() {
+    User admin =
+        User.builder().userId(ACCOUNT_ID).email("dayeon@example.com").role(UserRole.ADMIN).build();
+    stubHappyExternalCalls(List.of(resource("cloud-1", "https://team.atlassian.net")));
+    given(stateService.consume("state-123"))
+        .willReturn(new OAuthStateService.StateData("admin", "/admin"));
+    given(userRepository.findByUserId(ACCOUNT_ID)).willReturn(Optional.of(admin));
+    given(oauthClient.fetchGroupIds(anyString(), anyString(), anyString())).willReturn(List.of());
+    given(jwtProvider.issueAccessToken(any())).willReturn("lina-access");
+    given(jwtProvider.issueRefreshToken(ACCOUNT_ID)).willReturn("lina-refresh");
+
+    OAuthLoginService.CallbackOutcome outcome =
+        service().handleCallback("auth-code-1", "state-123");
+
+    assertThat(outcome.returnTo()).isEqualTo("/admin");
   }
 
   @Test
@@ -315,7 +352,7 @@ class OAuthLoginServiceTest {
     given(jwtProvider.issueAccessToken(any())).willReturn("lina-access");
     given(jwtProvider.issueRefreshToken(ACCOUNT_ID)).willReturn("lina-refresh");
 
-    LoginTokenResponse response = service().handleCallback("auth-code-1", "state-123");
+    LoginTokenResponse response = service().handleCallback("auth-code-1", "state-123").tokens();
 
     assertThat(response.accessToken()).isEqualTo("lina-access");
     verify(jwtProvider).issueAccessToken(claimsCaptor.capture());

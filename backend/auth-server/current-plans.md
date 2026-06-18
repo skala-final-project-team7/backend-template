@@ -12,6 +12,7 @@
 |---|---|---|
 | 1단계 | 프로젝트 초기 셋업 (패키지 구조, 설정, 공통 응답/예외) | ✅ 완료 (2026-05-15, `backend/bff-server/current-plans.md` 1단계 공동 작업) |
 | 3단계 | Confluence OAuth 2.0 Authorization Code Flow + Access/Refresh Token 암호화 저장 + JWT 발급 | 🚧 진행 — Feature 0(게이트)·1(영속)·2(JWT)·3(login/callback)·4(세션)·5(credential 조회)·**6(admin-key activate/deactivate)** 코드 **구현 완료**(F6=내부 API + WireMock 단위까지, 외부 연동 통합은 4단계). **Feature 7**(보안 운영) 코드 항목 완료 — 미체크 2건은 인프라/해당없음(`/internal/**` NetworkPolicy 병행=k8s, RabbitMQ payload=auth-server 비발행). **Feature 8(검증) 완료 + 3단계 Done Definition 전 항목 검증·체크(2026-06-16, `:auth-server:test` 152건 통과·spotless/checkstyle clean·item 5 만 실 Worker 연동 4단계 잔여로 부분완료)**. admin seed(`AdminSeeder` ApplicationRunner) **구현 완료(06-15)**. admin seed env 주입 후 bootRun 라이브 스모크 — **Feature 5(credential 조회)·6(admin-key)·OAuth 전 사이클 통과(2026-06-16, 실 Atlassian·curl stand-in)**. users/me(BFF) 라이브 스모크 **완료(2026-06-16, §검증 라이브 스모크 항목)**. 실 연동 잔여: `X-Internal-Api-Key`↔Ingestion 합의·실 Python Worker/BFF consumer end-to-end(4단계)·seed accountId realm 접두사 검증(별도 코드 작업). (게이트 종료 2026-06-10 하이브리드, 착수 전 결정 6건 전부 확정) |
+| 4단계 | Confluence 미리보기 내부 프록시 (`GET /internal/auth/confluence/pages/preview`) — 사용자 OAuth 토큰으로 페이지 조회·매핑 | ✅ **Feature P1/P2 구현+라이브 검증 완료(2026-06-18)** — auth-server P2(v2 pages/spaces 조회·매핑·refresh·에러매핑) + BFF P1(공개 endpoint) + 단위/WireMock/MockMvc 테스트, `verify.sh` 통과. **실 Confluence 라이브 200 확인**(granular 재로그인 사용자). v1→v2 전환 사유·degrade(breadcrumbs/author)는 `docs/api-spec.md` v2.8.2. 본 파일 하단 `# 4단계` Feature P2 참조 |
 
 ---
 
@@ -394,3 +395,37 @@
 | admin seed 방식 (로그인 전 사전 주입) | admin 정보를 **로그인 전에 DB 에 미리 채운다**. **`AdminSeeder`(`ApplicationRunner`)가 부팅 시 멱등 INSERT** — ① `users`(role=ADMIN·email·name·accountId, `access_token='ADMIN_PLACEHOLDER'` NOT NULL 유지·첫 로그인 시 덮어씀), ② `admin_atlassian_credential`(site_url + 평문 api-token→저장 시 `TokenCipher` 암호화, 암호문 git 미포함), ③ `user_tokens`(OAuth)=**로그인 산물**(seed 아님). 설정원: **전부 env 주입**(`lina.admin-seed.*` — admin 식별정보를 git 에 안 남기고 k8s Secret/ConfigMap 한 묶음으로 관리, api-token 은 secret). **Flyway SQL 미사용** — `admin_atlassian_credential` 은 site_url+api_token_enc 가 한 행인데 api_token 이 암호화 컬럼이라 평문 SQL 로 그 행을 못 만든다(seeder 불가피). 행/미설정 시 skip. 결과: **Feature 6**(admin-key)은 사전 seed 만으로 동작, **Feature 5**(credential 조회)는 admin 1회 로그인 후 동작. 구현 완료 2026-06-15. (`docs/db-schema.md` §6.1·§6.4) | 2026-06-12 (구현 06-15) |
 | Admin Key activate TTL·요청 계약 | activate 는 `durationInMinutes` **60분(최대값)** 으로 요청(설정 외부화) — BFF 운영 문서(4단계 Feature 1)의 "60분 TTL = 최종 fallback" 전제 정합, 기본 10분이면 장기 수집 중 키 만료 → 제한 페이지 silent 404 누락. 요청 body 는 activate/deactivate 모두 `{ adminUserId, jobId }`(PR #21 선머지된 BFF `AuthAdminKeyClient` 계약). deactivate 중복 `jobId` 는 Atlassian DELETE 재호출 없이 2xx(in-memory jobId store, 단일 인스턴스 전제) | 2026-06-12 |
 | (예정) Refresh Token 갱신 정책 | LINA 세션 refresh = Rotating(Feature 4). Confluence refresh = AUTH-03 Rotating(Feature 5). 저장/TTL 세부는 Feature 2/4 착수 시 확정 | — |
+
+---
+
+# 4단계 — Confluence 미리보기 내부 프록시
+
+> 출처 hover 미리보기(`docs/api-spec.md` §4-3)의 **백엔드 데이터 소스**. FE 는 이미 구현됨(`ReferencePanel.vue` hover → `GET /api/confluence/pages/preview`).
+> **호출 주체 결정**: api-spec §4-3 의 TBD((a) BFF 직접 vs (b) auth-server 프록시)를 **(b) auth-server 프록시**로 확정한다.
+> Confluence OAuth 토큰은 `user_tokens`(auth-server) 에만 있고, 복호화(`TokenCipher`)·refresh(`AtlassianOAuthClient.refreshAccessToken`)·Confluence 호출 클라이언트가 전부 auth-server 에 있으므로 **토큰이 auth-server 밖으로 나가지 않게** 본 모듈이 Confluence 를 호출해 매핑된 DTO 만 BFF 에 반환한다. BFF 는 Confluence 토큰을 보유/노출하지 않는다(`backend/CLAUDE.md` §6, 본 파일 §확정된 결정 'admin Confluence access 패턴'과 동일 원칙).
+
+## Feature P2. 내부 미리보기 프록시 (`GET /internal/auth/confluence/pages/preview`)
+
+목표: 사용자별 저장 OAuth 토큰으로 Confluence 페이지를 조회해 §4-3 미리보기 DTO(`pageId`/`title`/`spaceName`/`authorName`/`updatedAt`/`breadcrumbs[]`/`pageUrl`/`bodyViewValue`) 로 매핑·반환하는 **내부 전용**(`X-Internal-Api-Key`) 엔드포인트. BFF Feature P1 의 선행 의존.
+
+### 변경 대상 파일
+- `auth-server/src/main/java/com/lina/auth/internal/InternalConfluencePreviewController.java` — 신규(또는 기존 `InternalCredentialController` 확장). `GET /internal/auth/confluence/pages/preview?pageId=&userId=`, `X-Internal-Api-Key` 가드(기존 internal 정책 동일)
+- `auth-server/src/main/java/com/lina/auth/oauth/AtlassianOAuthClient.java` — `fetchPageV2`/`fetchSpaceV2` 추가(v2 API) + `oauth/dto/ConfluencePageV2Response`·`ConfluenceSpaceV2Response` 신규
+- `auth-server/src/main/java/com/lina/auth/...` — 사용자 토큰 확보+refresh 서비스(기존 `user_tokens` 조회·`TokenCipher` 복호화·`refreshAccessToken`·재저장 재사용; `admin-confluence-credential`(Feature 5) 경로 일반화) + 미리보기 매핑/DTO
+- `auth-server/src/main/resources/application*.yml` — 추가 설정 없음(기존 OAuth client/`INTERNAL_API_KEY` 재사용). Confluence base(`/ex/confluence/{cloudId}/wiki`)는 기존 클라이언트 설정 사용
+- `auth-server/src/test/java/com/lina/auth/...` — WireMock(Confluence 200/404/403/5xx)·토큰 refresh·매핑·키 가드 테스트
+- `docs/api-spec.md` — §4-3 TBD 를 "(b) auth-server 프록시 확정"으로 갱신
+
+### 체크리스트
+- [x] 내부 엔드포인트 `GET /internal/auth/confluence/pages/preview?pageId=&userId=` 추가, `X-Internal-Api-Key` 누락/불일치 `401`(fail-closed, 사용자 JWT 로는 `403` — Feature 5 와 동일 정책) — 2026-06-18 구현: `InternalConfluencePreviewController`. `/internal/auth/**` 라 기존 `InternalApiKeyFilter` 로 자동 가드(SecurityConfig 수정 없음). `InternalConfluencePreviewControllerTest` 키 없음·위조 키 401 검증
+- [x] `userId`(accountId) → `UserToken` 조회 → `TokenCipher` 복호화, `access_token_expires_at` 만료 시 `AtlassianOAuthClient.refreshAccessToken` 후 재저장(AES-GCM). 토큰 행 없음(미로그인 사용자) → 정책값(`404`/`401`) 확정 — 2026-06-18 구현: `InternalConfluencePreviewService`(Feature 5 패턴 재사용, 트랜잭션 밖 refresh→DB 갱신만 tx). 복호화는 `UserToken` `@Convert(TokenCipher)` 가 자동 수행. **토큰 행 없음 → `404 RESOURCE_NOT_FOUND` 로 확정**
+- [x] `AtlassianOAuthClient` v2 조회 메서드 — 2026-06-18 구현: **v1 content API 가 아니라 v2 사용**. 라이브 검증 결과 발급 토큰 scope 가 granular(`read:page:confluence`)이고 v1 classic(`/rest/api/content/{id}`)은 동일 토큰에 `401 "scope does not match"` → granular 은 v2 에서만 통함. `fetchPageV2(accessToken, cloudId, pageId)`=`GET /ex/confluence/{cloudId}/wiki/api/v2/pages/{pageId}?body-format=view`, `fetchSpaceV2(...)`=`GET /wiki/api/v2/spaces/{spaceId}`(spaceName 용). 메서드 추가(기존 시그니처 불변), `AtlassianOAuthClientTest` WireMock 으로 body-format·Bearer·404/403/5xx 검증. (`.env` `CONFLUENCE_SCOPES` 에 `read:page:confluence read:space:confluence` 추가 + 재로그인 선행)
+- [x] 매핑 — 2026-06-18 구현: `ConfluencePageV2Response`+`ConfluenceSpaceV2Response`(@JsonIgnoreProperties) → `ConfluencePagePreviewResponse`. `title`, v2 `space.name`→`spaceName`, `version.createdAt`→`updatedAt`(KST ISO-8601 offset), `_links.base`+`_links.webui`→`pageUrl`, `body.view.value`→`bodyViewValue`. **v2 한계로 2개 필드 임시 degrade**: `breadcrumbs`=`[spaceName, title]`(중간 조상 생략 — v2 ancestors 가 별도 scope 요구), `authorName`=`null`(v2 는 authorId 만). 둘 다 후속 보강(parentId 순회·user 조회). `InternalConfluencePreviewServiceTest` 로 고정 + **라이브 200 검증**(2026-06-18, granular 재로그인 사용자, EKS 운영 페이지)
+- [x] **ACL 자연 강제**: 사용자 본인 토큰으로 호출하므로 접근 불가 페이지는 Confluence 가 `403/404` 반환 → 미리보기 `404`(존재 비노출). 별도 ACL 필터 미구현(불필요) — `ContentNotAccessibleException`(404·403 공통) → `404 RESOURCE_NOT_FOUND` 통일로 구현
+- [x] 에러 매핑: Confluence `404`→`404`, `403`→`404`(비노출 통일), `401`(토큰 invalid·refresh 실패)→정책값, `5xx`→`502` — 2026-06-18 구현: content 404·403→`RESOURCE_NOT_FOUND`, 그 외→`EXTERNAL_SERVICE_ERROR`(502), refresh `invalid_grant`→`UNAUTHORIZED`(401). 서비스·컨트롤러 테스트로 고정
+- [x] 응답에 OAuth access/refresh 토큰·평문 비밀 미포함(미리보기 DTO 만). 토큰 원문 로그 미기록(기존 마스킹 정책 준수) — `ConfluencePagePreviewResponse` 에 토큰 필드 없음(구조적 차단), 로그는 `userId` 식별자만. 컨트롤러 테스트가 응답 본문에 `accessToken` 문자열 부재 검증
+- [x] 테스트: 키 가드(`401`), 정상 `200`(필드 매핑), 만료 토큰 refresh 후 성공, 토큰 없음, Confluence `404`→`404`·`403`→`404`·`5xx`→`502` — 2026-06-18: client 4건 + service 7건 + controller 7건 신규, `./scripts/verify.sh`(format·lint·test) BUILD SUCCESSFUL, `:auth-server:test` 전체 회귀 통과
+
+### 문서
+- [x] 구현 완료 시 `docs/api-spec.md` §4-3 TBD → "(b) auth-server 프록시 확정 — 토큰 미노출, ACL 은 사용자 토큰으로 자연 강제" 갱신 — 2026-06-18 갱신(§4-3 처리 방식 + TBD 해소)
+- [x] BFF 공개 엔드포인트(Feature P1)는 `bff-server/current-plans.md` "Confluence 페이지 미리보기" 섹션에서 추적 — P1 은 미구현(본 P2 가 선행 의존, end-to-end 는 P1 완료 후)

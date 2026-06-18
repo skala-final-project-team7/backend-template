@@ -73,7 +73,9 @@ class AuthControllerTest {
   void shouldReturnLoginTokensOnCallback() throws Exception {
     given(loginService.handleCallback("auth-code-1", "state-123"))
         .willReturn(
-            new LoginTokenResponse("lina-access", "lina-refresh", "2026-06-12T19:00:00+09:00"));
+            new OAuthLoginService.CallbackOutcome(
+                new LoginTokenResponse("lina-access", "lina-refresh", "2026-06-12T19:00:00+09:00"),
+                "/chat"));
 
     mockMvc
         .perform(get("/api/auth/callback").param("code", "auth-code-1").param("state", "state-123"))

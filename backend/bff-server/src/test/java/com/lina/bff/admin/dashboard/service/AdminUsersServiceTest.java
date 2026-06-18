@@ -85,8 +85,7 @@ class AdminUsersServiceTest {
             Instant.parse("2026-06-09T15:00:00Z"),
             Instant.parse("2026-06-10T15:00:00Z")))
         .thenReturn(new AdminUserPage(0L, 0L, List.of()));
-    when(adminUserMongoRepository.countActiveMessagesByUserIds(List.of()))
-        .thenReturn(Map.of());
+    when(adminUserMongoRepository.countActiveMessagesByUserIds(List.of())).thenReturn(Map.of());
 
     AdminUsersResponse response =
         new AdminUsersService(adminUserReadRepository, adminUserMongoRepository).getUsers(query);

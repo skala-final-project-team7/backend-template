@@ -40,7 +40,8 @@ class AdminIngestControllerTest {
         .perform(
             post("/api/admin/ingest")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""
+                .content(
+                    """
                     {"mode":"full"}
                     """))
         .andExpect(status().isBadGateway())
