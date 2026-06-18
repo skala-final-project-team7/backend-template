@@ -21,6 +21,7 @@
 | v2.7.0 | 2026-06-12 | **§2-5 내부 credential 조회 API 에 `X-Internal-Api-Key` 헤더(내부 호출자 service auth) 추가** — auth-server Feature 5 구현 정합. Data Ingestion Worker 가 본 API 호출 시 `${INTERNAL_API_KEY}` 공유 키를 헤더로 보내야 하며, 누락/불일치 시 `401`·사용자 JWT 로는 `403`(fail-closed, 키 미설정 시 전부 거부). 기존 NetworkPolicy 와 **병행**하는 응용 계층 방어선. (auth-server `backend/auth-server/current-plans.md` Feature 5. ⚠️ Worker 측 헤더 송신 구현·키 공유는 Ingestion 팀과 합의 잔여) |
 | v2.8.0 | 2026-06-17 | **§4-1 `GET /api/auth/callback` FE-redirect 모드 추가** — 통합 테스트에서 SPA 핸드오프 누락(콜백이 브라우저에 JSON 그대로 노출, 비관리자 admin 로그인 시 403 JSON 노출) 확인·수정. 운영 설정 `lina.frontend.callback-url`(env `FRONTEND_CALLBACK_URL`) 설정 시 callback 이 JSON 대신 FE 콜백 라우트(`/auth/callback`)로 **302** 한다: 성공 `?accessToken={jwt}&returnTo={/chat\|/admin}`(`returnTo` 는 발급 JWT 의 `role` 로 결정 — ADMIN→`/admin`, 그 외→`/chat`), admin 게이트 거부 `?errorCode=FORBIDDEN`, 기타 인증 실패(state 불일치·code 무효·Confluence 오류) `?errorCode=AUTH_FAILED`. FE `AuthCallbackPage` 가 `accessToken` 보관 후 `returnTo` 라우팅·`errorCode` 면 `/login?error=...` 이동. **미설정(기본)이면 기존 JSON 계약 유지**(하위호환 — 비브라우저 호출자/테스트). 노출 대상은 LINA 세션 JWT 뿐, Confluence OAuth 토큰은 서버 보관(§4-1 불변). |
 | v2.8.1 | 2026-06-18 | **§4-1 callback `returnTo` 결정 기준을 `role` → 로그인 `mode` 로 변경** — v2.8.0 의 role 기반 라우팅은 ADMIN 계정이 **사용자 로그인(`mode` 생략)** 으로 들어와도 항상 `/admin` 으로 보내 일반 채팅 진입을 막았다. 이제 관리자 로그인(`mode=admin`)만 `/admin`, 사용자 로그인(`mode` 생략·기타값)은 **ADMIN 계정이라도 `/chat`** 으로 보낸다. `mode=admin`→`/admin` 은 admin 게이트가 `role==ADMIN` 을 이미 보장하므로 안전하고, `mode` 는 `state` 에 서버 보관돼 클라이언트 위조가 불가하다(라우팅 신호로 `role` 대신 사용해도 안전). FE(`authIntent`: 사용자=`returnTo=/chat`, 관리자=`mode=admin&returnTo=/admin`)·`AuthCallbackPage`(returnTo 우선 라우팅)는 이미 정합 — 본 변경은 backend 단독. JSON 모드·실패 매핑(400/401/403)·토큰 발급 계약 불변. |
+| v2.8.2 | 2026-06-18 | **§4-3 미리보기 데이터 소스를 Confluence v1 content → v2 pages API 로 변경 + (b) auth-server 프록시 구현 완료(Feature P1/P2)**. 라이브 검증 결과 현재 OAuth 토큰 scope 가 **granular**(`read:page:confluence`)이고, v1 classic API(`/rest/api/content/{id}`)는 동일 토큰에 `401 "scope does not match"` 를 반환함을 실측 — granular 은 v2 에서만 통한다. auth-server P2 가 v2 `GET /pages/{id}?body-format=view`(+ `GET /spaces/{spaceId}` 로 spaceName) 로 조회·매핑한다. **응답 필드 계약은 불변**(pageId/title/spaceName/authorName/updatedAt/breadcrumbs/pageUrl/bodyViewValue)이나 v2 한계로 **2개 필드가 임시 degrade**: `breadcrumbs`=`[spaceName, title]`(중간 조상 생략 — v2 ancestors 가 별도 scope 요구), `authorName`=`null`(v2 는 authorId 만). 둘 다 후속 보강(parentId 순회·user 조회). 사전 조건: Atlassian 앱에 granular scope 활성 + `CONFLUENCE_SCOPES` 에 `read:page:confluence read:space:confluence` 추가 후 **재로그인**(기존 토큰엔 미적용·refresh 로 scope 안 늘어남). 본문·제목·스페이스명·수정일·URL 은 정상 동작(라이브 200 확인). |
 
 ---
 
@@ -1271,13 +1272,13 @@ FE 는 보관한 access/refresh 토큰을 폐기하고, BFF 는 Authorization Se
 **처리 방식**
 
 - Frontend는 출처 목록 문서 hover 시 `pageId`를 담아 BFF에 요청한다.
-- BFF는 서버에 저장된 OAuth 토큰으로 Confluence REST API를 호출한다.
-- BFF는 Confluence 응답의 `body.view.value` HTML 문자열을 `bodyViewValue`로 변환해 반환한다.
-- BFF는 Confluence 응답의 `space.name`, `ancestors[].title`, `title`을 조합해 `breadcrumbs`를 파생한다.
+- BFF는 auth-server 내부 프록시(아래 확정 참조)를 호출하고, auth-server가 저장된 사용자 OAuth 토큰으로 Confluence **v2** API를 호출한다.
+- auth-server는 v2 `GET /pages/{id}?body-format=view` 응답의 `body.view.value`를 `bodyViewValue`로, `version.createdAt`을 `updatedAt`(KST)으로, `_links.base + _links.webui`를 `pageUrl`로, `title`을 그대로 매핑한다. `spaceName`은 `spaceId`로 v2 `GET /spaces/{id}`를 1회 더 조회해 `name`을 채운다.
+- `breadcrumbs`는 현재 `[spaceName, title]`로 구성한다(중간 조상 제목 생략). v2 ancestors 는 별도 scope(`read:page:confluence` 외)를 요구해 미부여 상태 — 추후 `parentId` 순회로 보강한다. `authorName`은 v2가 `authorId`만 제공하고 displayName 해석이 granular 모드에서 제약되어 현재 `null`(추후 user 조회로 보강).
 - Frontend는 `bodyViewValue`를 DOMPurify로 sanitize한 뒤 `v-html`로 렌더링한다.
 - 원본 열기 아이콘 클릭 시 `pageUrl`을 새 탭에서 연다.
 
-> **TBD (3단계에서 결정):** 저장된 OAuth 토큰으로 Confluence를 호출하는 주체 — (a) BFF가 토큰을 사용해 직접 호출 vs (b) Authorization Server 프록시. `backend/CLAUDE.md` §6(BFF는 Confluence 토큰을 직접 교환하지 않는다) / `docs/architecture.md`와 함께 3단계 착수 시 확정하고 본 절을 갱신한다.
+> **확정 (2026-06-18) = (b) Authorization Server 프록시.** 저장된 OAuth 토큰으로 Confluence를 호출하는 주체는 **auth-server**다. BFF는 Confluence 토큰을 보유/노출하지 않고(`backend/CLAUDE.md` §6) auth-server 내부 엔드포인트 `GET /internal/auth/confluence/pages/preview?pageId=&userId=`(X-Internal-Api-Key)를 호출해 **이미 매핑된 미리보기 DTO만** 받는다. auth-server가 사용자 OAuth 토큰(`user_tokens`)을 복호화·만료 시 refresh한 뒤 Confluence **v2** API(`/wiki/api/v2/pages/{id}?body-format=view` + `/wiki/api/v2/spaces/{spaceId}`)를 호출해 매핑한다. **v1 content API 가 아니라 v2 를 쓰는 이유**: 발급 토큰의 scope 가 granular(`read:page:confluence`)이고, v1 classic 엔드포인트는 동일 토큰에 `401 "scope does not match"` 를 반환한다(2026-06-18 실측). **ACL은 사용자 본인 토큰 호출로 Confluence가 자연 강제**(접근 불가 페이지는 403/404 → 미리보기 404). auth-server 측 구현 = `auth-server/current-plans.md` 4단계 Feature P2(완료), BFF 공개 엔드포인트 = `bff-server/current-plans.md` Feature P1.
 
 **Response**
 

@@ -49,9 +49,9 @@ public class AdminUserMongoRepository {
   }
 
   /**
-   * 사용자(userId + 소속 groupIds)의 ACL 로 접근 가능한 raw_pages 를 집계한다. 한 페이지에 접근
-   * 가능 = allowed_groups 에 공개 sentinel("*") 또는 사용자 그룹이 있거나, allowed_users 에 userId 가
-   * 있을 때. 스페이스 수는 접근 페이지의 distinct space_key, 첨부 수는 내장 attachments 배열 합.
+   * 사용자(userId + 소속 groupIds)의 ACL 로 접근 가능한 raw_pages 를 집계한다. 한 페이지에 접근 가능 = allowed_groups 에 공개
+   * sentinel("*") 또는 사용자 그룹이 있거나, allowed_users 에 userId 가 있을 때. 스페이스 수는 접근 페이지의 distinct
+   * space_key, 첨부 수는 내장 attachments 배열 합.
    */
   public AccessibleCounts countAccessiblePages(String userId, List<String> groupIds) {
     if (!mongoTemplate.collectionExists(RAW_PAGES)) {
@@ -132,8 +132,8 @@ public class AdminUserMongoRepository {
   private record UserConversationCount(String userId, long count) {}
 
   /**
-   * 사용자별 활성 메시지 수. messages 에는 userId 가 없으므로, 사용자의 활성 대화(conversations)를
-   * 거쳐 conversationId → 메시지 수를 집계해 userId 로 합산한다(soft delete 제외).
+   * 사용자별 활성 메시지 수. messages 에는 userId 가 없으므로, 사용자의 활성 대화(conversations)를 거쳐 conversationId → 메시지 수를
+   * 집계해 userId 로 합산한다(soft delete 제외).
    */
   public Map<String, Long> countActiveMessagesByUserIds(List<String> userIds) {
     if (userIds.isEmpty()) {
