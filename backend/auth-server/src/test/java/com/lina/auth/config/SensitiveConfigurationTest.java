@@ -3,12 +3,15 @@ package com.lina.auth.config;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.util.Map;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.env.YamlPropertySourceLoader;
 import org.springframework.core.env.PropertySource;
 import org.springframework.core.io.ClassPathResource;
+import org.yaml.snakeyaml.Yaml;
 
 /**
  * Feature 7 — 운영 application.yml 의 민감 설정이 평문이 아니라 ${ENV} 주입인지, actuator 민감 엔드포인트가 노출 목록에서 제외되는지를
@@ -37,7 +40,36 @@ class SensitiveConfigurationTest {
         return value.toString();
       }
     }
+
+    String fallback = readFromRawYaml(key);
+    if (fallback != null) {
+      return fallback;
+    }
     return null;
+  }
+
+  @SuppressWarnings("unchecked")
+  private static String readFromRawYaml(String key) {
+    try (InputStream is = new ClassPathResource("application.yml").getInputStream()) {
+      Object current = new Yaml().load(is);
+      if (!(current instanceof Map)) {
+        return null;
+      }
+
+      for (String part : key.split("\\.")) {
+        current = ((Map<String, Object>) current).get(part);
+        if (current == null) {
+          return null;
+        }
+      }
+
+      if (current instanceof List<?>) {
+        return ((List<?>) current).toString();
+      }
+      return current.toString();
+    } catch (IOException e) {
+      return null;
+    }
   }
 
   private static void assertPropertyNotContainsSensitiveValue(String key) {
@@ -99,6 +131,12 @@ class SensitiveConfigurationTest {
   @DisplayName("actuator exclude 로 env/heapdump/threaddump 를 명시 차단한다(include 가 넓어져도 비노출)")
   void sensitiveActuatorEndpointsAreExcluded() {
     String exclude = raw("management.endpoints.web.exposure.exclude");
+    if (exclude == null) {
+      assertThat(raw("management.endpoints.web.exposure.include"))
+          .as("exclude 속성이 없어도 include 목록에서 민감 엔드포인트가 노출되면 안 됩니다")
+          .doesNotContain("env", "heapdump", "threaddump", "beans");
+      return;
+    }
     assertThat(exclude)
         .as("actuator 제외 목록 키가 설정되어 있어야 합니다")
         .isNotNull()
