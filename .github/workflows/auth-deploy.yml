@@ -19,6 +19,7 @@ on:
       - "backend/settings.gradle.kts"
       - ".github/workflows/auth-deploy.yml"
       - ".github/workflows/build-backend-image.yml"
+      - ".github/workflows/build-and-deploy.yml"
   workflow_dispatch:
 
 permissions:
