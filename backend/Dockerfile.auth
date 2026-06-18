@@ -1,0 +1,33 @@
+# syntax=docker/dockerfile:1.7
+
+FROM eclipse-temurin:21-jdk AS build
+
+WORKDIR /workspace
+
+COPY gradlew gradlew.bat settings.gradle build.gradle gradle.properties ./
+COPY gradle ./gradle
+COPY common/build.gradle common/
+COPY auth-server/build.gradle auth-server/
+
+RUN --mount=type=cache,target=/root/.gradle \
+    chmod +x gradlew \
+    && ./gradlew :auth-server:dependencies --no-daemon
+
+COPY common ./common
+COPY auth-server ./auth-server
+
+RUN --mount=type=cache,target=/root/.gradle \
+    ./gradlew :auth-server:bootJar --no-daemon
+
+FROM eclipse-temurin:21-jre
+
+WORKDIR /app
+RUN addgroup --system app \
+  && adduser --system --ingroup app app
+
+COPY --from=build /workspace/auth-server/build/libs/*.jar /app/app.jar
+USER app
+EXPOSE 8081
+
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+CMD ["--spring.profiles.active=prod"]

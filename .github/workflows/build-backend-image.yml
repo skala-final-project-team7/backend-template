@@ -1,0 +1,62 @@
+name: Build and Deploy Backend Image
+
+on:
+  workflow_call:
+    inputs:
+      service_name:
+        description: Harbor image name prefix (e.g. auth-server, bff-server)
+        required: true
+        type: string
+      dockerfile:
+        description: Dockerfile path for the service
+        required: true
+        type: string
+      test_task:
+        description: Gradle task to run tests before build
+        required: false
+        type: string
+        default: "test"
+      manifest_event:
+        description: Event name to use for repository_dispatch
+        required: false
+        type: string
+        default: "harbor-image-updated"
+    secrets:
+      HARBOR_URL:
+        required: true
+      HARBOR_ID:
+        required: true
+      HARBOR_PASSWORD:
+        required: true
+      HARBOR_NAMESPACE:
+        required: true
+      MANIFEST_REPO_OWNER:
+        required: false
+      MANIFEST_REPO_NAME:
+        required: false
+      MANIFEST_REPO_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-deploy:
+    uses: ./.github/workflows/_core/build-and-deploy.yml
+    with:
+      service_name: ${{ inputs.service_name }}
+      dockerfile: ${{ inputs.dockerfile }}
+      context: backend
+      build_target: ""
+      test_command: ./gradlew "${{ inputs.test_task }}"
+      test_workdir: backend
+      manifest_event: ${{ inputs.manifest_event }}
+      build_platforms: linux/amd64
+    secrets:
+      HARBOR_URL: ${{ secrets.HARBOR_URL }}
+      HARBOR_ID: ${{ secrets.HARBOR_ID }}
+      HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+      HARBOR_NAMESPACE: ${{ secrets.HARBOR_NAMESPACE }}
+      MANIFEST_REPO_OWNER: ${{ secrets.MANIFEST_REPO_OWNER }}
+      MANIFEST_REPO_NAME: ${{ secrets.MANIFEST_REPO_NAME }}
+      MANIFEST_REPO_TOKEN: ${{ secrets.MANIFEST_REPO_TOKEN }}

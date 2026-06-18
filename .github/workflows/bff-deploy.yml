@@ -1,0 +1,41 @@
+name: Deploy bff
+
+on:
+  push:
+    branches:
+      - deploy
+    paths:
+      - "backend/bff-server/**"
+      - "backend/common/**"
+      - "backend/Dockerfile.bff"
+      - "backend/*.gradle"
+      - "backend/*.gradle.kts"
+      - "backend/gradle/**"
+      - "backend/gradle.properties"
+      - "backend/gradle-wrapper.properties"
+      - "backend/gradlew"
+      - "backend/gradlew.bat"
+      - "backend/settings.gradle"
+      - "backend/settings.gradle.kts"
+      - ".github/workflows/bff-deploy.yml"
+      - ".github/workflows/build-backend-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-deploy:
+    uses: ./.github/workflows/build-backend-image.yml
+    with:
+      service_name: bff-server
+      dockerfile: backend/Dockerfile.bff
+      test_task: ":bff-server:test"
+    secrets:
+      HARBOR_URL: ${{ secrets.HARBOR_URL }}
+      HARBOR_ID: ${{ secrets.HARBOR_ID }}
+      HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+      HARBOR_NAMESPACE: ${{ secrets.HARBOR_NAMESPACE }}
+      MANIFEST_REPO_OWNER: ${{ secrets.MANIFEST_REPO_OWNER }}
+      MANIFEST_REPO_NAME: ${{ secrets.MANIFEST_REPO_NAME }}
+      MANIFEST_REPO_TOKEN: ${{ secrets.MANIFEST_REPO_TOKEN }}
