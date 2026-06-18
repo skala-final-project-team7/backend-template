@@ -19,22 +19,42 @@ import org.springframework.core.io.ClassPathResource;
  */
 class SensitiveConfigurationTest {
 
-  private static final PropertySource<?> APPLICATION_YML = loadApplicationYml();
+  private static final List<PropertySource<?>> APPLICATION_YMLS = loadApplicationYmls();
 
-  private static PropertySource<?> loadApplicationYml() {
+  private static List<PropertySource<?>> loadApplicationYmls() {
     try {
-      List<PropertySource<?>> sources =
-          new YamlPropertySourceLoader()
-              .load("application.yml", new ClassPathResource("application.yml"));
-      return sources.get(0);
+      return new YamlPropertySourceLoader()
+          .load("application", new ClassPathResource("application.yml"));
     } catch (IOException e) {
       throw new IllegalStateException("application.yml 로드 실패", e);
     }
   }
 
   private static String raw(String key) {
-    Object value = APPLICATION_YML.getProperty(key);
-    return value == null ? null : value.toString();
+    for (PropertySource<?> source : APPLICATION_YMLS) {
+      Object value = source.getProperty(key);
+      if (value != null) {
+        return value.toString();
+      }
+    }
+    return null;
+  }
+
+  private static boolean hasAnyProperty(String key) {
+    for (PropertySource<?> source : APPLICATION_YMLS) {
+      if (source.containsProperty(key)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static void assertPropertyNotContainsSensitiveValue(String key) {
+    String value = raw(key);
+    assertThat(value)
+        .as("%s 값이 null 이면 Yaml 파싱/로드 방식 검증이 실패했습니다.", key)
+        .isNotNull();
+    assertThat(value).doesNotContain("env", "heapdump", "threaddump", "beans");
   }
 
   private static void assertInjectedSecret(String key, String envVar) {
@@ -81,21 +101,20 @@ class SensitiveConfigurationTest {
   @Test
   @DisplayName("actuator 노출 허용목록(include)에 민감 엔드포인트가 없다")
   void sensitiveActuatorEndpointsAreNotIncluded() {
-    String include = raw("management.endpoints.web.exposure.include");
-    assertThat(include).isNotNull();
-    assertThat(include)
-        .as("include 허용목록에 민감 엔드포인트가 있으면 안 된다: %s", include)
-        .doesNotContain("env")
-        .doesNotContain("heapdump")
-        .doesNotContain("threaddump")
-        .doesNotContain("beans");
+    assertPropertyNotContainsSensitiveValue("management.endpoints.web.exposure.include");
   }
 
   @Test
   @DisplayName("actuator exclude 로 env/heapdump/threaddump 를 명시 차단한다(include 가 넓어져도 비노출)")
   void sensitiveActuatorEndpointsAreExcluded() {
+    assertThat(hasAnyProperty("management.endpoints.web.exposure.exclude"))
+        .as("actuator 제외 목록 키가 설정되어 있어야 합니다")
+        .isTrue();
     String exclude = raw("management.endpoints.web.exposure.exclude");
-    assertThat(exclude).as("exclude 가 include 보다 우선 — 민감 엔드포인트는 명시적으로 제외해야 한다").isNotNull();
-    assertThat(exclude).contains("env").contains("heapdump").contains("threaddump");
+    assertThat(exclude)
+        .as("exclude 가 include 보다 우선 — 민감 엔드포인트는 명시적으로 제외해야 한다")
+        .contains("env")
+        .contains("heapdump")
+        .contains("threaddump");
   }
 }
