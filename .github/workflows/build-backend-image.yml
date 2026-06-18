@@ -42,7 +42,7 @@ permissions:
 
 jobs:
   build-and-deploy:
-    uses: ./.github/workflows/_core/build-and-deploy.yml
+    uses: ./.github/workflows/build-and-deploy.yml
     with:
       service_name: ${{ inputs.service_name }}
       dockerfile: ${{ inputs.dockerfile }}
