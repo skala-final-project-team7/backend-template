@@ -1,6 +1,6 @@
 package com.lina.auth.oauth;
 
-import com.lina.auth.jwt.JwtProvider;
+import com.lina.auth.oauth.OAuthLoginService.CallbackOutcome;
 import com.lina.auth.oauth.dto.LoginTokenResponse;
 import com.lina.auth.oauth.dto.RefreshTokenRequest;
 import com.lina.auth.token.SessionService;
@@ -54,7 +54,6 @@ public class AuthController {
 
   private final OAuthLoginService loginService;
   private final SessionService sessionService;
-  private final JwtProvider jwtProvider;
 
   // 설정 시 callback 이 JSON 대신 이 FE 라우트로 302(SPA 핸드오프). 미설정(기본)이면 JSON 반환 — 기존 계약 유지.
   private final String frontendCallbackUrl;
@@ -62,11 +61,9 @@ public class AuthController {
   public AuthController(
       OAuthLoginService loginService,
       SessionService sessionService,
-      JwtProvider jwtProvider,
       @Value("${lina.frontend.callback-url:}") String frontendCallbackUrl) {
     this.loginService = loginService;
     this.sessionService = sessionService;
-    this.jwtProvider = jwtProvider;
     this.frontendCallbackUrl = frontendCallbackUrl;
   }
 
@@ -82,9 +79,9 @@ public class AuthController {
   /**
    * code/state 로 세션을 교환한다. 실패 매핑: state 불일치 400 / Confluence 오류 401 / admin 게이트 403.
    *
-   * <p>lina.frontend.callback-url 미설정 시 LINA 세션 토큰을 JSON 으로 반환한다(기존 계약, api-spec §4-1).
-   * 설정 시 SPA 핸드오프를 위해 LINA 세션 accessToken 을 쿼리로 실어 FE 콜백 라우트로 302 한다. 노출 대상은
-   * LINA 세션 JWT 뿐이며 Confluence OAuth 토큰은 서버에 보관한다(auth-server CLAUDE §3.1).
+   * <p>lina.frontend.callback-url 미설정 시 LINA 세션 토큰을 JSON 으로 반환한다(기존 계약, api-spec §4-1). 설정 시 SPA
+   * 핸드오프를 위해 LINA 세션 accessToken 을 쿼리로 실어 FE 콜백 라우트로 302 한다. 노출 대상은 LINA 세션 JWT 뿐이며 Confluence
+   * OAuth 토큰은 서버에 보관한다(auth-server CLAUDE §3.1).
    */
   @GetMapping("/callback")
   public ResponseEntity<?> callback(
@@ -92,16 +89,17 @@ public class AuthController {
     // 기본(미설정): LINA 세션 토큰을 JSON 으로 반환한다(기존 계약, api-spec §4-1).
     // 실패는 GlobalExceptionHandler 가 JSON 으로 처리한다.
     if (frontendCallbackUrl == null || frontendCallbackUrl.isBlank()) {
-      return ResponseEntity.ok(ApiResponse.success(loginService.handleCallback(code, state), "로그인 성공"));
+      return ResponseEntity.ok(
+          ApiResponse.success(loginService.handleCallback(code, state).tokens(), "로그인 성공"));
     }
     // SPA 핸드오프: 성공/실패를 모두 FE 콜백으로 302 한다(브라우저에 JSON 노출 금지).
     try {
-      LoginTokenResponse tokens = loginService.handleCallback(code, state);
+      CallbackOutcome outcome = loginService.handleCallback(code, state);
       return redirectToFrontend(
           builder ->
               builder
-                  .queryParam("accessToken", tokens.accessToken())
-                  .queryParam("returnTo", resolveReturnTo(tokens.accessToken())));
+                  .queryParam("accessToken", outcome.tokens().accessToken())
+                  .queryParam("returnTo", outcome.returnTo()));
     } catch (BizException exception) {
       // 관리자 게이트(403)는 FORBIDDEN, 그 외(state 불일치·토큰 교환 실패 등)는 AUTH_FAILED 로 전달.
       String errorCode =
@@ -114,16 +112,13 @@ public class AuthController {
     }
   }
 
-  /** SPA 핸드오프 returnTo — 발급된 JWT 의 role 로 진입 지점을 정한다(ADMIN→/admin, 그 외→/chat). */
-  private String resolveReturnTo(String accessToken) {
-    return "ADMIN".equals(jwtProvider.verifyAccessToken(accessToken).role()) ? "/admin" : "/chat";
-  }
-
   /** frontendCallbackUrl 에 쿼리를 더해 302 Location 을 만든다(accessToken/returnTo 또는 errorCode). */
   private ResponseEntity<Void> redirectToFrontend(Consumer<UriComponentsBuilder> queryCustomizer) {
     UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(frontendCallbackUrl);
     queryCustomizer.accept(builder);
-    return ResponseEntity.status(HttpStatus.FOUND).location(builder.build().encode().toUri()).build();
+    return ResponseEntity.status(HttpStatus.FOUND)
+        .location(builder.build().encode().toUri())
+        .build();
   }
 
   /** Rotating refresh — 새 access/refresh 발급, 이전 refresh 무효화. 만료·무효 시 401(api-spec §4-1). */

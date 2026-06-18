@@ -82,8 +82,12 @@ public class OAuthLoginService {
         .toUri();
   }
 
-  /** callback: state 검증부터 JWT 발급까지 처리한다. 실패 시 400/401/403 — 모든 실패에서 토큰 미발급. */
-  public LoginTokenResponse handleCallback(String code, String state) {
+  /**
+   * callback: state 검증부터 JWT 발급까지 처리한다. 실패 시 400/401/403 — 모든 실패에서 토큰 미발급.
+   *
+   * <p>발급 토큰과 함께 SPA 핸드오프 returnTo(로그인 mode 기반 진입 지점)를 반환한다.
+   */
+  public CallbackOutcome handleCallback(String code, String state) {
     OAuthStateService.StateData stateData = stateService.consume(state);
 
     AtlassianTokenResponse confluenceTokens = exchangeCode(code);
@@ -114,7 +118,18 @@ public class OAuthLoginService {
         site.id(),
         now);
 
-    return new LoginTokenResponse(accessJwt, refreshToken, accessTokenExpiresAt(now));
+    LoginTokenResponse tokens =
+        new LoginTokenResponse(accessJwt, refreshToken, accessTokenExpiresAt(now));
+    return new CallbackOutcome(tokens, resolveReturnTo(stateData));
+  }
+
+  /**
+   * SPA 핸드오프 진입 지점 — 로그인 mode 로 결정한다(role 이 아님). 관리자 로그인(mode=admin)만 /admin 으로 보내며, 이는 위 admin
+   * 게이트가 ADMIN 역할을 이미 보장한다. 사용자 로그인(mode!=admin)은 ADMIN 계정이라도 /chat 으로 보낸다 — 관리자가 일반 채팅을 이용하려는 의도를
+   * 존중한다. mode 는 state 에 서버 보관돼 클라이언트가 위조할 수 없다.
+   */
+  private static String resolveReturnTo(OAuthStateService.StateData stateData) {
+    return ADMIN_MODE.equals(stateData.mode()) ? "/admin" : "/chat";
   }
 
   /** returnTo 는 내부 경로만 허용한다(오픈 리다이렉트 방지 — docs/api-spec.md §4-1). 미지정 시 '/'. */
@@ -205,4 +220,10 @@ public class OAuthLoginService {
         .truncatedTo(ChronoUnit.SECONDS)
         .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
   }
+
+  /**
+   * callback 처리 결과 — FE 에 발급할 LINA 세션 토큰과 SPA 핸드오프 returnTo(로그인 mode 기반 진입 지점). returnTo 는
+   * frontend-callback 302 경로에서만 사용하며 JSON 응답 계약(api-spec §4-1)에는 노출하지 않는다.
+   */
+  public record CallbackOutcome(LoginTokenResponse tokens, String returnTo) {}
 }
