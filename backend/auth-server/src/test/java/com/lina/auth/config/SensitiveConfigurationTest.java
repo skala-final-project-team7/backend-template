@@ -40,15 +40,6 @@ class SensitiveConfigurationTest {
     return null;
   }
 
-  private static boolean hasAnyProperty(String key) {
-    for (PropertySource<?> source : APPLICATION_YMLS) {
-      if (source.containsProperty(key)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   private static void assertPropertyNotContainsSensitiveValue(String key) {
     String value = raw(key);
     assertThat(value)
@@ -107,11 +98,10 @@ class SensitiveConfigurationTest {
   @Test
   @DisplayName("actuator exclude 로 env/heapdump/threaddump 를 명시 차단한다(include 가 넓어져도 비노출)")
   void sensitiveActuatorEndpointsAreExcluded() {
-    assertThat(hasAnyProperty("management.endpoints.web.exposure.exclude"))
-        .as("actuator 제외 목록 키가 설정되어 있어야 합니다")
-        .isTrue();
     String exclude = raw("management.endpoints.web.exposure.exclude");
     assertThat(exclude)
+        .as("actuator 제외 목록 키가 설정되어 있어야 합니다")
+        .isNotNull()
         .as("exclude 가 include 보다 우선 — 민감 엔드포인트는 명시적으로 제외해야 한다")
         .contains("env")
         .contains("heapdump")
