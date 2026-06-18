@@ -17,6 +17,8 @@ import com.github.tomakehurst.wiremock.junit5.WireMockTest;
 import com.lina.auth.oauth.dto.AccessibleResource;
 import com.lina.auth.oauth.dto.AtlassianTokenResponse;
 import com.lina.auth.oauth.dto.AtlassianUserInfo;
+import com.lina.auth.oauth.dto.ConfluencePageV2Response;
+import com.lina.auth.oauth.dto.ConfluenceSpaceV2Response;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -278,6 +280,105 @@ class AtlassianOAuthClientTest {
     assertThatThrownBy(() -> client.refreshAccessToken("conf-refresh-1"))
         .isInstanceOf(AtlassianOAuthClient.AtlassianOAuthException.class)
         .isNotInstanceOf(AtlassianOAuthClient.InvalidGrantException.class);
+  }
+
+  // --- 미리보기(§4-3 Feature P2): Confluence v2 pages/spaces 조회 ---
+
+  @Test
+  @DisplayName(
+      "미리보기: v2 pages 를 body-format=view·Bearer 로 조회하고 title/body.view/version/_links 를 매핑한다")
+  void shouldFetchPageV2() {
+    String pagePath = "/ex/confluence/cloud-1/wiki/api/v2/pages/12345";
+    wireMock.stubFor(
+        get(urlPathEqualTo(pagePath))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {
+                          "id": "12345",
+                          "title": "S3 트러블슈팅 가이드",
+                          "spaceId": "2850818",
+                          "version": {"createdAt": "2026-04-15T09:30:00.000Z"},
+                          "body": {"view": {"value": "<h1>S3</h1><p>권한 오류는...</p>"}},
+                          "_links": {"base": "https://team.atlassian.net/wiki",
+                            "webui": "/spaces/CCC/pages/12345/S3"}
+                        }
+                        """)));
+
+    ConfluencePageV2Response page = client().fetchPageV2("conf-access", "cloud-1", "12345");
+
+    assertThat(page.title()).isEqualTo("S3 트러블슈팅 가이드");
+    assertThat(page.spaceId()).isEqualTo("2850818");
+    assertThat(page.version().createdAt()).isEqualTo("2026-04-15T09:30:00.000Z");
+    assertThat(page.body().view().value()).contains("<h1>S3</h1>");
+    assertThat(page.links().base()).isEqualTo("https://team.atlassian.net/wiki");
+    assertThat(page.links().webui()).isEqualTo("/spaces/CCC/pages/12345/S3");
+    wireMock.verify(
+        getRequestedFor(urlPathEqualTo(pagePath))
+            .withQueryParam("body-format", equalTo("view"))
+            .withHeader("Authorization", equalTo("Bearer conf-access")));
+  }
+
+  @Test
+  @DisplayName("미리보기: v2 spaces 를 조회해 name 을 매핑한다")
+  void shouldFetchSpaceV2() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/ex/confluence/cloud-1/wiki/api/v2/spaces/2850818"))
+            .willReturn(
+                aResponse()
+                    .withStatus(200)
+                    .withHeader("Content-Type", "application/json")
+                    .withBody(
+                        """
+                        {"id": "2850818", "key": "CLOUD", "name": "Cloud Platform"}
+                        """)));
+
+    ConfluenceSpaceV2Response space = client().fetchSpaceV2("conf-access", "cloud-1", "2850818");
+
+    assertThat(space.name()).isEqualTo("Cloud Platform");
+  }
+
+  @Test
+  @DisplayName("미리보기: v2 404(없음)는 ContentNotAccessibleException 으로 구분한다")
+  void shouldThrowContentNotAccessibleOnNotFound() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/ex/confluence/cloud-1/wiki/api/v2/pages/404"))
+            .willReturn(aResponse().withStatus(404)));
+
+    AtlassianOAuthClient client = client();
+
+    assertThatThrownBy(() -> client.fetchPageV2("conf-access", "cloud-1", "404"))
+        .isInstanceOf(AtlassianOAuthClient.ContentNotAccessibleException.class);
+  }
+
+  @Test
+  @DisplayName("미리보기: v2 403(접근 불가)도 ContentNotAccessibleException 으로 구분한다(존재 비노출)")
+  void shouldThrowContentNotAccessibleOnForbidden() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/ex/confluence/cloud-1/wiki/api/v2/pages/403"))
+            .willReturn(aResponse().withStatus(403)));
+
+    AtlassianOAuthClient client = client();
+
+    assertThatThrownBy(() -> client.fetchPageV2("conf-access", "cloud-1", "403"))
+        .isInstanceOf(AtlassianOAuthClient.ContentNotAccessibleException.class);
+  }
+
+  @Test
+  @DisplayName("미리보기: v2 5xx 일시 장애는 일반 AtlassianOAuthException(ContentNotAccessible 아님)")
+  void shouldWrapServerErrorOnPreview() {
+    wireMock.stubFor(
+        get(urlPathEqualTo("/ex/confluence/cloud-1/wiki/api/v2/pages/500"))
+            .willReturn(aResponse().withStatus(500)));
+
+    AtlassianOAuthClient client = client();
+
+    assertThatThrownBy(() -> client.fetchPageV2("conf-access", "cloud-1", "500"))
+        .isInstanceOf(AtlassianOAuthClient.AtlassianOAuthException.class)
+        .isNotInstanceOf(AtlassianOAuthClient.ContentNotAccessibleException.class);
   }
 
   private AtlassianOAuthClient client() {

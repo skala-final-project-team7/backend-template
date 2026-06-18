@@ -820,8 +820,50 @@ Credential 처리 원칙:
 
 공통:
 - 인증 필수(Bearer JWT). 미인증 `401`.
-- FE 는 `bodyViewValue` 를 DOMPurify 로 sanitize 후 `v-html` 렌더링.
-- **TBD (3단계 결정)**: 호출 주체 — (a) BFF 가 토큰 사용해 직접 Confluence 호출 vs (b) Authorization Server 프록시 (`docs/api-spec.md` §4-3 TBD, `backend/CLAUDE.md` §6).
+- FE 는 이미 구현됨(`ReferencePanel.vue` hover → `getConfluencePagePreview(pageId)` → `GET /api/confluence/pages/preview?pageId=...`, `bodyViewValue` 를 DOMPurify sanitize 후 `v-html` 렌더링). **백엔드 엔드포인트만 미구현.**
+- 응답 계약은 `docs/api-spec.md` §4-3 고정: `data = { pageId, title, spaceName, authorName, updatedAt, breadcrumbs[], pageUrl, bodyViewValue }`.
+
+### 호출 주체 결정 (api-spec §4-3 TBD 해소)
+
+**채택: (b) Authorization Server 프록시.** BFF 는 Confluence OAuth 토큰을 보유/노출하지 않고, auth-server 내부 엔드포인트를 호출해 **이미 매핑된 미리보기 DTO** 만 받는다.
+
+근거:
+- Confluence OAuth 토큰은 auth-server MySQL(`user_tokens`)에만 암호화 저장된다(`backend/auth-server/CLAUDE.md` §3.1). 토큰 복호화(`TokenCipher`)·만료 시 refresh(`AtlassianOAuthClient.refreshAccessToken`)·Confluence 호출 클라이언트가 모두 auth-server 에 이미 있어 재사용된다.
+- (a) BFF 직접 호출은 BFF 가 사용자 OAuth 토큰을 넘겨받아야 하므로 "BFF 는 Confluence 토큰을 직접 다루지 않는다"(`backend/CLAUDE.md` §6, auth-server `CLAUDE.md` §3.3)에 역행한다.
+- **ACL 은 사용자 본인 OAuth 토큰으로 Confluence 를 호출하는 것만으로 자연 강제**된다(접근 불가 페이지는 Confluence 가 403/404 → 미리보기 404). 별도 ACL 필터 불필요. (필요 scope `read:confluence-content.all` 는 로그인 시 이미 부여됨.)
+- 구현 완료 시 `docs/api-spec.md` §4-3 의 TBD 를 본 결정으로 갱신한다.
+
+### Feature P1. Confluence 미리보기 — BFF 공개 엔드포인트 (`GET /api/confluence/pages/preview`)
+
+목표: 인증 사용자가 출처 `pageId` 로 미리보기(HTML 본문 + 메타데이터)를 받도록, auth-server 내부 프록시(P2)를 호출해 `ApiResponse` 로 반환한다. BFF 는 Confluence 토큰을 보유하지 않는다.
+
+#### 변경 대상 파일
+- `backend/bff-server/src/main/java/com/lina/bff/confluence/controller/ConfluencePreviewController.java` — 신규. `GET /api/confluence/pages/preview`, `pageId` 필수
+- `backend/bff-server/src/main/java/com/lina/bff/confluence/service/ConfluencePreviewService.java` — 신규. 현재 사용자 `userId`(accountId) 확보 + 내부 호출 오케스트레이션
+- `backend/bff-server/src/main/java/com/lina/bff/confluence/client/AuthServerConfluenceClient.java` — 신규. auth-server 내부 미리보기 호출(`X-Internal-Api-Key` 헤더). 기존 `AuthServerClientConfig` RestClient 재사용
+- `backend/bff-server/src/main/java/com/lina/bff/confluence/dto/ConfluencePagePreviewResponse.java` — 신규. §4-3 응답 필드(record)
+- `backend/bff-server/src/main/java/com/lina/bff/config/AuthServerClientConfig.java` — 수정(필요 시). 내부 RestClient/baseUrl·내부 키 헤더 재사용 확인
+- `backend/bff-server/src/main/resources/application*.yml` — auth-server base URL/`INTERNAL_API_KEY` 설정 확인(이미 존재 — `dataIngestionRestClient`/credential 호출과 동일)
+- `backend/bff-server/src/test/java/com/lina/bff/confluence/**` — 신규 테스트
+
+#### 체크리스트
+- [x] `GET /api/confluence/pages/preview?pageId=` controller 추가, `pageId` 필수 검증(누락/blank `400 INVALID_REQUEST`) — 2026-06-18 구현: `confluence/controller/ConfluencePreviewController`(`@Validated` + `@RequestParam(required=false) @NotBlank`), 공통 `GlobalExceptionHandler` 가 `400 INVALID_REQUEST` 매핑. controller 테스트로 고정
+- [x] 인증 필수: 미인증 `401`(SecurityFilterChain). `CurrentUserProvider` 로 `userId`(Confluence accountId) 확보해 내부 호출에 전달 — 2026-06-18 구현: `/api/confluence/**` 는 `BffSecurityConfig` `anyRequest().authenticated()` 로 자동 가드(미인증 401, service 미호출 검증). `ConfluencePreviewService` 가 `CurrentUserProvider.getUserId()` 로 accountId 확보
+- [x] auth-server 내부 프록시 호출(`GET /internal/auth/confluence/pages/preview?pageId=&userId=`), `X-Internal-Api-Key` 헤더 주입(기존 internal 호출 패턴 재사용) — 2026-06-18 구현: `confluence/client/AuthServerConfluenceClient`(기존 `authServerRestClient` 빈 재사용, `AuthAdminKeyClient` 와 동일 `${lina.internal.api-key:...}` 키 주입). WireMock 으로 쿼리·헤더 검증
+- [x] 응답을 `ApiResponse.success(preview, "Confluence 페이지 미리보기 조회 성공")` 로 래핑(§4-3) — controller 테스트로 `isSuccess`/`message`/`data.*` 검증
+- [x] 에러 매핑: 내부 `404`→`404 RESOURCE_NOT_FOUND`(접근 불가/없음 모두 비노출 통일), 토큰 없음·refresh 실패→`401`(또는 `502` 정책 확정), Confluence/internal `5xx`→`502 EXTERNAL_SERVICE_ERROR` — 2026-06-18 구현: client 가 내부 `404→RESOURCE_NOT_FOUND`·`401→UNAUTHORIZED`·기타4xx/5xx→`EXTERNAL_SERVICE_ERROR(502)` 로 `BizException` 매핑(토큰 없음/refresh 실패는 P2 가 각각 404/401 로 반환 → 그대로 전파). client·controller 테스트로 고정
+- [x] OAuth 토큰·`INTERNAL_API_KEY` 를 응답/로그에 노출하지 않는다(BFF 는 토큰 자체를 받지 않음 — DTO 만 수신) — `ConfluencePagePreviewResponse` 에 토큰 필드 없음. controller 테스트가 응답 본문 `accessToken` 문자열 부재 검증
+- [x] `bodyViewValue` 는 HTML 원문 그대로 passthrough(BFF 가공 없음). sanitize 는 FE 책임(§4-3, 보안 주의) — client→service→controller 무가공 전달
+- [x] (선택) hover 다발 호출 대비 단기 캐시 여부 결정 — FE 가 `previewsByPageId` 로 pageId 별 캐시하므로 **1차 미적용 확정**, 부하 관측 시 후속 이슈
+- [x] 테스트(MockMvc + WireMock 내부 stub): 미인증 `401` / 정상 `200`(필드 매핑 검증) / `pageId` 누락 `400` / 내부 `404`→`404` / 내부 `5xx`→`502` — 2026-06-18: client 4건(WireMock) + service 1건 + controller 5건(MockMvc) 신규, `./scripts/verify.sh`(format·lint·test) BUILD SUCCESSFUL
+
+### Feature P2. Confluence 미리보기 — auth-server 내부 프록시 (선행 의존)
+
+> auth-server 모듈 작업. **`backend/auth-server/current-plans.md` 에서 추적**하며, 본 항목은 BFF(P1)의 선행 의존으로만 명시한다.
+
+목표: 사용자별 저장 OAuth 토큰으로 Confluence 페이지를 조회해 §4-3 미리보기 DTO 로 매핑·반환하는 내부 전용 엔드포인트. 토큰은 auth-server 밖으로 나가지 않는다.
+
+- [x] **구현 완료(2026-06-18) — 상세·체크리스트는 `backend/auth-server/current-plans.md` 4단계 Feature P2 에서 추적**. 요약: `GET /internal/auth/confluence/pages/preview`(X-Internal-Api-Key 가드) → 사용자 `user_tokens` 복호화·만료 refresh → Confluence **v2** API(`/pages/{id}?body-format=view` + `/spaces/{spaceId}`) 조회·매핑(토큰 미반환). **v1 이 아니라 v2 사용**(granular scope 는 v1 에서 `401 "scope does not match"`). breadcrumbs=`[spaceName, title]`·authorName=`null` 임시 degrade. `docs/api-spec.md` §4-3 TBD → (b) 확정 갱신 + changelog v2.8.2. 라이브 200 검증 완료.
 
 ## 진입 주차에서 정의할 것
 

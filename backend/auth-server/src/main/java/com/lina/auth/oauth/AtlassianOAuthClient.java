@@ -3,6 +3,8 @@ package com.lina.auth.oauth;
 import com.lina.auth.oauth.dto.AccessibleResource;
 import com.lina.auth.oauth.dto.AtlassianTokenResponse;
 import com.lina.auth.oauth.dto.AtlassianUserInfo;
+import com.lina.auth.oauth.dto.ConfluencePageV2Response;
+import com.lina.auth.oauth.dto.ConfluenceSpaceV2Response;
 import com.lina.auth.oauth.dto.GroupMembershipPage;
 import com.lina.auth.oauth.dto.TokenExchangeRequest;
 import java.net.URI;
@@ -169,6 +171,52 @@ public class AtlassianOAuthClient {
     }
   }
 
+  /**
+   * 미리보기(§4-3): Confluence v2 pages 조회(`body-format=view`). granular scope(`read:page:confluence`)
+   * 전용 — 동일 토큰에 v1 content API 는 401("scope does not match")을 반환하므로 v2 를 사용한다. 페이지 없음(404)/접근
+   * 불가(403)는 ContentNotAccessibleException 으로 구분하고(Service 가 404 로 통일), 그 외 실패는
+   * AtlassianOAuthException 으로 래핑한다.
+   */
+  public ConfluencePageV2Response fetchPageV2(String accessToken, String cloudId, String pageId) {
+    URI uri =
+        UriComponentsBuilder.fromUriString(properties.getApiBaseUri())
+            .path("/ex/confluence/{cloudId}/wiki/api/v2/pages/{pageId}")
+            .queryParam("body-format", "view")
+            .buildAndExpand(cloudId, pageId)
+            .toUri();
+    return getForPreview(uri, accessToken, ConfluencePageV2Response.class);
+  }
+
+  /** 미리보기 breadcrumbs/spaceName 구성용 v2 spaces 조회. 실패 분류는 fetchPageV2 와 동일. */
+  public ConfluenceSpaceV2Response fetchSpaceV2(
+      String accessToken, String cloudId, String spaceId) {
+    URI uri =
+        UriComponentsBuilder.fromUriString(properties.getApiBaseUri())
+            .path("/ex/confluence/{cloudId}/wiki/api/v2/spaces/{spaceId}")
+            .buildAndExpand(cloudId, spaceId)
+            .toUri();
+    return getForPreview(uri, accessToken, ConfluenceSpaceV2Response.class);
+  }
+
+  private <T> T getForPreview(URI uri, String accessToken, Class<T> responseType) {
+    try {
+      return restClient
+          .get()
+          .uri(uri)
+          .headers(headers -> headers.setBearerAuth(accessToken))
+          .retrieve()
+          .body(responseType);
+    } catch (HttpClientErrorException e) {
+      int status = e.getStatusCode().value();
+      if (status == 404 || status == 403) {
+        throw new ContentNotAccessibleException("Confluence 리소스를 찾을 수 없거나 접근 권한이 없습니다.");
+      }
+      throw new AtlassianOAuthException("Confluence(미리보기) 조회에 실패했습니다.", e);
+    } catch (RestClientException e) {
+      throw new AtlassianOAuthException("Confluence(미리보기) 조회에 실패했습니다.", e);
+    }
+  }
+
   /** Atlassian 호출 실패 래퍼. 토큰 등 민감 값은 메시지에 싣지 않는다. */
   public static class AtlassianOAuthException extends RuntimeException {
 
@@ -185,6 +233,17 @@ public class AtlassianOAuthClient {
   public static class InvalidGrantException extends AtlassianOAuthException {
 
     public InvalidGrantException(String message) {
+      super(message);
+    }
+  }
+
+  /**
+   * 미리보기 대상 페이지가 없거나(404) 호출 사용자 권한 밖(403)일 때. Service 가 존재 비노출을 위해 둘 다 404 RESOURCE_NOT_FOUND 로
+   * 통일한다.
+   */
+  public static class ContentNotAccessibleException extends AtlassianOAuthException {
+
+    public ContentNotAccessibleException(String message) {
       super(message);
     }
   }

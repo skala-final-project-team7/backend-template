@@ -43,8 +43,8 @@ public class AdminIngestService {
   /**
    * 수집 진행상태를 Data Ingestion Pipeline 의 {@code GET /ml/ingest/status/{jobId}} 로 중계한다.
    *
-   * <p>워커가 잡을 픽업하기 전(레코드 미생성) 폴링은 ingestion 이 404 를 반환하므로, 갓 시작한
-   * 잡으로 보고 {@code STARTED} 를 응답해 FE 폴링이 끊기지 않게 한다.
+   * <p>워커가 잡을 픽업하기 전(레코드 미생성) 폴링은 ingestion 이 404 를 반환하므로, 갓 시작한 잡으로 보고 {@code STARTED} 를 응답해 FE
+   * 폴링이 끊기지 않게 한다.
    */
   public AdminIngestStatusResponse getIngestStatus(String jobId) {
     try {
@@ -57,11 +57,9 @@ public class AdminIngestService {
       if (exception.getStatusCode().value() == 404) {
         return new AdminIngestStatusResponse(jobId, "STARTED", 0, 0, 0, null);
       }
-      throw new BizException(
-          ErrorCode.EXTERNAL_SERVICE_ERROR, "수집 상태 조회에 실패했습니다", exception);
+      throw new BizException(ErrorCode.EXTERNAL_SERVICE_ERROR, "수집 상태 조회에 실패했습니다", exception);
     } catch (RestClientException exception) {
-      throw new BizException(
-          ErrorCode.EXTERNAL_SERVICE_ERROR, "수집 상태 조회에 실패했습니다", exception);
+      throw new BizException(ErrorCode.EXTERNAL_SERVICE_ERROR, "수집 상태 조회에 실패했습니다", exception);
     }
   }
 }
