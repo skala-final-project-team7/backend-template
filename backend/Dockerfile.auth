@@ -22,8 +22,11 @@ RUN --mount=type=cache,target=/root/.gradle \
 FROM eclipse-temurin:21-jre
 
 WORKDIR /app
+ARG OTEL_JAVA_AGENT_VERSION=2.28.1
 RUN addgroup --system app \
-  && adduser --system --ingroup app app
+  && adduser --system --ingroup app app \
+  && mkdir -p /otel
+ADD --chmod=0644 https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v${OTEL_JAVA_AGENT_VERSION}/opentelemetry-javaagent.jar /otel/opentelemetry-javaagent.jar
 
 COPY --from=build /workspace/auth-server/build/libs/*.jar /app/app.jar
 USER app
